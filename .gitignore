@@ -1,0 +1,50 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+.next/
+out/
+dist/
+build/
+*.egg-info/
+
+# Environment
+.env
+.env.local
+.env.*.local
+.venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+
+# Turbo
+.turbo/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Generated
+.remotion/
+
+apps/api/.env
+*.env
+apps/remotion/.env
+apps/web/.env
+apps/remotion/node_modules
+apps/remotion/output
+apps/api/static/images/*
+apps/api/static/videos/*
+apps/api/static/audios/*

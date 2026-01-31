@@ -1,0 +1,53 @@
+[project]
+name = "kureita-api"
+version = "0.1.0"
+description = "AI-powered video production API"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "pydantic>=2.10.0",
+    "pydantic-settings>=2.6.0",
+    "python-multipart>=0.0.18",
+    "httpx>=0.28.0",
+    "python-dotenv>=1.0.0",
+    # MongoDB
+    "motor>=3.6.0",
+    "pymongo>=4.9.0",
+    # AI/LLM
+    "openai>=1.50.0",
+    "google-genai>=1.0.0",
+    "langchain>=0.3.0",
+    "langchain-openai>=0.2.0",
+    # Web scraping
+    "beautifulsoup4>=4.12.0",
+    "lxml>=5.3.0",
+    "playwright>=1.48.0",
+    # Audio
+    "elevenlabs>=1.10.0",
+    # Utils
+    "boto3>=1.35.0",
+    "pillow>=10.4.0",
+    "aiofiles>=24.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "black>=24.10.0",
+    "ruff>=0.8.0",
+    "mypy>=1.13.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true

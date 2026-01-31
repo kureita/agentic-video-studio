@@ -1,0 +1,61 @@
+from functools import lru_cache
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    """Application settings loaded from environment variables."""
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    # Application
+    app_name: str = "Kureita API"
+    debug: bool = False
+    api_base_url: str = "http://localhost:8000"  # Public URL of the API
+
+    # CORS (comma-separated string, use cors_origins_list property for list)
+    cors_origins: str = "http://localhost:3000"
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        """Get CORS origins as a list."""
+        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
+    # MongoDB
+    mongodb_url: str = "mongodb://localhost:27017"
+    mongodb_database: str = "kureita"
+
+    # AI/LLM APIs
+    openai_api_key: str = ""
+    gemini_api_key: str = ""  # Auto-picked by google-genai SDK
+    use_mock_veo: bool = True  # Set to False to use real Veo API
+
+    # Media Generation (Optional - Veo 3.1 includes native audio)
+    elevenlabs_api_key: str = ""  # Optional: for custom voiceovers
+    elevenlabs_voice_id: str = "21m00Tcm4TlvDq8ikWAM"
+
+    # AWS (S3, SES, and other AWS services)
+    aws_access_key_id: str = ""
+    aws_secret_access_key: str = ""
+    aws_region: str = "us-east-1"
+    s3_bucket: str = "kureita-assets"
+    s3_endpoint: str = ""  # Optional: for S3-compatible services (R2, MinIO)
+
+    # Remotion rendering service
+    remotion_url: str = "http://localhost:3001"  # Remotion render server
+    
+    # Optional
+    redis_url: str = "redis://localhost:6379"
+    firecrawl_api_key: str = ""
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
+
+
+settings = get_settings()
