@@ -31,8 +31,14 @@ class Settings(BaseSettings):
 
     # AI/LLM APIs
     openai_api_key: str = ""
-    gemini_api_key: str = ""  # Auto-picked by google-genai SDK
+    gemini_api_key: str = ""  # Can also use GOOGLE_API_KEY
+    google_api_key: str = ""  # Alternative to GEMINI_API_KEY
     use_mock_veo: bool = True  # Set to False to use real Veo API
+
+    @property
+    def google_ai_key(self) -> str:
+        """Get the Google API key (prefers GEMINI_API_KEY, falls back to GOOGLE_API_KEY)."""
+        return self.gemini_api_key or self.google_api_key
 
     # Media Generation (Optional - Veo 3.1 includes native audio)
     elevenlabs_api_key: str = ""  # Optional: for custom voiceovers

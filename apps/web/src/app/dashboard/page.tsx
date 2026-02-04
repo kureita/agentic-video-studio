@@ -1,261 +1,242 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Header } from "@/components/layout";
-import { Button, Card, Badge } from "@/components/ui";
-import { 
-  Plus, 
-  ArrowRight, 
-  Clock, 
-  Film,
-  ExternalLink,
-  Sparkles,
-  Loader2,
-  Trash2,
-  Workflow
-} from "lucide-react";
-import { projectsApi, Project } from "@/lib/api";
-
-const statusConfig = {
-  draft: { label: "Draft", variant: "default" as const },
-  analyzing: { label: "Analyzing", variant: "warning" as const },
-  generating: { label: "Generating", variant: "warning" as const },
-  processing: { label: "Processing", variant: "warning" as const },
-  completed: { label: "Completed", variant: "success" as const },
-  failed: { label: "Failed", variant: "error" as const },
-};
+import { useRouter } from "next/navigation";
+import { useEffect, useState, useCallback } from "react";
+import { Plus, MoreHorizontal, Clock, FileVideo, Trash2, Pencil, Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { workflowApi, WorkflowListItem } from "@/lib/workflow-api";
 
 export default function DashboardPage() {
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState({ total: 0, completed: 0, totalDuration: 0 });
+    const router = useRouter();
+    const [workflows, setWorkflows] = useState<WorkflowListItem[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const [editingId, setEditingId] = useState<string | null>(null);
+    const [editingName, setEditingName] = useState("");
+    const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchProjects();
-  }, []);
+    // Fetch workflows on mount
+    useEffect(() => {
+        loadWorkflows();
+    }, []);
 
-  const fetchProjects = async () => {
-    try {
-      const response = await projectsApi.list();
-      const allProjects = response.data;
-      setProjects(allProjects.slice(0, 5)); // Show only recent 5
-      
-      // Calculate stats
-      const completed = allProjects.filter(p => p.status === "completed").length;
-      const totalDuration = allProjects.reduce((acc, p) => acc + (p.video_duration || 0), 0);
-      setStats({ total: allProjects.length, completed, totalDuration });
-    } catch (err) {
-      console.error("Failed to fetch projects:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
+    const loadWorkflows = async () => {
+        setIsLoading(true);
+        setError(null);
+        try {
+            const response = await workflowApi.list();
+            setWorkflows(response.data);
+        } catch (err) {
+            console.error("Failed to load workflows:", err);
+            setError("Failed to load workflows");
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
-  const handleDelete = async (e: React.MouseEvent, projectId: string) => {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    if (!confirm("Are you sure you want to delete this project?")) return;
-    
-    try {
-      await projectsApi.delete(projectId);
-      fetchProjects(); // Refresh the list
-    } catch (err) {
-      console.error("Failed to delete project:", err);
-    }
-  };
+    const createNewWorkflow = useCallback(async () => {
+        try {
+            const response = await workflowApi.create("Untitled Workflow");
+            const newWorkflow = response.data;
+            router.push(`/dashboard/workflow/${newWorkflow.id}`);
+        } catch (err) {
+            console.error("Failed to create workflow:", err);
+            setError("Failed to create workflow");
+        }
+    }, [router]);
 
-  const formatDuration = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, "0")}`;
-  };
+    const handleRename = useCallback(async (id: string) => {
+        if (!editingName.trim()) {
+            setEditingId(null);
+            return;
+        }
+        try {
+            await workflowApi.update(id, { name: editingName.trim() });
+            setWorkflows((prev) =>
+                prev.map((w) => (w.id === id ? { ...w, name: editingName.trim() } : w))
+            );
+        } catch (err) {
+            console.error("Failed to rename workflow:", err);
+        }
+        setEditingId(null);
+        setMenuOpenId(null);
+    }, [editingName]);
 
-  const getStatus = (status: string) => {
-    return statusConfig[status as keyof typeof statusConfig] || statusConfig.draft;
-  };
+    const handleDelete = useCallback(async (id: string) => {
+        if (!confirm("Are you sure you want to delete this workflow?")) return;
+        try {
+            await workflowApi.delete(id);
+            setWorkflows((prev) => prev.filter((w) => w.id !== id));
+        } catch (err) {
+            console.error("Failed to delete workflow:", err);
+        }
+        setMenuOpenId(null);
+    }, []);
 
-  return (
-    <div className="min-h-screen bg-background">
-      <Header />
-      
-      <main className="container-wide py-12">
-        {/* Welcome Section */}
-        <div className="mb-12">
-          <h1 className="font-display text-display-sm text-foreground mb-2">
-            Welcome back
-          </h1>
-          <p className="text-foreground-muted text-lg">
-            Create and manage your AI-generated promotional videos
-          </p>
-        </div>
+    const startEditing = useCallback((workflow: WorkflowListItem) => {
+        setEditingId(workflow.id);
+        setEditingName(workflow.name);
+        setMenuOpenId(null);
+    }, []);
 
-        {/* Quick Actions */}
-        <div className="grid md:grid-cols-3 gap-6 mb-16">
-          <Link href="/projects/new">
-            <Card variant="interactive" className="h-full group">
-              <div className="flex items-start justify-between">
+    const formatDate = (dateString: string) => {
+        const date = new Date(dateString);
+        const now = new Date();
+        const diffMs = now.getTime() - date.getTime();
+        const diffMins = Math.floor(diffMs / 60000);
+        const diffHours = Math.floor(diffMins / 60);
+        const diffDays = Math.floor(diffHours / 24);
+
+        if (diffMins < 1) return "Just now";
+        if (diffMins < 60) return `${diffMins} min ago`;
+        if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? "s" : ""} ago`;
+        if (diffDays < 7) return `${diffDays} day${diffDays > 1 ? "s" : ""} ago`;
+        return date.toLocaleDateString();
+    };
+
+    return (
+        <div className="space-y-8 animate-fade-in">
+            <div className="flex items-center justify-between">
                 <div>
-                  <div className="w-12 h-12 rounded-xl bg-accent-muted flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                    <Plus className="w-6 h-6 text-accent" />
-                  </div>
-                  <h3 className="text-xl font-semibold text-foreground mb-2">
-                    Quick Create
-                  </h3>
-                  <p className="text-foreground-muted">
-                    Auto-generate video from a website URL
-                  </p>
+                    <h1 className="text-3xl font-bold tracking-tight">Workflows</h1>
+                    <p className="text-muted-foreground mt-2">
+                        Manage your creative automation pipelines.
+                    </p>
                 </div>
-                <ArrowRight className="w-5 h-5 text-foreground-subtle group-hover:text-foreground group-hover:translate-x-1 transition-all" />
-              </div>
-            </Card>
-          </Link>
-
-          <Link href="/canvas">
-            <Card variant="interactive" className="h-full group">
-              <div className="flex items-start justify-between">
-                <div>
-                  <div className="w-12 h-12 rounded-xl bg-emerald-500/10 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                    <Workflow className="w-6 h-6 text-emerald-500" />
-                  </div>
-                  <h3 className="text-xl font-semibold text-foreground mb-2">
-                    Canvas Studio
-                  </h3>
-                  <p className="text-foreground-muted">
-                    Full control with visual pipeline editor
-                  </p>
-                </div>
-                <ArrowRight className="w-5 h-5 text-foreground-subtle group-hover:text-foreground group-hover:translate-x-1 transition-all" />
-              </div>
-            </Card>
-          </Link>
-
-          <Card className="h-full">
-            <div className="flex items-start justify-between">
-              <div className="w-full">
-                <div className="w-12 h-12 rounded-xl bg-background-secondary flex items-center justify-center mb-4">
-                  <Sparkles className="w-6 h-6 text-foreground" />
-                </div>
-                <h3 className="text-xl font-semibold text-foreground mb-2">
-                  Quick Stats
-                </h3>
-                {loading ? (
-                  <div className="flex items-center justify-center h-16">
-                    <Loader2 className="w-5 h-5 animate-spin text-foreground-muted" />
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-3 gap-6 mt-4">
-                    <div>
-                      <p className="text-2xl font-semibold text-foreground">{stats.total}</p>
-                      <p className="text-sm text-foreground-muted">Videos Created</p>
-                    </div>
-                    <div>
-                      <p className="text-2xl font-semibold text-foreground">{stats.completed}</p>
-                      <p className="text-sm text-foreground-muted">Completed</p>
-                    </div>
-                    <div>
-                      <p className="text-2xl font-semibold text-foreground">{formatDuration(stats.totalDuration)}</p>
-                      <p className="text-sm text-foreground-muted">Total Duration</p>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </Card>
-        </div>
-
-        {/* Recent Projects */}
-        <div>
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xl font-semibold text-foreground">
-              Recent Projects
-            </h2>
-            <Link href="/projects">
-              <Button variant="ghost" size="sm" icon={<ArrowRight className="w-4 h-4" />} iconPosition="right">
-                View All
-              </Button>
-            </Link>
-          </div>
-
-          {loading ? (
-            <div className="flex items-center justify-center h-32">
-              <Loader2 className="w-6 h-6 animate-spin text-foreground-muted" />
-            </div>
-          ) : projects.length > 0 ? (
-            <div className="grid gap-4">
-              {projects.map((project) => (
-                <Link key={project.id} href={`/projects/${project.id}`}>
-                  <Card variant="interactive" className="p-0 overflow-hidden">
-                    <div className="flex items-center">
-                      {/* Thumbnail */}
-                      <div className="w-48 h-28 bg-gradient-to-br from-background-secondary to-background-tertiary flex items-center justify-center border-r border-border flex-shrink-0 overflow-hidden">
-                        {project.thumbnail_url ? (
-                          <img 
-                            src={project.thumbnail_url} 
-                            alt={project.brand_name || "Project"} 
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <Film className="w-8 h-8 text-foreground-subtle" />
-                        )}
-                      </div>
-
-                      {/* Content */}
-                      <div className="flex-1 p-5">
-                        <div className="flex items-start justify-between">
-                          <div>
-                            <h3 className="font-medium text-foreground mb-1">
-                              {project.brand_name || "Untitled Project"}
-                            </h3>
-                            <div className="flex items-center gap-3 text-sm text-foreground-muted">
-                              <span className="flex items-center gap-1.5">
-                                <ExternalLink className="w-3.5 h-3.5" />
-                                {new URL(project.website_url).hostname}
-                              </span>
-                              <span className="flex items-center gap-1.5">
-                                <Clock className="w-3.5 h-3.5" />
-                                {formatDuration(project.video_duration)}
-                              </span>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <Badge variant={getStatus(project.status).variant}>
-                              {getStatus(project.status).label}
-                            </Badge>
-                            <button 
-                              className="p-2 rounded-lg hover:bg-red-500/10 text-foreground-subtle hover:text-red-500 transition-colors"
-                              onClick={(e) => handleDelete(e, project.id)}
-                              title="Delete project"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </Card>
-                </Link>
-              ))}
-            </div>
-          ) : (
-            <Card className="text-center py-12">
-              <Film className="w-12 h-12 text-foreground-subtle mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-foreground mb-2">
-                No projects yet
-              </h3>
-              <p className="text-foreground-muted mb-6">
-                Create your first AI-generated promo video
-              </p>
-              <Link href="/projects/new">
-                <Button icon={<Plus className="w-4 h-4" />}>
-                  New Project
+                <Button onClick={createNewWorkflow} size="lg" className="shadow-lg shadow-primary/20">
+                    <Plus className="mr-2 h-4 w-4" />
+                    New Workflow
                 </Button>
-              </Link>
-            </Card>
-          )}
+            </div>
+
+            {error && (
+                <div className="bg-destructive/10 text-destructive px-4 py-3 rounded-lg">
+                    {error}
+                </div>
+            )}
+
+            {isLoading ? (
+                <div className="flex items-center justify-center py-16">
+                    <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+                </div>
+            ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {workflows.map((workflow) => (
+                        <div key={workflow.id} className="group relative">
+                            <Link
+                                href={`/dashboard/workflow/${workflow.id}`}
+                                className="block"
+                            >
+                                <div className="relative aspect-video rounded-lg border border-border bg-card overflow-hidden transition-all hover:border-accent hover:shadow-md">
+                                    <div className="absolute inset-0 bg-muted/20 flex items-center justify-center p-8">
+                                        <div className="w-16 h-16 rounded-full bg-background/50 flex items-center justify-center text-muted-foreground group-hover:bg-background group-hover:text-accent transition-colors">
+                                            <FileVideo className="w-8 h-8" />
+                                        </div>
+                                    </div>
+
+                                    {/* Node count badge */}
+                                    {workflow.node_count > 0 && (
+                                        <div className="absolute bottom-2 left-2 px-2 py-1 bg-background/80 backdrop-blur-sm rounded text-xs text-muted-foreground">
+                                            {workflow.node_count} nodes
+                                        </div>
+                                    )}
+                                </div>
+                            </Link>
+
+                            {/* Overlay Actions */}
+                            <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <div className="relative">
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8 bg-background/50 hover:bg-background"
+                                        onClick={(e) => {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            setMenuOpenId(menuOpenId === workflow.id ? null : workflow.id);
+                                        }}
+                                    >
+                                        <MoreHorizontal className="w-4 h-4" />
+                                    </Button>
+
+                                    {/* Dropdown Menu */}
+                                    {menuOpenId === workflow.id && (
+                                        <div className="absolute right-0 top-full mt-1 w-36 bg-popover border border-border rounded-md shadow-lg py-1 z-50">
+                                            <button
+                                                className="w-full px-3 py-1.5 text-left text-sm hover:bg-muted flex items-center gap-2"
+                                                onClick={(e) => {
+                                                    e.preventDefault();
+                                                    e.stopPropagation();
+                                                    startEditing(workflow);
+                                                }}
+                                            >
+                                                <Pencil className="w-3.5 h-3.5" />
+                                                Rename
+                                            </button>
+                                            <button
+                                                className="w-full px-3 py-1.5 text-left text-sm text-destructive hover:bg-destructive/10 flex items-center gap-2"
+                                                onClick={(e) => {
+                                                    e.preventDefault();
+                                                    e.stopPropagation();
+                                                    handleDelete(workflow.id);
+                                                }}
+                                            >
+                                                <Trash2 className="w-3.5 h-3.5" />
+                                                Delete
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="mt-3">
+                                {editingId === workflow.id ? (
+                                    <input
+                                        type="text"
+                                        value={editingName}
+                                        onChange={(e) => setEditingName(e.target.value)}
+                                        onBlur={() => handleRename(workflow.id)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === "Enter") handleRename(workflow.id);
+                                            if (e.key === "Escape") setEditingId(null);
+                                        }}
+                                        autoFocus
+                                        className="font-medium bg-transparent border-b border-primary outline-none w-full"
+                                    />
+                                ) : (
+                                    <h3 className="font-medium truncate group-hover:text-primary transition-colors">
+                                        {workflow.name}
+                                    </h3>
+                                )}
+                                <div className="flex items-center text-xs text-muted-foreground mt-1">
+                                    <Clock className="w-3 h-3 mr-1" />
+                                    <span>Edited {formatDate(workflow.updated_at)}</span>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+
+                    {/* Create New Placeholder Card */}
+                    <button
+                        onClick={createNewWorkflow}
+                        className="group relative aspect-video rounded-lg border border-dashed border-border bg-transparent hover:border-accent/50 hover:bg-accent/5 transition-all flex flex-col items-center justify-center gap-2 text-muted-foreground hover:text-accent"
+                    >
+                        <div className="w-12 h-12 rounded-full border border-current flex items-center justify-center mb-2">
+                            <Plus className="w-6 h-6" />
+                        </div>
+                        <span className="font-medium text-sm">Create new workflow</span>
+                    </button>
+                </div>
+            )}
+
+            {/* Close menu when clicking outside */}
+            {menuOpenId && (
+                <div
+                    className="fixed inset-0 z-40"
+                    onClick={() => setMenuOpenId(null)}
+                />
+            )}
         </div>
-      </main>
-    </div>
-  );
+    );
 }

@@ -1,0 +1,45 @@
+[
+  {
+    "name": "hello_frog",
+    "nodes": [
+      {
+        "id": "tazy1i",
+        "type": "text",
+        "position": {
+          "x": 396.4116620062257,
+          "y": 331.4725516279043
+        },
+        "data": {
+          "label": "text node",
+          "isRunning": false,
+          "text": "Frog with a hat"
+        }
+      },
+      {
+        "id": "5f39xm",
+        "type": "imageGen",
+        "position": {
+          "x": 1024.0819094094927,
+          "y": 132.53445033954586
+        },
+        "data": {
+          "label": "imageGen node"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "xy-edge__tazy1itext|text-5f39xmtext|prompt",
+        "source": "tazy1i",
+        "target": "5f39xm",
+        "sourceHandle": "text|text",
+        "targetHandle": "text|prompt"
+      }
+    ],
+    "outputs": {},
+    "created_at": "2026-02-04T10:08:09.970964+00:00",
+    "updated_at": "2026-02-04T10:24:20.682357+00:00",
+    "_id": "69831a89cbd8df36392940d1",
+    "outputs.5f39xm": "https://picsum.photos/seed/1770200434/1344/768"
+  }
+]

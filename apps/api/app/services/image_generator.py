@@ -28,8 +28,8 @@ class ImageGenerator:
             self.client = None
         else:
             # Set API key in environment for SDK auto-pickup
-            if settings.gemini_api_key:
-                os.environ["GEMINI_API_KEY"] = settings.gemini_api_key
+            if settings.google_ai_key:
+                os.environ["GEMINI_API_KEY"] = settings.google_ai_key
             
             self.client = genai.Client()
             print("[ImageGenerator] Running in PRODUCTION mode - using Gemini Image API")
