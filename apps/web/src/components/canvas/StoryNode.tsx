@@ -3,18 +3,18 @@
 import { memo, useState } from "react";
 import { NodeProps } from "@xyflow/react";
 import { BookOpen, Sparkles, Loader2, Pencil, Check, X, Wand2 } from "lucide-react";
-import { 
-  BaseNode, 
-  BaseNodeHeader, 
-  BaseNodeContent, 
+import {
+  BaseNode,
+  BaseNodeHeader,
+  BaseNodeContent,
   BaseNodeFooter,
-  BaseNodeError 
+  BaseNodeError
 } from "./BaseNode";
 import { Button, Textarea } from "@/components/ui";
-import { 
-  useCanvasStore, 
-  visualStyleOptions, 
-  themeOptions, 
+import {
+  useCanvasStore,
+  visualStyleOptions,
+  themeOptions,
   directionOptions,
   durationOptions,
   storyTemplates,
@@ -22,11 +22,13 @@ import {
 } from "@/lib/canvas-store";
 import { canvasApi } from "@/lib/api";
 
-type StoryNodeData = {
+interface StoryNodeData {
   onProceed?: () => void;
-};
+  [key: string]: unknown;
+}
 
-export const StoryNode = memo(function StoryNode({ data }: NodeProps<StoryNodeData>) {
+export const StoryNode = memo(function StoryNode({ data }: NodeProps) {
+  const nodeData = data as StoryNodeData;
   const {
     projectId,
     brandData,
@@ -40,6 +42,10 @@ export const StoryNode = memo(function StoryNode({ data }: NodeProps<StoryNodeDa
     setNodeStatus,
     setError,
     errors,
+    trendData,
+    inspirationBrief,
+    storyStrategy,
+    setStoryBeats,
   } = useCanvasStore();
 
   const [isEditing, setIsEditing] = useState(false);
@@ -64,6 +70,29 @@ export const StoryNode = memo(function StoryNode({ data }: NodeProps<StoryNodeDa
     setNodeStatus("story", "loading");
     setError("story", null);
 
+    // Build context from previous steps
+    let contextParts = [];
+
+    if (storyOptions.additionalNotes) {
+      contextParts.push(`User Notes: ${storyOptions.additionalNotes}`);
+    }
+
+    if (trendData) {
+      contextParts.push(`[TREND RESEARCH]\nQuery: ${trendData.query}\nPlatform: ${trendData.platform}\nSummary: ${trendData.summary || "N/A"}`);
+    }
+
+    if (inspirationBrief) {
+      contextParts.push(`[INSPIRATION]\nKey Elements: ${inspirationBrief.keyElements?.join(", ") || "N/A"}\nViral Hooks: ${inspirationBrief.viralHooks?.join(", ") || "N/A"}\nAngles: ${inspirationBrief.suggestedAngles?.join(", ") || "N/A"}`);
+    }
+
+    if (storyStrategy) {
+      const hooks = storyStrategy.hooks?.map(h => h.content).join(" | ");
+      const structure = storyStrategy.contentStructure?.map(b => `${b.name}: ${b.purpose}`).join("\n");
+      contextParts.push(`[STRATEGY]\nObjective: ${storyStrategy.objective}\nKey Message: ${storyStrategy.keyMessage}\nHooks: ${hooks}\nStructure:\n${structure}`);
+    }
+
+    const fullContext = contextParts.join("\n\n");
+
     try {
       const response = await canvasApi.generateStory(projectId, {
         theme: storyOptions.theme,
@@ -71,16 +100,32 @@ export const StoryNode = memo(function StoryNode({ data }: NodeProps<StoryNodeDa
         direction: storyOptions.direction,
         duration: storyOptions.duration,
         target_audience: storyOptions.targetAudience,
-        additional_notes: storyOptions.additionalNotes,
+        additional_notes: fullContext,
       });
 
       const { story, scenes: newScenes } = response.data;
       setStoryData(story);
       setScenes(newScenes);
+
+      // Convert scenes to beats for granular flow
+      const beats = newScenes.map((scene, idx) => ({
+        id: scene.id.toString(),
+        index: idx,
+        name: `Beat ${idx + 1}`,
+        description: scene.description,
+        script: scene.voiceover_text || scene.description,
+        visualPrompt: scene.visual_prompt,
+        videoPrompt: `${storyOptions.visualStyle} style. ${scene.visual_prompt}`,
+        durationSeconds: scene.end_time - scene.start_time,
+        purpose: "Visual beat",
+        generationStatus: "idle" as const,
+      }));
+      setStoryBeats(beats);
+
       setNodeStatus("story", "success");
-      
-      if (data?.onProceed) {
-        data.onProceed();
+
+      if (nodeData?.onProceed) {
+        nodeData.onProceed();
       }
     } catch (err) {
       console.error("Failed to generate story:", err);
@@ -109,12 +154,12 @@ export const StoryNode = memo(function StoryNode({ data }: NodeProps<StoryNodeDa
 
   const handleImproveWithAI = async () => {
     if (!projectId) return;
-    
+
     setIsImproving(true);
-    
+
     try {
       // Build script text from edited scenes
-      const scriptText = editedScenes.map(s => 
+      const scriptText = editedScenes.map(s =>
         `Scene ${s.id}: ${s.description}\nVisual: ${s.visual_prompt}`
       ).join("\n\n");
 
@@ -124,7 +169,7 @@ export const StoryNode = memo(function StoryNode({ data }: NodeProps<StoryNodeDa
       });
 
       const { story, scenes: improvedScenes } = response.data;
-      
+
       // Update the edit fields with improved content
       setEditedSynopsis(story.synopsis || editedSynopsis);
       setEditedScenes(improvedScenes.map((s: SceneData) => ({
@@ -132,7 +177,23 @@ export const StoryNode = memo(function StoryNode({ data }: NodeProps<StoryNodeDa
         description: s.description,
         visual_prompt: s.visual_prompt,
       })));
-      
+
+      // Sync beats
+      const beats = improvedScenes.map((scene: SceneData, idx: number) => ({
+        id: scene.id.toString(),
+        index: idx,
+        name: `Beat ${idx + 1}`,
+        description: scene.description,
+        script: scene.voiceover_text || scene.description,
+        visualPrompt: scene.visual_prompt,
+        videoPrompt: `${storyOptions.visualStyle} style. ${scene.visual_prompt}`,
+        durationSeconds: scene.end_time - scene.start_time,
+        purpose: "Visual beat",
+        generationStatus: "idle" as const,
+      }));
+      setStoryBeats(beats);
+      setScenes(improvedScenes);
+
     } catch (err) {
       console.error("Failed to improve with AI:", err);
     } finally {
@@ -142,13 +203,13 @@ export const StoryNode = memo(function StoryNode({ data }: NodeProps<StoryNodeDa
 
   const handleSaveEdit = () => {
     if (!storyData) return;
-    
+
     // Update story data
     setStoryData({
       ...storyData,
       synopsis: editedSynopsis,
     });
-    
+
     // Update scenes
     const updatedScenes = scenes.map(scene => {
       const edited = editedScenes.find(e => e.id === scene.id);
@@ -162,12 +223,27 @@ export const StoryNode = memo(function StoryNode({ data }: NodeProps<StoryNodeDa
       return scene;
     });
     setScenes(updatedScenes);
-    
+
+    // Sync beats
+    const beats = updatedScenes.map((scene, idx) => ({
+      id: scene.id.toString(),
+      index: idx,
+      name: `Beat ${idx + 1}`,
+      description: scene.description,
+      script: scene.voiceover_text || scene.description,
+      visualPrompt: scene.visual_prompt,
+      videoPrompt: `${storyOptions.visualStyle} style. ${scene.visual_prompt}`,
+      durationSeconds: scene.end_time - scene.start_time,
+      purpose: "Visual beat",
+      generationStatus: "idle" as const,
+    }));
+    setStoryBeats(beats);
+
     setIsEditing(false);
   };
 
   const handleUpdateSceneField = (id: number, field: "description" | "visual_prompt", value: string) => {
-    setEditedScenes(prev => prev.map(s => 
+    setEditedScenes(prev => prev.map(s =>
       s.id === id ? { ...s, [field]: value } : s
     ));
   };
@@ -238,11 +314,10 @@ export const StoryNode = memo(function StoryNode({ data }: NodeProps<StoryNodeDa
                       <button
                         key={opt.id}
                         onClick={() => setStoryOptions({ visualStyle: opt.id })}
-                        className={`p-2 rounded-lg border text-left transition-colors nodrag ${
-                          storyOptions.visualStyle === opt.id
-                            ? "border-foreground bg-background-secondary"
-                            : "border-border hover:border-foreground-subtle"
-                        }`}
+                        className={`p-2 rounded-lg border text-left transition-colors nodrag ${storyOptions.visualStyle === opt.id
+                          ? "border-foreground bg-background-secondary"
+                          : "border-border hover:border-foreground-subtle"
+                          }`}
                       >
                         <p className="text-xs font-medium text-foreground">{opt.label}</p>
                       </button>
@@ -258,11 +333,10 @@ export const StoryNode = memo(function StoryNode({ data }: NodeProps<StoryNodeDa
                       <button
                         key={opt.value}
                         onClick={() => setStoryOptions({ duration: opt.value })}
-                        className={`flex-1 p-2 rounded-lg border text-center transition-colors nodrag ${
-                          storyOptions.duration === opt.value
-                            ? "border-foreground bg-background-secondary"
-                            : "border-border hover:border-foreground-subtle"
-                        }`}
+                        className={`flex-1 p-2 rounded-lg border text-center transition-colors nodrag ${storyOptions.duration === opt.value
+                          ? "border-foreground bg-background-secondary"
+                          : "border-border hover:border-foreground-subtle"
+                          }`}
                       >
                         <p className="font-medium text-foreground">{opt.label}</p>
                       </button>
@@ -340,7 +414,7 @@ export const StoryNode = memo(function StoryNode({ data }: NodeProps<StoryNodeDa
                         Scene {idx + 1}
                       </span>
                     </div>
-                    
+
                     <div>
                       <label className="block text-xs text-foreground-muted mb-1">Description</label>
                       <Textarea
@@ -350,7 +424,7 @@ export const StoryNode = memo(function StoryNode({ data }: NodeProps<StoryNodeDa
                         className="text-xs nodrag nowheel"
                       />
                     </div>
-                    
+
                     <div>
                       <label className="block text-xs text-foreground-muted mb-1">Visual Prompt</label>
                       <Textarea

@@ -3,18 +3,20 @@
 import { memo, useState } from "react";
 import { NodeProps } from "@xyflow/react";
 import { Download, Loader2, Check, Play, Share2, Film } from "lucide-react";
-import { 
-  BaseNode, 
-  BaseNodeHeader, 
-  BaseNodeContent, 
+import {
+  BaseNode,
+  BaseNodeHeader,
+  BaseNodeContent,
   BaseNodeFooter,
-  BaseNodeError 
+  BaseNodeError
 } from "./BaseNode";
 import { Button } from "@/components/ui";
 import { useCanvasStore } from "@/lib/canvas-store";
 import { canvasApi } from "@/lib/api";
 
-type RenderNodeData = Record<string, unknown>;
+interface RenderNodeData {
+  [key: string]: unknown;
+}
 
 const resolutionOptions = [
   { id: "720p", label: "720p" },
@@ -22,7 +24,7 @@ const resolutionOptions = [
   { id: "4k", label: "4K" },
 ];
 
-export const RenderNode = memo(function RenderNode({}: NodeProps<RenderNodeData>) {
+export const RenderNode = memo(function RenderNode({ data }: NodeProps) {
   const {
     projectId,
     compositionUrl,
@@ -103,11 +105,10 @@ export const RenderNode = memo(function RenderNode({}: NodeProps<RenderNodeData>
                   <button
                     key={opt.id}
                     onClick={() => setResolution(opt.id)}
-                    className={`flex-1 p-2 rounded-lg border text-center transition-colors nodrag ${
-                      resolution === opt.id
+                    className={`flex-1 p-2 rounded-lg border text-center transition-colors nodrag ${resolution === opt.id
                         ? "border-foreground bg-background-secondary"
                         : "border-border"
-                    }`}
+                      }`}
                   >
                     <p className="font-medium text-foreground text-sm">{opt.label}</p>
                   </button>

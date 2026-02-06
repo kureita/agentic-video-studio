@@ -3,27 +3,29 @@
 import { memo, useState, useEffect } from "react";
 import { NodeProps } from "@xyflow/react";
 import { Image as ImageIcon, Sparkles, Loader2, RotateCcw, Check, Pencil, X, Wand2 } from "lucide-react";
-import { 
-  BaseNode, 
-  BaseNodeHeader, 
-  BaseNodeContent, 
+import {
+  BaseNode,
+  BaseNodeHeader,
+  BaseNodeContent,
   BaseNodeFooter,
-  BaseNodeError 
+  BaseNodeError
 } from "./BaseNode";
 import { Button, Textarea } from "@/components/ui";
 import { useCanvasStore, SceneData } from "@/lib/canvas-store";
 import { canvasApi } from "@/lib/api";
 
-type ImageNodeData = {
+interface ImageNodeData {
   onProceed?: () => void;
-};
+  [key: string]: unknown;
+}
 
 interface EditablePrompt {
   id: number;
   visual_prompt: string;
 }
 
-export const ImageNode = memo(function ImageNode({ data }: NodeProps<ImageNodeData>) {
+export const ImageNode = memo(function ImageNode({ data }: NodeProps) {
+  const nodeData = data as ImageNodeData;
   const {
     projectId,
     scenes,
@@ -82,16 +84,16 @@ export const ImageNode = memo(function ImageNode({ data }: NodeProps<ImageNodeDa
   };
 
   const handleUpdatePrompt = (id: number, value: string) => {
-    setEditedPrompts(prev => prev.map(p => 
+    setEditedPrompts(prev => prev.map(p =>
       p.id === id ? { ...p, visual_prompt: value } : p
     ));
   };
 
   const handleImproveWithAI = async () => {
     if (!projectId) return;
-    
+
     setIsImproving(true);
-    
+
     try {
       const response = await canvasApi.improveImagePrompts(projectId, {
         prompts: editedPrompts.map(p => ({
@@ -126,15 +128,15 @@ export const ImageNode = memo(function ImageNode({ data }: NodeProps<ImageNodeDa
 
       const { scenes: updatedScenes } = response.data;
       updatedScenes.forEach((scene: SceneData) => {
-        updateScene(scene.id, { 
+        updateScene(scene.id, {
           image_url: scene.image_url,
           image_prompt: scene.image_prompt,
         });
       });
 
       setNodeStatus("images", "success");
-      if (data?.onProceed) {
-        data.onProceed();
+      if (nodeData?.onProceed) {
+        nodeData.onProceed();
       }
     } catch (err) {
       console.error("Failed to generate images:", err);
@@ -145,7 +147,7 @@ export const ImageNode = memo(function ImageNode({ data }: NodeProps<ImageNodeDa
 
   const handleRegenerateSingleImage = async (sceneId: number) => {
     if (!projectId) return;
-    
+
     setGeneratingScene(sceneId);
     try {
       const scene = scenes.find((s) => s.id === sceneId);
@@ -153,8 +155,8 @@ export const ImageNode = memo(function ImageNode({ data }: NodeProps<ImageNodeDa
         prompt: scene?.image_prompt || scene?.visual_prompt,
         visual_style: storyOptions.visualStyle,
       });
-      
-      updateScene(sceneId, { 
+
+      updateScene(sceneId, {
         image_url: response.data.image_url,
         image_prompt: response.data.image_prompt,
       });
@@ -219,7 +221,7 @@ export const ImageNode = memo(function ImageNode({ data }: NodeProps<ImageNodeDa
                       {scenes[idx]?.start_time}s - {scenes[idx]?.end_time}s
                     </span>
                   </div>
-                  
+
                   <Textarea
                     value={prompt.visual_prompt}
                     onChange={(e) => handleUpdatePrompt(prompt.id, e.target.value)}
@@ -237,7 +239,7 @@ export const ImageNode = memo(function ImageNode({ data }: NodeProps<ImageNodeDa
         {!isEditing && (
           <>
             <p className="text-sm text-foreground-muted mb-4">
-              {allImagesGenerated 
+              {allImagesGenerated
                 ? "All images generated. You can regenerate individual images."
                 : "Review and edit prompts before generating images."
               }

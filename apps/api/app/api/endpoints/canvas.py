@@ -2,6 +2,7 @@
 
 from datetime import datetime, timezone
 from typing import Optional, List
+import os
 
 from bson import ObjectId
 from fastapi import APIRouter, HTTPException
@@ -17,6 +18,7 @@ from app.services.video_composer import VideoComposer
 from app.agents.brand_analyzer import BrandAnalyzer
 from app.agents.storyteller import Storyteller
 from app.agents.script_writer import ScriptWriter
+from app.services.frame_extractor import FrameExtractor
 
 router = APIRouter(prefix="/canvas", tags=["canvas"])
 
@@ -89,6 +91,12 @@ class VideoResponse(BaseModel):
     scenes: List[dict]
 
 
+
+class VideoRegenerateRequest(BaseModel):
+    prompt: Optional[str] = None
+    image_url: Optional[str] = None
+
+
 class SingleVideoResponse(BaseModel):
     video_url: str
 
@@ -109,6 +117,15 @@ class RenderRequest(BaseModel):
 
 class RenderResponse(BaseModel):
     video_url: str
+
+
+class ExtractFrameRequest(BaseModel):
+    video_url: str
+    num_frames: int = 1
+
+
+class ExtractFrameResponse(BaseModel):
+    frame_url: str
 
 
 class CanvasStateRequest(BaseModel):
@@ -296,6 +313,7 @@ async def generate_story(project_id: str, request: StoryOptionsRequest):
             brand_profile=brand_profile,
             video_duration=request.duration,
             style=video_style,
+            additional_context=request.additional_notes,
         )
         
         print(f"[Canvas] Script created with {len(scenes)} scenes")
@@ -472,19 +490,20 @@ async def improve_image_prompts(project_id: str, request: ImproveImagePromptsReq
 Your task is to improve the given visual prompts to produce better, more consistent, and more visually appealing images.
 
 For each prompt, enhance it by:
-1. Adding specific visual details (lighting, camera angle, composition)
-2. Including style descriptors that match the visual style
-3. Adding atmosphere and mood elements
-4. Ensuring consistency across scenes (similar visual language)
-5. Making prompts more descriptive for AI image generation
+1. MANDATORY: Include the Brand Name and relevant product details.
+2. Specify the narrative purpose of this shot (e.g., "illustrating growth").
+3. Add specific visual details (lighting, camera angle, composition).
+4. Include style descriptors that match the visual style.
+5. Add atmosphere and mood elements.
+6. Ensure consistency across scenes (similar visual language).
 
-Keep the core concept but make it more detailed and visually rich.
+The result must be a highly detailed, brand-aware prompt ready for a top-tier image generator.
 
 Return JSON:
 {
     "prompts": [
-        {"scene_id": 1, "visual_prompt": "Enhanced prompt text..."},
-        {"scene_id": 2, "visual_prompt": "Enhanced prompt text..."}
+        {"scene_id": 1, "visual_prompt": "Highly detailed brand-specific prompt..."},
+        {"scene_id": 2, "visual_prompt": "..."}
     ]
 }"""
 
@@ -684,14 +703,31 @@ async def generate_videos(project_id: str):
             
             if image_url and not image_url.startswith("https://picsum"):
                 # Use image-to-video if we have a real image
-                # Download image first (simplified - in production use proper download)
-                result = await video_generator.generate_clip(
-                    prompt=prompt,
-                    duration=8,
-                    use_fast_model=True,
-                    resolution="720p",
-                    aspect_ratio="16:9",
-                )
+                local_path = None
+                if "/static/images/" in image_url:
+                    filename = image_url.split("/static/images/")[-1]
+                    potential_path = f"static/images/{filename}"
+                    if os.path.exists(potential_path):
+                        local_path = potential_path
+                
+                if local_path:
+                    # Use local image path
+                    result = await video_generator.generate_from_image(
+                        prompt=prompt,
+                        image_path=local_path,
+                        duration=8,
+                        resolution="720p",
+                        aspect_ratio="16:9",
+                    )
+                else:
+                     # Fallback if path invalid
+                    result = await video_generator.generate_clip(
+                        prompt=prompt,
+                        duration=8,
+                        use_fast_model=True,
+                        resolution="720p",
+                        aspect_ratio="16:9",
+                    )
             else:
                 # Text-to-video fallback
                 result = await video_generator.generate_clip(
@@ -731,7 +767,7 @@ async def generate_videos(project_id: str):
 
 
 @router.post("/{project_id}/videos/{scene_id}", response_model=SingleVideoResponse)
-async def regenerate_video(project_id: str, scene_id: int):
+async def regenerate_video(project_id: str, scene_id: int, request: VideoRegenerateRequest = VideoRegenerateRequest()):
     """Regenerate a single scene video."""
     collection = get_projects_collection()
     video_generator = VideoGenerator()
@@ -751,19 +787,45 @@ async def regenerate_video(project_id: str, scene_id: int):
         visual_prompt = scene.get("visual_prompt", scene.get("description", ""))
         voiceover = scene.get("voiceover_text", "")
         
-        prompt = f"{style} style. {visual_prompt}"
-        if voiceover:
-            prompt += f' Narrator speaks: "{voiceover}"'
+        # Use provided prompt or build default
+        if request.prompt:
+            prompt = request.prompt
+        else:
+            prompt = f"{style} style. {visual_prompt}"
+            if voiceover:
+                prompt += f' Narrator speaks: "{voiceover}"'
         
         print(f"[Canvas] Regenerating video for scene {scene_id}...")
+
+        # Check for image - prioritize request image (from frontend/last frame) over scene image
+        image_url = request.image_url or scene.get("image_url")
+        result = None
         
-        result = await video_generator.generate_clip(
-            prompt=prompt,
-            duration=8,
-            use_fast_model=True,
-            resolution="720p",
-            aspect_ratio="16:9",
-        )
+        if image_url and not image_url.startswith("https://picsum"):
+             # Logic to resolve path
+             if "/static/images/" in image_url:
+                 filename = image_url.split("/static/images/")[-1]
+                 local_path = f"static/images/{filename}"
+                 
+                 if os.path.exists(local_path):
+                     print(f"[Canvas] Using image for generation: {local_path}")
+                     result = await video_generator.generate_from_image(
+                         prompt=prompt,
+                         image_path=local_path,
+                         duration=8,
+                         resolution="720p",
+                         aspect_ratio="16:9",
+                     )
+        
+        if not result:
+            print("[Canvas] Using text-to-video generation")
+            result = await video_generator.generate_clip(
+                prompt=prompt,
+                duration=8,
+                use_fast_model=True,
+                resolution="720p",
+                aspect_ratio="16:9",
+            )
         
         if not result.get("success"):
             raise HTTPException(status_code=500, detail=result.get("error", "Video generation failed"))
@@ -895,3 +957,15 @@ async def render_final_video(project_id: str, request: RenderRequest):
         print(f"[Canvas] Error rendering video: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@router.post("/{project_id}/video/extract-frame", response_model=ExtractFrameResponse)
+async def extract_video_frame(project_id: str, request: ExtractFrameRequest):
+    """Extract the last frame from a video for sequential generation."""
+    frame_extractor = FrameExtractor()
+    
+    try:
+        frame_url = await frame_extractor.extract_last_frame(request.video_url)
+        return ExtractFrameResponse(frame_url=frame_url)
+    except Exception as e:
+        print(f"[Canvas] Error extracting frame: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

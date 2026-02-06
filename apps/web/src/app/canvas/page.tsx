@@ -5,9 +5,9 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { ArrowLeft, RotateCcw, Loader2, FolderOpen, Save, Check } from "lucide-react";
-import { Header } from "@/components/layout";
 import { Button } from "@/components/ui";
 import { useCanvasStore } from "@/lib/canvas-store";
+import { ChatOverlay } from "@/components/canvas"; // Import the Sidebar component
 import { canvasApi, projectsApi, Project } from "@/lib/api";
 
 // Dynamically import React Flow to avoid SSR issues
@@ -26,19 +26,15 @@ const CanvasFlow = dynamic(() => import("./CanvasFlow"), {
 export default function CanvasPage() {
   const searchParams = useSearchParams();
   const projectIdParam = searchParams.get("project");
-  
-  const { 
-    reset, 
-    nodeStatuses, 
-    projectId, 
+
+  const {
+    reset,
+    nodeStatuses,
+    projectId,
     loadFromProject,
-    setNodeStatus,
-    setBrandData,
-    setStoryData,
-    setScenes,
-    setStoryOptions,
     setCanvasNodes,
     setCanvasEdges,
+    applyGraphPlan // Destructure this to pass to Chat
   } = useCanvasStore();
 
   const [isLoading, setIsLoading] = useState(false);
@@ -121,7 +117,7 @@ export default function CanvasPage() {
 
   const handleManualSave = async () => {
     if (!projectId) return;
-    
+
     const state = useCanvasStore.getState();
     try {
       await canvasApi.saveState(projectId, state.canvasNodes, state.canvasEdges);
@@ -135,7 +131,7 @@ export default function CanvasPage() {
   if (isLoading) {
     return (
       <div className="h-screen flex flex-col bg-background">
-        <Header />
+        {/* Removed Header */}
         <div className="flex-1 flex items-center justify-center">
           <div className="flex items-center gap-3 text-foreground-muted">
             <Loader2 className="w-5 h-5 animate-spin" />
@@ -147,34 +143,36 @@ export default function CanvasPage() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-background">
-      <Header />
+    <div className="h-screen flex flex-col bg-background overflow-hidden font-sans">
 
-      {/* Canvas Header */}
-      <div className="border-b border-border bg-background/80 backdrop-blur-sm px-6 py-3 flex items-center justify-between shrink-0">
+      {/* Canvas Header - Compact IDE Style */}
+      <div className="border-b border-border bg-background/95 backdrop-blur-sm px-4 py-2 flex items-center justify-between shrink-0 h-14 z-20">
         <div className="flex items-center gap-4">
           <Link
             href="/dashboard"
-            className="flex items-center gap-2 text-foreground-muted hover:text-foreground transition-colors"
+            className="flex items-center gap-2 text-foreground-muted hover:text-foreground transition-colors group"
           >
-            <ArrowLeft className="w-4 h-4" />
-            <span>Back</span>
+            <div className="w-6 h-6 flex items-center justify-center rounded-md group-hover:bg-background-secondary transition-colors">
+              <ArrowLeft className="w-4 h-4" />
+            </div>
+            <span className="text-sm font-medium">Back</span>
           </Link>
-          <div className="w-px h-6 bg-border" />
-          <h1 className="font-semibold text-foreground">Video Pipeline Canvas</h1>
+          <div className="w-px h-5 bg-border" />
+          <h1 className="font-semibold text-sm text-foreground">Video Pipeline Canvas</h1>
           {projectId && (
-            <span className="text-xs text-foreground-muted bg-background-secondary px-2 py-1 rounded-md font-mono">
+            <span className="text-[10px] text-foreground-muted bg-background-secondary px-1.5 py-0.5 rounded font-mono border border-border/50">
               {projectId.slice(0, 8)}...
             </span>
           )}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1">
           <Button
             variant="ghost"
             size="sm"
             onClick={handleOpenProject}
-            icon={<FolderOpen className="w-4 h-4" />}
+            icon={<FolderOpen className="w-3.5 h-3.5" />}
+            className="h-8 text-xs"
           >
             Open
           </Button>
@@ -183,7 +181,8 @@ export default function CanvasPage() {
               variant="ghost"
               size="sm"
               onClick={handleManualSave}
-              icon={isSaved ? <Check className="w-4 h-4 text-emerald-500" /> : <Save className="w-4 h-4" />}
+              icon={isSaved ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Save className="w-3.5 h-3.5" />}
+              className="h-8 text-xs"
             >
               {isSaved ? "Saved" : "Save"}
             </Button>
@@ -192,40 +191,94 @@ export default function CanvasPage() {
             variant="ghost"
             size="sm"
             onClick={handleReset}
-            icon={<RotateCcw className="w-4 h-4" />}
+            icon={<RotateCcw className="w-3.5 h-3.5" />}
+            className="h-8 text-xs"
           >
             New
           </Button>
         </div>
       </div>
 
+      {/* Main Workspace Area (Split Pane) */}
+      <div className="flex-1 flex overflow-hidden relative">
+
+        {/* Left Pane: Canvas & Status */}
+        <div className="flex-1 flex flex-col relative min-w-0">
+
+          {/* React Flow Canvas */}
+          <div className="flex-1 relative bg-background-secondary/5">
+            <CanvasFlow />
+          </div>
+
+          {/* Status Bar - Compact */}
+          <div className="border-t border-border bg-background/95 backdrop-blur-sm px-4 py-1.5 shrink-0 z-10 flex items-center justify-between">
+            <div className="flex items-center gap-6">
+              {Object.entries(nodeStatuses).map(([key, status]) => (
+                <div key={key} className="flex items-center gap-1.5 opacity-80 hover:opacity-100 transition-opacity">
+                  <div
+                    className={`w-1.5 h-1.5 rounded-full ${status === "success"
+                        ? "bg-emerald-500"
+                        : status === "loading"
+                          ? "bg-amber-500 animate-pulse"
+                          : status === "error"
+                            ? "bg-red-500"
+                            : "bg-foreground-subtle"
+                      }`}
+                  />
+                  <span className="text-[10px] uppercase tracking-wide font-medium text-foreground-muted">{key}</span>
+                </div>
+              ))}
+            </div>
+            <div className="text-[10px] text-foreground-muted">
+              Wait for AI completion before editing manually.
+            </div>
+          </div>
+        </div>
+
+        {/* Right Pane: AI Assistant Sidebar */}
+        <div className="w-[360px] border-l border-border bg-background h-full shrink-0 z-30 flex flex-col shadow-[-1px_0_0_0_rgba(0,0,0,0.05)]">
+          <ChatOverlay
+            onPlanReceived={(plan) => {
+              console.log("Plan from Sidebar:", plan);
+              applyGraphPlan(plan);
+            }}
+          />
+        </div>
+
+      </div>
+
       {/* Project Picker Modal */}
       {showProjectPicker && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-background border border-border rounded-xl shadow-xl w-full max-w-md p-6">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-md p-6">
             <h2 className="text-lg font-semibold text-foreground mb-4">Open Project</h2>
-            
+
             {projects.length === 0 ? (
               <p className="text-foreground-muted text-sm">No projects found.</p>
             ) : (
-              <div className="space-y-2 max-h-[300px] overflow-y-auto">
+              <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2">
                 {projects.map((project) => (
                   <button
                     key={project.id}
                     onClick={() => handleSelectProject(project)}
-                    className="w-full p-3 rounded-lg border border-border hover:bg-background-secondary text-left transition-colors"
+                    className="w-full p-3 rounded-lg border border-border hover:bg-background-secondary text-left transition-colors flex justify-between items-center group"
                   >
-                    <p className="font-medium text-foreground">
-                      {project.brand_name || "Untitled"}
-                    </p>
-                    <p className="text-xs text-foreground-muted">
-                      {new URL(project.website_url).hostname} • {project.status}
-                    </p>
+                    <div>
+                      <p className="font-medium text-foreground text-sm group-hover:text-indigo-500 transition-colors">
+                        {project.brand_name || "Untitled"}
+                      </p>
+                      <p className="text-xs text-foreground-muted">
+                        {new URL(project.website_url).hostname}
+                      </p>
+                    </div>
+                    <span className="text-[10px] bg-background-secondary px-2 py-0.5 rounded text-foreground-muted uppercase">
+                      {project.status}
+                    </span>
                   </button>
                 ))}
               </div>
             )}
-            
+
             <div className="flex justify-end mt-4">
               <Button variant="ghost" onClick={() => setShowProjectPicker(false)}>
                 Cancel
@@ -235,30 +288,6 @@ export default function CanvasPage() {
         </div>
       )}
 
-      {/* React Flow Canvas */}
-      <CanvasFlow />
-
-      {/* Pipeline Status Bar */}
-      <div className="border-t border-border bg-background/80 backdrop-blur-sm px-6 py-3 shrink-0">
-        <div className="flex items-center justify-center gap-6">
-          {Object.entries(nodeStatuses).map(([key, status]) => (
-            <div key={key} className="flex items-center gap-2">
-              <div
-                className={`w-2 h-2 rounded-full ${
-                  status === "success"
-                    ? "bg-emerald-500"
-                    : status === "loading"
-                    ? "bg-amber-500 animate-pulse"
-                    : status === "error"
-                    ? "bg-red-500"
-                    : "bg-foreground-subtle"
-                }`}
-              />
-              <span className="text-xs text-foreground-muted capitalize">{key}</span>
-            </div>
-          ))}
-        </div>
-      </div>
     </div>
   );
 }

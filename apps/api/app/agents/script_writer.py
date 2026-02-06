@@ -21,7 +21,9 @@ class ScriptWriter:
         story: Story,
         brand_profile: BrandProfile,
         video_duration: int,
+
         style: VideoStyle,
+        additional_context: str = None,
     ) -> List[Scene]:
         """
         Create a detailed script with scene breakdowns.
@@ -56,7 +58,22 @@ Guidelines:
 - Start with a hook in the first 3 seconds
 - Build emotional connection in the middle
 - End with clear CTA
-- Visual prompts should be detailed: include camera angles, lighting, mood, movement
+- CRITICAL: VISUAL CONSISTENCY & SUBJECT CONTINUITY
+  - IDENTIFY THE MAIN SUBJECT (e.g., "The Penguin", "The Athlete").
+  - The Main Subject MUST appear in scenes unless explicitly stated otherwise.
+  - DO NOT change the subject arbitrarily (e.g., if the story is about a penguin, do not switch to a "generic client" in an office).
+  - If the location changes, show the Main Subject ENTERING or EXISTING in the new location.
+  - Example Bad: "Cut to a doctor in an office." (Where is the penguin?)
+  - Example Good: "Cut to the office where the Penguin sits across from the doctor."
+- CRITICAL: Visual prompts must be VERY DETAILED and BRAND-SPECIFIC. 
+  - ALWAYS include the Brand Name and Product logic in the prompt.
+  - Describe the lighting, color palette (using brand colors), camera angle, and movement.
+  - State the narrative purpose of the shot (e.g., "Showcasing speed", "Evoking trust").
+  - Example: "Cinematic medium shot of [Brand Name] running shoes on a wet track, golden hour lighting, slow motion water splashes, conveying durability and determination."
+- NARRATIVE CONTINUITY:
+  - Treat scenes as sequential chapters of ONE story.
+  - Ensure visual flow: if Scene 1 is in a kitchen, Scene 2 should likely be in the same kitchen (unless a cut is needed).
+  - Use transitional phrases in descriptions (e.g., "Continuing from previous shot...", "Cut to reaction shot...").
 - Keep voiceover concise and impactful
 - Total duration must equal {video_duration} seconds
 - Create exactly {num_scenes} scenes"""
@@ -76,63 +93,84 @@ Style: {style.value}
 Duration: {video_duration} seconds
 Number of Scenes: {num_scenes}
 
-Create a compelling, visually rich script that tells this story effectively."""
+Create a compelling, visually rich script that tells this story effectively.
 
-        try:
-            response = await self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-                response_format={"type": "json_object"},
-                temperature=0.6,
-            )
+CONTEXT & STRATEGY:
+{additional_context or 'None'}
 
-            result = json.loads(response.choices[0].message.content)
-            scenes_data = result.get("scenes", [])
+Ensure the visual prompts and script align with the context provided."""
+
+        # Iterative Generation for strict continuity
+        scenes = []
+        previous_context = "Start of video."
+        current_time = 0
+        scene_duration = video_duration / num_scenes
+        
+        for i in range(num_scenes):
+            is_last = (i == num_scenes - 1)
             
-            scenes = []
-            for scene_data in scenes_data:
+            scene_system_prompt = f"""You are a professional video scriptwriter.
+Create Scene {i+1} of {num_scenes} for a promotional video.
+
+STORY CONTEXT:
+Title: {story.title}
+Synopsis: {story.synopsis}
+Brand: {brand_profile.name} (Tone: {brand_profile.tone})
+
+PREVIOUS SCENE CONTEXT:
+{previous_context}
+
+CRITICAL INSTRUCTIONS:
+1. MAINTAIN SUBJECT CONTINUITY: If the previous scene had a specific subject (e.g., "The Penguin"), this scene MUST continue with them unless a clear transition occurs.
+2. VISUAL FLOW: Describe how the visual connects to the previous shot.
+3. BRAND SPECIFICITY: Include {brand_profile.name} elements/colors naturally.
+
+Return JSON for THIS SCENE ONLY:
+{{
+    "visual_prompt": "Detailed AI prompt including subject, action, lighting, brand context.",
+    "description": "Brief narrative description.",
+    "voiceover_text": "Narration (optional).",
+    "on_screen_text": "Overlay text (optional)."
+}}"""
+
+            try:
+                scene_response = await self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[{"role": "system", "content": scene_system_prompt}],
+                    response_format={"type": "json_object"},
+                    temperature=0.7,
+                )
+                
+                scene_data = json.loads(scene_response.choices[0].message.content)
+                
+                # Update context for next iteration
+                previous_context = f"Scene {i+1}: {scene_data.get('description')} (Visual: {scene_data.get('visual_prompt')})"
+                
                 scenes.append(Scene(
-                    id=scene_data.get("id", len(scenes) + 1),
-                    start_time=scene_data.get("start_time", 0),
-                    end_time=scene_data.get("end_time", 0),
+                    id=i + 1,
+                    start_time=current_time,
+                    end_time=current_time + scene_duration,
                     description=scene_data.get("description", ""),
                     visual_prompt=scene_data.get("visual_prompt", ""),
                     voiceover_text=scene_data.get("voiceover_text"),
                     on_screen_text=scene_data.get("on_screen_text"),
                 ))
-            
-            return scenes
+                
+                current_time += scene_duration
+                
+            except Exception as e:
+                print(f"Error generating scene {i+1}: {e}")
+                # Fallback
+                scenes.append(Scene(
+                    id=i + 1,
+                    start_time=current_time,
+                    end_time=current_time + scene_duration,
+                    description=f"Scene {i+1}",
+                    visual_prompt=f"Cinematic shot for {brand_profile.name}, continuing story.",
+                ))
+                current_time += scene_duration
 
-        except Exception as e:
-            print(f"Script creation error: {e}")
-            # Return basic 3-scene structure on error
-            scene_duration = video_duration / 3
-            return [
-                Scene(
-                    id=1,
-                    start_time=0,
-                    end_time=scene_duration,
-                    description="Opening hook",
-                    visual_prompt=f"Cinematic opening shot, {style.value} style, professional lighting",
-                ),
-                Scene(
-                    id=2,
-                    start_time=scene_duration,
-                    end_time=scene_duration * 2,
-                    description="Main message",
-                    visual_prompt=f"Product showcase, {style.value} style, dynamic camera movement",
-                    voiceover_text=story.synopsis,
-                ),
-                Scene(
-                    id=3,
-                    start_time=scene_duration * 2,
-                    end_time=video_duration,
-                    description="Call to action",
-                    visual_prompt=f"Brand logo reveal, {style.value} style",
-                    on_screen_text=story.call_to_action,
-                ),
-            ]
+        return scenes
+
+
 

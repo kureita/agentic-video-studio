@@ -3,33 +3,35 @@
 import { memo, useState } from "react";
 import { NodeProps } from "@xyflow/react";
 import { Globe, ArrowRight, Loader2 } from "lucide-react";
-import { 
-  BaseNode, 
-  BaseNodeHeader, 
-  BaseNodeContent, 
+import {
+  BaseNode,
+  BaseNodeHeader,
+  BaseNodeContent,
   BaseNodeFooter,
-  BaseNodeError 
+  BaseNodeError
 } from "./BaseNode";
 import { Button, Input } from "@/components/ui";
 import { useCanvasStore } from "@/lib/canvas-store";
 import { canvasApi } from "@/lib/api";
 
-type InitialNodeData = {
+interface InitialNodeData {
   onProceed?: () => void;
-};
+  [key: string]: unknown;
+}
 
-export const InitialNode = memo(function InitialNode({ data }: NodeProps<InitialNodeData>) {
-  const { 
-    websiteUrl, 
-    setWebsiteUrl, 
+export const InitialNode = memo(function InitialNode({ data }: NodeProps) {
+  const nodeData = data as InitialNodeData;
+  const {
+    websiteUrl,
+    setWebsiteUrl,
     setProjectId,
-    setBrandData, 
+    setBrandData,
     nodeStatuses,
     setNodeStatus,
     setError,
     errors,
   } = useCanvasStore();
-  
+
   const [localUrl, setLocalUrl] = useState(websiteUrl || "");
   const isValid = localUrl.startsWith("http");
   const isLoading = nodeStatuses.brand === "loading";
@@ -37,22 +39,22 @@ export const InitialNode = memo(function InitialNode({ data }: NodeProps<Initial
 
   const handleAnalyze = async () => {
     if (!isValid) return;
-    
+
     setWebsiteUrl(localUrl);
     setNodeStatus("brand", "loading");
     setError("brand", null);
-    
+
     try {
       const response = await canvasApi.create({ website_url: localUrl });
       const { project_id, brand_profile } = response.data;
-      
+
       setProjectId(project_id);
       setBrandData(brand_profile);
       setNodeStatus("brand", "success");
-      
+
       // Proceed to next node
-      if (data?.onProceed) {
-        data.onProceed();
+      if (nodeData?.onProceed) {
+        nodeData.onProceed();
       }
     } catch (err) {
       console.error("Failed to analyze website:", err);
@@ -66,12 +68,12 @@ export const InitialNode = memo(function InitialNode({ data }: NodeProps<Initial
       <BaseNodeHeader icon={<Globe className="w-4 h-4" />} status={nodeStatuses.brand}>
         Start
       </BaseNodeHeader>
-      
+
       <BaseNodeContent>
         <p className="text-sm text-foreground-muted mb-4">
           Enter your website URL to begin. We&apos;ll analyze your brand and create a video.
         </p>
-        
+
         <Input
           placeholder="https://yourbrand.com"
           value={localUrl}
@@ -83,7 +85,7 @@ export const InitialNode = memo(function InitialNode({ data }: NodeProps<Initial
       </BaseNodeContent>
 
       <BaseNodeError message={errors.brand} />
-      
+
       <BaseNodeFooter>
         <Button
           onClick={handleAnalyze}

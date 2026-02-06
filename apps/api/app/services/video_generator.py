@@ -314,7 +314,14 @@ class VideoGenerator:
             return await self._mock_generate(f"[Image-to-Video] {prompt}", duration)
         
         try:
-            image = types.Image.from_file(image_path)
+            # Load message bytes
+            with open(image_path, "rb") as f:
+                image_bytes = f.read()
+                
+            image = types.Image(
+                image_bytes=image_bytes,
+                mime_type="image/jpeg" if image_path.lower().endswith(".jpg") or image_path.lower().endswith(".jpeg") else "image/png"
+            )
             
             config = types.GenerateVideosConfig(
                 aspect_ratio=aspect_ratio,
@@ -356,7 +363,14 @@ class VideoGenerator:
         try:
             refs = []
             for img_path in reference_images[:3]:
-                image = types.Image.from_file(img_path)
+                with open(img_path, "rb") as f:
+                    img_bytes = f.read()
+                
+                image = types.Image(
+                    image_bytes=img_bytes,
+                    mime_type="image/jpeg" if img_path.lower().endswith(".jpg") or img_path.lower().endswith(".jpeg") else "image/png"
+                )
+                
                 ref = types.VideoGenerationReferenceImage(
                     image=image,
                     reference_type="asset"
@@ -400,8 +414,19 @@ class VideoGenerator:
             return await self._mock_generate(f"[Interpolation] {prompt}", 8)
         
         try:
-            first_image = types.Image.from_file(first_frame_path)
-            last_image = types.Image.from_file(last_frame_path)
+            with open(first_frame_path, "rb") as f:
+                first_bytes = f.read()
+            first_image = types.Image(
+                image_bytes=first_bytes,
+                mime_type="image/jpeg" if first_frame_path.lower().endswith(".jpg") or first_frame_path.lower().endswith(".jpeg") else "image/png"
+            )
+            
+            with open(last_frame_path, "rb") as f:
+                last_bytes = f.read()
+            last_image = types.Image(
+                image_bytes=last_bytes,
+                mime_type="image/jpeg" if last_frame_path.lower().endswith(".jpg") or last_frame_path.lower().endswith(".jpeg") else "image/png"
+            )
             
             config = types.GenerateVideosConfig(
                 last_frame=last_image,

@@ -49,23 +49,42 @@ class VideoComposer:
                 video_url = s.get("asset_url") or s.get("video_url") if isinstance(s, dict) else getattr(s, "asset_url", None) or getattr(s, "video_url", None)
                 print(f"[VideoComposer]   Scene {i+1} video: {video_url[:80] if video_url else 'NONE'}...")
             
+            # Prepare scenes with calculated timing
+            # If start_time/end_time are not sequential, we force them to be
+            processed_scenes = []
+            current_time = 0
+            
+            for i, s in enumerate(scenes):
+                duration = 4  # Default duration
+                
+                # Check if we have valid existing times
+                s_start = s.get("start_time") if isinstance(s, dict) else (s.start_time if hasattr(s, "start_time") else None)
+                s_end = s.get("end_time") if isinstance(s, dict) else (s.end_time if hasattr(s, "end_time") else None)
+                
+                if s_start is not None and s_end is not None and s_end > s_start:
+                    duration = s_end - s_start
+                
+                # Force sequential timing for composition
+                start_time = current_time
+                end_time = current_time + duration
+                current_time = end_time
+                
+                processed_scenes.append({
+                    "id": s.get("id") or s.id if hasattr(s, "id") else i,
+                    "start_time": start_time,
+                    "end_time": end_time,
+                    "description": s.get("description", "") or (s.description if hasattr(s, "description") else ""),
+                    "visual_prompt": s.get("visual_prompt", "") or (s.visual_prompt if hasattr(s, "visual_prompt") else ""),
+                    "voiceover_text": s.get("voiceover_text") or (s.voiceover_text if hasattr(s, "voiceover_text") else None),
+                    "on_screen_text": s.get("on_screen_text") or (s.on_screen_text if hasattr(s, "on_screen_text") else None),
+                    # Support both asset_url and video_url (canvas pipeline uses video_url)
+                    "asset_url": s.get("asset_url") or s.get("video_url") or (s.asset_url if hasattr(s, "asset_url") else None) or (s.video_url if hasattr(s, "video_url") else None),
+                })
+
             # Prepare request payload
             payload = {
                 "project_id": project_id,
-                "scenes": [
-                    {
-                        "id": s.get("id") or s.id if hasattr(s, "id") else i,
-                        "start_time": s.get("start_time") or (s.start_time if hasattr(s, "start_time") else 0),
-                        "end_time": s.get("end_time") or (s.end_time if hasattr(s, "end_time") else 8),
-                        "description": s.get("description", "") or (s.description if hasattr(s, "description") else ""),
-                        "visual_prompt": s.get("visual_prompt", "") or (s.visual_prompt if hasattr(s, "visual_prompt") else ""),
-                        "voiceover_text": s.get("voiceover_text") or (s.voiceover_text if hasattr(s, "voiceover_text") else None),
-                        "on_screen_text": s.get("on_screen_text") or (s.on_screen_text if hasattr(s, "on_screen_text") else None),
-                        # Support both asset_url and video_url (canvas pipeline uses video_url)
-                        "asset_url": s.get("asset_url") or s.get("video_url") or (s.asset_url if hasattr(s, "asset_url") else None) or (s.video_url if hasattr(s, "video_url") else None),
-                    }
-                    for i, s in enumerate(scenes)
-                ],
+                "scenes": processed_scenes,
                 "brand": {
                     "name": brand_profile.get("name", "Brand"),
                     "tagline": brand_profile.get("tagline"),

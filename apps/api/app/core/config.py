@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     # AI/LLM APIs
     openai_api_key: str = ""
     gemini_api_key: str = ""  # Auto-picked by google-genai SDK
+    anthropic_api_key: str = "" # For Claude 3.5 Sonnet
     use_mock_veo: bool = True  # Set to False to use real Veo API
 
     # Media Generation (Optional - Veo 3.1 includes native audio)
@@ -51,6 +52,7 @@ class Settings(BaseSettings):
     # Optional
     redis_url: str = "redis://localhost:6379"
     firecrawl_api_key: str = ""
+    tavily_api_key: str = ""
 
 
 @lru_cache

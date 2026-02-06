@@ -54,7 +54,15 @@ Focus on:
 - Clear value proposition
 - Memorable messaging
 - Strong opening hook
-- Compelling call to action"""
+- Compelling call to action
+
+CRITICAL INSTRUCTION:
+You will be provided with specific STRATEGY, TREND RESEARCH, and INSPIRATION data in the "Additional Notes" or "Context" section.
+You MUST incorporate these elements into the story concept.
+- If a trend is provided, the story should leverage that trend explicitly.
+- If a strategy objective is provided, the story must fulfill it.
+- If viral hooks are provided, include them in the concept.
+- Mention the brand name and USPs effectively."""
 
         user_prompt = f"""Create a story concept for a {video_duration}-second promotional video.
 
@@ -68,9 +76,14 @@ Brand Information:
 
 Video Style: {style.value}
 Target Audience: {target_audience or 'General audience'}
-Additional Notes: {additional_notes or 'None'}
+Video Style: {style.value}
+Target Audience: {target_audience or 'General audience'}
 
-Create a compelling story that showcases the brand's value proposition in {video_duration} seconds."""
+CONTEXT & STRATEGY (IMPORTANT):
+{additional_notes or 'None'}
+
+Create a compelling story that showcases the brand's value proposition in {video_duration} seconds.
+Ensure the story explicitly references the trends and strategy points mentioned in the Context."""
 
         try:
             response = await self.client.chat.completions.create(

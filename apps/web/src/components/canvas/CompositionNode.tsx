@@ -3,20 +3,21 @@
 import { memo, useState } from "react";
 import { NodeProps } from "@xyflow/react";
 import { Layers, Sparkles, Loader2, Check, Settings2 } from "lucide-react";
-import { 
-  BaseNode, 
-  BaseNodeHeader, 
-  BaseNodeContent, 
+import {
+  BaseNode,
+  BaseNodeHeader,
+  BaseNodeContent,
   BaseNodeFooter,
-  BaseNodeError 
+  BaseNodeError
 } from "./BaseNode";
 import { Button } from "@/components/ui";
 import { useCanvasStore } from "@/lib/canvas-store";
 import { canvasApi } from "@/lib/api";
 
-type CompositionNodeData = {
+interface CompositionNodeData {
   onProceed?: () => void;
-};
+  [key: string]: unknown;
+}
 
 const transitionOptions = [
   { id: "fade", label: "Fade" },
@@ -24,7 +25,8 @@ const transitionOptions = [
   { id: "dissolve", label: "Dissolve" },
 ];
 
-export const CompositionNode = memo(function CompositionNode({ data }: NodeProps<CompositionNodeData>) {
+export const CompositionNode = memo(function CompositionNode({ data }: NodeProps) {
+  const nodeData = data as CompositionNodeData;
   const {
     projectId,
     scenes,
@@ -62,8 +64,8 @@ export const CompositionNode = memo(function CompositionNode({ data }: NodeProps
 
       setCompositionUrl(response.data.preview_url);
       setNodeStatus("composition", "success");
-      if (data?.onProceed) {
-        data.onProceed();
+      if (nodeData?.onProceed) {
+        nodeData.onProceed();
       }
     } catch (err) {
       console.error("Failed to compose video:", err);
@@ -106,9 +108,8 @@ export const CompositionNode = memo(function CompositionNode({ data }: NodeProps
             </div>
             <button
               onClick={() => setShowSettings(!showSettings)}
-              className={`p-2 rounded-lg transition-colors nodrag ${
-                showSettings ? "bg-background" : "hover:bg-background"
-              }`}
+              className={`p-2 rounded-lg transition-colors nodrag ${showSettings ? "bg-background" : "hover:bg-background"
+                }`}
             >
               <Settings2 className="w-4 h-4 text-foreground-subtle" />
             </button>
@@ -124,18 +125,17 @@ export const CompositionNode = memo(function CompositionNode({ data }: NodeProps
                   <button
                     key={opt.id}
                     onClick={() => setTransition(opt.id)}
-                    className={`flex-1 p-2 rounded-lg border text-xs transition-colors nodrag ${
-                      transition === opt.id
+                    className={`flex-1 p-2 rounded-lg border text-xs transition-colors nodrag ${transition === opt.id
                         ? "border-foreground bg-background-secondary"
                         : "border-border"
-                    }`}
+                      }`}
                   >
                     {opt.label}
                   </button>
                 ))}
               </div>
             </div>
-            
+
             <div className="space-y-2">
               <label className="flex items-center gap-2 text-xs nodrag cursor-pointer">
                 <input

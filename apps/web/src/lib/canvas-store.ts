@@ -34,6 +34,25 @@ export interface SceneData {
   video_url?: string;
 }
 
+export interface StoryBeat {
+  id: string;
+  index: number;
+  name: string;
+  description: string;
+  script: string;
+  visualPrompt: string;
+  durationSeconds: number;
+  purpose: string;
+  hook?: string;
+  emotionalNote?: string;
+  // Visual generation state
+  imageUrl?: string;
+  videoUrl?: string;
+  videoPrompt?: string;
+  extractedFrameUrl?: string;
+  generationStatus: "idle" | "generating" | "complete" | "error";
+}
+
 export interface StoryOptions {
   theme: string;
   visualStyle: string;
@@ -41,6 +60,62 @@ export interface StoryOptions {
   duration: number;
   targetAudience?: string;
   additionalNotes?: string;
+}
+
+export interface TrendSearchResult {
+  title: string;
+  url: string;
+  content: string;
+  score: number;
+}
+
+export interface TrendData {
+  query: string;
+  platform: string;
+  results: TrendSearchResult[];
+  summary?: string;
+}
+
+export interface InspirationBrief {
+  brandName: string;
+  trendSummary: string;
+  keyElements: string[];
+  suggestedAngles: string[];
+  viralHooks: string[];
+  contentIdeas: string[];
+}
+
+export interface StoryHook {
+  type: string;
+  content: string;
+  placement: string;
+}
+
+export interface ContentBeat {
+  name: string;
+  description: string;
+  durationSeconds: number;
+  purpose: string;
+}
+
+export interface StrategyMetrics {
+  targetAudience: string;
+  platform: string;
+  contentDuration: number;
+  tone: string;
+  brandAlignmentScore: number;
+  viralPotentialScore: number;
+}
+
+export interface StoryStrategy {
+  objective: string;
+  keyMessage: string;
+  emotionalArc: string;
+  hooks: StoryHook[];
+  contentStructure: ContentBeat[];
+  callToAction: string;
+  metrics: StrategyMetrics;
+  aiRecommendations: string[];
 }
 
 export type NodeStatus = "idle" | "loading" | "success" | "error";
@@ -60,44 +135,78 @@ export interface CanvasEdgeData {
   style?: Record<string, unknown>;
 }
 
+
+// Graph Plan Types (from backend)
+export interface GraphNode {
+  id: string;
+  type: string;
+  data: Record<string, unknown>;
+  position?: { x: number; y: number };
+}
+
+export interface GraphEdge {
+  id: string;
+  source: string;
+  target: string;
+  label?: string;
+}
+
+export interface GraphPlan {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  narrative: string;
+}
+
 export interface CanvasPipelineState {
   // Project info
   projectId: string | null;
   websiteUrl: string;
-  
+
   // Pipeline data
   brandData: BrandData | null;
+  trendData: TrendData | null;
+  inspirationBrief: InspirationBrief | null;
+  storyStrategy: StoryStrategy | null;
   storyOptions: StoryOptions;
   storyData: StoryData | null;
+  storyBeats: StoryBeat[];
   scenes: SceneData[];
-  
+
   // Node statuses
   nodeStatuses: {
     brand: NodeStatus;
+    trend: NodeStatus;
+    inspiration: NodeStatus;
+    strategy: NodeStatus;
     story: NodeStatus;
     images: NodeStatus;
     videos: NodeStatus;
     composition: NodeStatus;
     render: NodeStatus;
   };
-  
+
   // Errors
   errors: Record<string, string | null>;
-  
+
   // Composition settings
   compositionUrl: string | null;
   finalVideoUrl: string | null;
-  
+
   // Canvas flow state (for persistence)
   canvasNodes: CanvasNodeData[];
   canvasEdges: CanvasEdgeData[];
-  
+
   // Actions
   setWebsiteUrl: (url: string) => void;
-  setProjectId: (id: string) => void;
+  setProjectId: (id: string | null) => void;
   setBrandData: (data: BrandData) => void;
+  setTrendData: (data: TrendData) => void;
+  setInspirationBrief: (data: InspirationBrief) => void;
+  setStoryStrategy: (data: StoryStrategy) => void;
   setStoryOptions: (options: Partial<StoryOptions>) => void;
   setStoryData: (data: StoryData) => void;
+  setStoryBeats: (beats: StoryBeat[]) => void;
+  updateStoryBeat: (beatId: string, data: Partial<StoryBeat>) => void;
   setScenes: (scenes: SceneData[]) => void;
   updateScene: (id: number, data: Partial<SceneData>) => void;
   setNodeStatus: (node: keyof CanvasPipelineState["nodeStatuses"], status: NodeStatus) => void;
@@ -106,6 +215,7 @@ export interface CanvasPipelineState {
   setFinalVideoUrl: (url: string) => void;
   setCanvasNodes: (nodes: CanvasNodeData[]) => void;
   setCanvasEdges: (edges: CanvasEdgeData[]) => void;
+  applyGraphPlan: (plan: GraphPlan) => void; // New action
   loadFromProject: (data: {
     projectId: string;
     brandData?: BrandData | null;
@@ -119,6 +229,7 @@ export interface CanvasPipelineState {
   reset: () => void;
 }
 
+
 const defaultStoryOptions: StoryOptions = {
   theme: "modern",
   visualStyle: "realistic",
@@ -130,6 +241,9 @@ const defaultStoryOptions: StoryOptions = {
 
 const defaultNodeStatuses = {
   brand: "idle" as NodeStatus,
+  trend: "idle" as NodeStatus,
+  inspiration: "idle" as NodeStatus,
+  strategy: "idle" as NodeStatus,
   story: "idle" as NodeStatus,
   images: "idle" as NodeStatus,
   videos: "idle" as NodeStatus,
@@ -140,12 +254,15 @@ const defaultNodeStatuses = {
 export const useCanvasStore = create<CanvasPipelineState>()(
   persist(
     (set) => ({
-      // Initial state
       projectId: null,
       websiteUrl: "",
       brandData: null,
+      trendData: null,
+      inspirationBrief: null,
+      storyStrategy: null,
       storyOptions: defaultStoryOptions,
       storyData: null,
+      storyBeats: [],
       scenes: [],
       nodeStatuses: { ...defaultNodeStatuses },
       errors: {},
@@ -153,53 +270,81 @@ export const useCanvasStore = create<CanvasPipelineState>()(
       finalVideoUrl: null,
       canvasNodes: [],
       canvasEdges: [],
-      
+
       // Actions
-  setWebsiteUrl: (url) => set({ websiteUrl: url }),
-  setProjectId: (id) => set({ projectId: id }),
-  setBrandData: (data) => set({ brandData: data }),
-  setStoryOptions: (options) => set((state) => ({ 
-    storyOptions: { ...state.storyOptions, ...options } 
-  })),
-  setStoryData: (data) => set({ storyData: data }),
-  setScenes: (scenes) => set({ scenes }),
-  updateScene: (id, data) => set((state) => ({
-    scenes: state.scenes.map((s) => s.id === id ? { ...s, ...data } : s)
-  })),
-  setNodeStatus: (node, status) => set((state) => ({
-    nodeStatuses: { ...state.nodeStatuses, [node]: status }
-  })),
-  setError: (node, error) => set((state) => ({
-    errors: { ...state.errors, [node]: error }
-  })),
-  setCompositionUrl: (url) => set({ compositionUrl: url }),
-  setFinalVideoUrl: (url) => set({ finalVideoUrl: url }),
-  setCanvasNodes: (nodes) => set({ canvasNodes: nodes }),
-  setCanvasEdges: (edges) => set({ canvasEdges: edges }),
-  loadFromProject: (data) => set((state) => ({
-    projectId: data.projectId,
-    brandData: data.brandData || null,
-    storyData: data.storyData || null,
-    scenes: data.scenes || [],
-    storyOptions: data.storyOptions ? { ...state.storyOptions, ...data.storyOptions } : state.storyOptions,
-    canvasNodes: data.canvasNodes || [],
-    canvasEdges: data.canvasEdges || [],
-    nodeStatuses: data.nodeStatuses ? { ...state.nodeStatuses, ...data.nodeStatuses } : state.nodeStatuses,
-  })),
-  reset: () => set({
-    projectId: null,
-    websiteUrl: "",
-    brandData: null,
-    storyOptions: defaultStoryOptions,
-    storyData: null,
-    scenes: [],
-    nodeStatuses: { ...defaultNodeStatuses },
-    errors: {},
-    compositionUrl: null,
-    finalVideoUrl: null,
-    canvasNodes: [],
-    canvasEdges: [],
-  }),
+      setWebsiteUrl: (url) => set({ websiteUrl: url }),
+      setProjectId: (id) => set({ projectId: id }),
+      setBrandData: (data) => set({ brandData: data }),
+      setTrendData: (data) => set({ trendData: data }),
+      setInspirationBrief: (data) => set({ inspirationBrief: data }),
+      setStoryStrategy: (data) => set({ storyStrategy: data }),
+      setStoryOptions: (options) => set((state) => ({
+        storyOptions: { ...state.storyOptions, ...options }
+      })),
+      setStoryData: (data) => set({ storyData: data }),
+      setStoryBeats: (beats) => set({ storyBeats: beats }),
+      updateStoryBeat: (beatId, data) => set((state) => ({
+        storyBeats: state.storyBeats.map((b) => b.id === beatId ? { ...b, ...data } : b)
+      })),
+      setScenes: (scenes) => set({ scenes }),
+      updateScene: (id, data) => set((state) => ({
+        scenes: state.scenes.map((s) => s.id === id ? { ...s, ...data } : s)
+      })),
+      setNodeStatus: (node, status) => set((state) => ({
+        nodeStatuses: { ...state.nodeStatuses, [node]: status }
+      })),
+      setError: (node, error) => set((state) => ({
+        errors: { ...state.errors, [node]: error }
+      })),
+      setCompositionUrl: (url) => set({ compositionUrl: url }),
+      setFinalVideoUrl: (url) => set({ finalVideoUrl: url }),
+      setCanvasNodes: (nodes) => set({ canvasNodes: nodes }),
+      setCanvasEdges: (edges) => set({ canvasEdges: edges }),
+      applyGraphPlan: (plan) => set((state) => {
+        // Map backend nodes to frontend CanvasNodes
+        const newNodes = plan.nodes.map((node, index) => ({
+          id: node.id,
+          type: node.type, // TODO: Map backend types to frontend types in Phase 3
+          position: node.position || { x: 250, y: index * 150 + 100 }, // Simple auto-layout vertical
+          data: node.data
+        }));
+
+        const newEdges = plan.edges.map(edge => ({
+          id: edge.id,
+          source: edge.source,
+          target: edge.target,
+          animated: true
+        }));
+
+        return {
+          canvasNodes: newNodes,
+          canvasEdges: newEdges
+        };
+      }),
+      loadFromProject: (data) => set((state) => ({
+        projectId: data.projectId,
+        brandData: data.brandData || null,
+        storyData: data.storyData || null,
+        scenes: data.scenes || [],
+        storyOptions: data.storyOptions ? { ...state.storyOptions, ...data.storyOptions } : state.storyOptions,
+        canvasNodes: data.canvasNodes || [],
+        canvasEdges: data.canvasEdges || [],
+        nodeStatuses: data.nodeStatuses ? { ...state.nodeStatuses, ...data.nodeStatuses } : state.nodeStatuses,
+      })),
+      reset: () => set({
+        projectId: null,
+        websiteUrl: "",
+        brandData: null,
+        storyOptions: defaultStoryOptions,
+        storyData: null,
+        scenes: [],
+        nodeStatuses: { ...defaultNodeStatuses },
+        errors: {},
+        compositionUrl: null,
+        finalVideoUrl: null,
+        canvasNodes: [],
+        canvasEdges: [],
+      }),
     }),
     {
       name: "kureita-canvas-store",
@@ -222,33 +367,33 @@ export const useCanvasStore = create<CanvasPipelineState>()(
 
 // Preset templates
 export const storyTemplates = [
-  { 
-    id: "product-launch", 
-    name: "Product Launch", 
+  {
+    id: "product-launch",
+    name: "Product Launch",
     description: "Introduce a new product with impact",
     options: { theme: "modern", direction: "exciting", visualStyle: "realistic" }
   },
-  { 
-    id: "brand-story", 
-    name: "Brand Story", 
+  {
+    id: "brand-story",
+    name: "Brand Story",
     description: "Tell your brand's origin and mission",
     options: { theme: "warm", direction: "inspirational", visualStyle: "cinematic" }
   },
-  { 
-    id: "testimonial", 
-    name: "Customer Testimonial", 
+  {
+    id: "testimonial",
+    name: "Customer Testimonial",
     description: "Showcase customer success stories",
     options: { theme: "authentic", direction: "trustworthy", visualStyle: "documentary" }
   },
-  { 
-    id: "explainer", 
-    name: "Explainer Video", 
+  {
+    id: "explainer",
+    name: "Explainer Video",
     description: "Break down complex concepts simply",
     options: { theme: "clean", direction: "educational", visualStyle: "animated" }
   },
-  { 
-    id: "promo", 
-    name: "Promotional Campaign", 
+  {
+    id: "promo",
+    name: "Promotional Campaign",
     description: "Drive action with urgency",
     options: { theme: "bold", direction: "energetic", visualStyle: "dynamic" }
   },
