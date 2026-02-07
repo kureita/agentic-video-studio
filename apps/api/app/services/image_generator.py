@@ -6,6 +6,7 @@ import random
 import time
 from pathlib import Path
 from typing import Optional
+import httpx
 
 from google import genai
 from google.genai import types
@@ -72,11 +73,27 @@ class ImageGenerator:
             "mock": True,
         }
 
+    async def _fetch_image(self, url: str) -> Optional[bytes]:
+        """Fetch image bytes from URL."""
+        if not url:
+            return None
+        try:
+            # Handle local static files differently if needed, but httpx handles http://localhost
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, timeout=30.0)
+                if response.status_code == 200:
+                    return response.content
+                print(f"[ImageGenerator] Failed to fetch image {url}: status {response.status_code}")
+        except Exception as e:
+            print(f"[ImageGenerator] Error fetching image {url}: {e}")
+        return None
+
     async def generate_image(
         self,
         prompt: str,
         aspect_ratio: str = "16:9",
         style: str = "realistic",
+        reference_image: Optional[str] = None,
     ) -> dict:
         """
         Generate an image from a text prompt using Gemini.
@@ -85,6 +102,7 @@ class ImageGenerator:
             prompt: Detailed description of the image to generate
             aspect_ratio: Aspect ratio (16:9, 9:16, 1:1, etc.)
             style: Visual style (realistic, cinematic, animated, etc.)
+            reference_image: Optional URL of a reference image
             
         Returns:
             Dictionary with image URL and metadata
@@ -109,6 +127,24 @@ class ImageGenerator:
             
             print(f"[ImageGenerator] Generating image: {enhanced_prompt[:100]}...")
             
+            # Prepare contents
+            contents = [enhanced_prompt]
+            
+            # Add reference image if provided
+            if reference_image:
+                print(f"[ImageGenerator] Fetching reference image: {reference_image}")
+                image_bytes = await self._fetch_image(reference_image)
+                if image_bytes:
+                    print(f"[ImageGenerator] Added reference image ({len(image_bytes)} bytes)")
+                    # Simple mime detection or default to png/jpeg based on extension or header
+                    # For safety with Gemini, assume jpeg or png.
+                    # We can fallback to 'image/jpeg' if unknown
+                    mime_type = "image/jpeg" 
+                    if reference_image.lower().endswith(".png"):
+                        mime_type = "image/png"
+                    
+                    contents.append(types.Part.from_bytes(data=image_bytes, mime_type=mime_type))
+            
             # Configure image generation
             config = types.GenerateContentConfig(
                 response_modalities=["TEXT", "IMAGE"],
@@ -123,7 +159,7 @@ class ImageGenerator:
             # Generate image using Gemini
             response = self.client.models.generate_content(
                 model=self.model,
-                contents=[enhanced_prompt],
+                contents=contents,
                 config=config,
             )
             

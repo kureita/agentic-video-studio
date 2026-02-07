@@ -1,6 +1,6 @@
 import { memo } from "react";
 import { Handle, Position } from "@xyflow/react";
-import { Copy, Trash2, Play, Type, Image as ImageIcon, Video, FileText, Loader2 } from "lucide-react";
+import { Copy, Trash2, Play, Type, Image as ImageIcon, Video, FileText, Loader2, Eraser } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
@@ -8,6 +8,7 @@ interface NodeHandle {
     id: string;
     label?: string;
     type?: "text" | "image" | "video" | "audio" | "any";
+    style?: React.CSSProperties;
 }
 
 interface NodeWrapperProps {
@@ -20,7 +21,9 @@ interface NodeWrapperProps {
     color?: string;
     onDelete?: () => void;
     onRun?: () => void;
+    onClear?: () => void;
     isRunning?: boolean;
+    inputBaseOffset?: number;
     contentClassName?: string;
 }
 
@@ -44,8 +47,10 @@ export const NodeWrapper = memo(({
     color = "bg-primary",
     onDelete,
     onRun,
+    onClear,
     isRunning,
     contentClassName,
+    inputBaseOffset = 75,
 }: NodeWrapperProps) => {
 
     return (
@@ -76,6 +81,19 @@ export const NodeWrapper = memo(({
                     </Button>
                 )}
                 {onRun && <div className="w-[1px] h-3 bg-border/50" />}
+
+                {onClear && (
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-muted-foreground hover:text-amber-500 hover:bg-amber-500/10 rounded-full"
+                        onClick={onClear}
+                        title="Clear Output"
+                    >
+                        <Eraser className="h-3.5 w-3.5" />
+                    </Button>
+                )}
+
                 <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground rounded-full">
                     <Copy className="h-3.5 w-3.5" />
                 </Button>
@@ -109,7 +127,7 @@ export const NodeWrapper = memo(({
 
             {/* Input Handles - Bottom Left Bias */}
             {inputs.map((input, index) => (
-                <div key={input.id} className="absolute -left-[14px] nodrag" style={{ top: `${75 - (inputs.length - 1 - index) * 15}%`, transform: 'translateY(-50%)' }}>
+                <div key={input.id} className="absolute -left-[14px] nodrag" style={input.style || { top: `${inputBaseOffset - (inputs.length - 1 - index) * 15}%`, transform: 'translateY(-50%)' }}>
                     <div className="relative w-7 h-7 z-50 group/handle cursor-crosshair">
                         {/* Visual Ring & BG */}
                         <div className="absolute inset-0 rounded-full border-2 border-border bg-background shadow-sm transition-colors group-hover/handle:border-primary pointer-events-none" />
@@ -137,7 +155,7 @@ export const NodeWrapper = memo(({
 
             {/* Output Handles - Top Right Bias */}
             {outputs.map((output, index) => (
-                <div key={output.id} className="absolute -right-[14px] nodrag" style={{ top: `${25 + index * 15}%`, transform: 'translateY(-50%)' }}>
+                <div key={output.id} className="absolute -right-[14px] nodrag" style={output.style || { top: `${25 + index * 15}%`, transform: 'translateY(-50%)' }}>
                     <div className="relative w-7 h-7 z-50 group/handle cursor-crosshair">
                         {/* Visual Ring & BG */}
                         <div className="absolute inset-0 rounded-full border-2 border-border bg-background shadow-sm transition-colors group-hover/handle:border-primary pointer-events-none" />

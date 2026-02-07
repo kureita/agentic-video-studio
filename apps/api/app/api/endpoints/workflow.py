@@ -264,10 +264,15 @@ async def run_node(workflow_id: str, node_id: str, request: RunNodeRequest = Non
     
     if result.get("success"):
         # Update outputs in database
-        outputs[node_id] = result.get("output")
+        # First, get the current outputs object
+        workflow = await collection.find_one({"_id": oid})
+        current_outputs = workflow.get("outputs", {})
+        current_outputs[node_id] = result.get("output")
+        
+        # Update the entire outputs object to avoid creating separate fields
         await collection.update_one(
             {"_id": oid},
-            {"$set": {f"outputs.{node_id}": result.get("output"), "updated_at": datetime.now(timezone.utc)}}
+            {"$set": {"outputs": current_outputs, "updated_at": datetime.now(timezone.utc)}}
         )
         
         print(f"[Workflow] Node {node_id} completed successfully")

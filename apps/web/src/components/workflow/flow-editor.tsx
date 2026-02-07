@@ -23,8 +23,9 @@ import { TextNode } from "./nodes/text-node";
 import { UploadNode } from "./nodes/upload-node";
 import { ImageGenNode } from "./nodes/image-gen-node";
 import { VideoGenNode } from "./nodes/video-gen-node";
-import { AssistantNode } from "./nodes/assistant-node";
-import { UpscalerNode } from "./nodes/upscaler-node";
+import { VisionNode } from "./nodes/vision-node";
+import { EditorAgentNode } from "./nodes/editor-agent-node";
+import { MediaUploadNode } from "./nodes/media-upload-node";
 
 // Store
 import { useWorkflowStore } from "@/lib/workflow-store";
@@ -34,8 +35,10 @@ const nodeTypes = {
     upload: UploadNode,
     imageGen: ImageGenNode,
     videoGen: VideoGenNode,
-    assistant: AssistantNode,
-    upscaler: UpscalerNode,
+    vision: VisionNode,
+    assistant: VisionNode, // Keep backward compatibility
+    editorAgent: EditorAgentNode,
+    mediaUpload: MediaUploadNode,
 };
 
 import { useState } from "react";
@@ -109,15 +112,39 @@ export default function FlowEditor({ workflowId }: FlowEditorProps) {
     const isValidConnection = useCallback((connection: Connection | Edge) => {
         const sourceType = connection.sourceHandle?.split('|')[0];
         const targetType = connection.targetHandle?.split('|')[0];
+        const targetHandleId = connection.targetHandle?.split('|')[1]; // e.g., "start_image", "end_image"
 
-        // If types are not specified or one is 'any', allow the connection
+        // Check type compatibility first
         if (!sourceType || !targetType || sourceType === 'any' || targetType === 'any') {
-            return true;
+            // Continue to connection limit check
+        } else if (sourceType !== targetType) {
+            // Only allow same types to connect
+            return false;
         }
 
-        // Only allow same types to connect
-        return sourceType === targetType;
-    }, []);
+        // Check connection limits for specific handles
+        // These handles should only accept ONE connection
+        const singleConnectionHandles = ['ref_video', 'reference_video', 'start_image', 'end_image'];
+
+        if (targetHandleId && singleConnectionHandles.includes(targetHandleId)) {
+            // Check if there's already a connection to this target handle
+            const connectionId = 'id' in connection ? connection.id : null;
+            const existingConnection = edges.find(
+                (edge) =>
+                    edge.target === connection.target &&
+                    edge.targetHandle?.split('|')[1] === targetHandleId &&
+                    edge.id !== connectionId // Don't count the current edge if it's being updated
+            );
+
+            if (existingConnection) {
+                console.log(`[FlowEditor] Connection rejected: ${targetHandleId} already has a connection`);
+                return false;
+            }
+        }
+
+        // reference_images can have multiple connections (no restriction)
+        return true;
+    }, [edges]);
 
     const onConnect = useCallback(
         (params: Connection) => {

@@ -2,14 +2,12 @@
 
 import {
     Search,
-    Upload,
-    FolderOpen,
     Type,
     Image as ImageIcon,
     Video,
-    Bot,
-    Maximize,
-    Camera
+    Eye,
+    Clapperboard,
+    Upload
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 
@@ -23,9 +21,9 @@ export function NodeSelector({ onSelect, onClose }: NodeSelectorProps) {
         { id: "text", label: "Text", icon: <Type className="w-4 h-4 text-emerald-500" /> },
         { id: "imageGen", label: "Image Generator", icon: <ImageIcon className="w-4 h-4 text-blue-500" /> },
         { id: "videoGen", label: "Video Generator", icon: <Video className="w-4 h-4 text-purple-500" /> },
-        { id: "assistant", label: "Assistant", icon: <Bot className="w-4 h-4 text-indigo-500" /> },
-        { id: "upscaler", label: "Image Upscaler", icon: <Maximize className="w-4 h-4 text-pink-500" /> },
-        { id: "camera", label: "Camera Angle", icon: <Camera className="w-4 h-4 text-orange-500" /> },
+        { id: "vision", label: "Vision", icon: <Eye className="w-4 h-4 text-indigo-500" /> },
+        { id: "editorAgent", label: "Editor Agent", icon: <Clapperboard className="w-4 h-4 text-purple-600" /> },
+        { id: "mediaUpload", label: "Media Upload", icon: <Upload className="w-4 h-4 text-blue-600" /> },
     ];
 
     return (
@@ -36,17 +34,6 @@ export function NodeSelector({ onSelect, onClose }: NodeSelectorProps) {
                 <div className="relative">
                     <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                     <Input placeholder="Search" className="pl-8 h-9 text-xs" autoFocus />
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                    <button className="flex items-center justify-center gap-2 p-2 rounded-md bg-secondary/50 hover:bg-secondary text-xs font-medium transition-colors">
-                        <Upload className="w-3 h-3" />
-                        Upload
-                    </button>
-                    <button className="flex items-center justify-center gap-2 p-2 rounded-md bg-secondary/50 hover:bg-secondary text-xs font-medium transition-colors">
-                        <FolderOpen className="w-3 h-3" />
-                        Media
-                    </button>
                 </div>
             </div>
 

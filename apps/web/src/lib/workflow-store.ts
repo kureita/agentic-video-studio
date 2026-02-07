@@ -32,6 +32,7 @@ interface WorkflowState {
     setNodes: (nodes: Node[]) => void;
     setEdges: (edges: Edge[]) => void;
     setNodeOutput: (nodeId: string, output: string) => void;
+    clearNodeOutput: (nodeId: string) => void;
     markDirty: () => void;
     markClean: () => void;
 
@@ -92,9 +93,52 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     },
 
     setNodeOutput: (nodeId: string, output: string) => {
-        set((state) => ({
-            outputs: { ...state.outputs, [nodeId]: output },
-        }));
+        set((state) => {
+            const newOutputs = { ...state.outputs, [nodeId]: output };
+
+            // Also update the node's data.output for persistence
+            const newNodes = state.nodes.map((node) => {
+                if (node.id === nodeId) {
+                    return {
+                        ...node,
+                        data: { ...node.data, output },
+                    };
+                }
+                return node;
+            });
+
+            return {
+                outputs: newOutputs,
+                nodes: newNodes,
+                isDirty: true
+            };
+        });
+    },
+
+    clearNodeOutput: (nodeId: string) => {
+        set((state) => {
+            const newOutputs = { ...state.outputs };
+            delete newOutputs[nodeId];
+
+            // Also clear the node's data.output
+            const newNodes = state.nodes.map((node) => {
+                if (node.id === nodeId) {
+                    const newData = { ...node.data };
+                    delete newData.output;
+                    return {
+                        ...node,
+                        data: newData,
+                    };
+                }
+                return node;
+            });
+
+            return {
+                outputs: newOutputs,
+                nodes: newNodes,
+                isDirty: true
+            };
+        });
     },
 
     markDirty: () => set({ isDirty: true }),
@@ -210,33 +254,135 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
         }
     },
 
-    // Run a single node
+    // Run a single node with recursive dependency execution
     runNode: async (nodeId: string) => {
-        const { id } = get();
+        const store = get();
+        const { id, edges } = store;
+
         if (!id) {
             console.error("[WorkflowStore] No workflow ID to run node");
             return;
         }
 
         // Save first to ensure latest nodes/edges are persisted
-        await get().saveWorkflow();
+        await store.saveWorkflow();
 
-        set({ runningNodeId: nodeId, error: null });
-        try {
-            const response = await workflowApi.runNode(id, nodeId);
-            const result = response.data;
+        // Helper to run a specific node via API
+        const executeNodeApi = async (targetId: string): Promise<boolean> => {
+            set({ runningNodeId: targetId, error: null });
 
-            if (result.success && result.output) {
-                set((state) => ({
-                    outputs: { ...state.outputs, [nodeId]: result.output as string },
-                    runningNodeId: null,
-                }));
-            } else {
-                set({ runningNodeId: null, error: result.error || "Node execution failed" });
+            // Resolve prompt references if present
+            const currentStore = get();
+            let inputOverrides: Record<string, unknown> | undefined;
+            const targetNode = currentStore.nodes.find(n => n.id === targetId);
+
+            if (targetNode && targetNode.data && typeof targetNode.data.prompt === 'string') {
+                let resolvedPrompt = targetNode.data.prompt;
+
+                // Find all text nodes to generate the same labels as the UI
+                const textNodes = currentStore.nodes
+                    .filter(n => n.type === 'text')
+                    .map((n, i) => ({
+                        label: `Text #${i + 1}`,
+                        content: (n.data.text as string) || ""
+                    }))
+                    // Sort by length desc to prevent partial replacements (e.g. replacing @Text #1 in @Text #10)
+                    .sort((a, b) => b.label.length - a.label.length);
+
+                let hasReplacements = false;
+                textNodes.forEach(textNode => {
+                    const mention = `@${textNode.label}`;
+                    if (resolvedPrompt.includes(mention)) {
+                        // Global replacement
+                        resolvedPrompt = resolvedPrompt.split(mention).join(textNode.content);
+                        hasReplacements = true;
+                    }
+                });
+
+                if (hasReplacements) {
+                    inputOverrides = { prompt: resolvedPrompt };
+                }
             }
-        } catch (error) {
-            console.error("[WorkflowStore] Run node error:", error);
-            set({ runningNodeId: null, error: "Failed to run node" });
+
+            try {
+                const response = await workflowApi.runNode(id, targetId, inputOverrides);
+                const result = response.data;
+
+                if (result.success && result.output) {
+                    const storeOutput = result.output as string;
+
+                    set((state) => {
+                        const newOutputs = { ...state.outputs, [targetId]: storeOutput };
+
+                        // Also update node data for persistence
+                        const newNodes = state.nodes.map((node) => {
+                            if (node.id === targetId) {
+                                return {
+                                    ...node,
+                                    data: { ...node.data, output: storeOutput },
+                                };
+                            }
+                            return node;
+                        });
+
+                        return {
+                            outputs: newOutputs,
+                            nodes: newNodes,
+                            runningNodeId: null,
+                            isDirty: true // Mark dirty so it gets saved on next manual save or run
+                        };
+                    });
+
+                    return true;
+                } else {
+                    set({ runningNodeId: null, error: result.error || "Node execution failed" });
+                    return false;
+                }
+            } catch (error) {
+                console.error("[WorkflowStore] Run node error:", error);
+                set({ runningNodeId: null, error: "Failed to run node" });
+                return false;
+            }
+        };
+
+        // Recursive function to check and run dependencies
+        const ensureDependencies = async (targetId: string, visited = new Set<string>()): Promise<boolean> => {
+            if (visited.has(targetId)) return true; // Cycle detected or already processed
+            visited.add(targetId);
+
+            // Find upstream nodes (dependencies)
+            const dependencies = edges
+                .filter(e => e.target === targetId)
+                .map(e => e.source);
+
+            // Check each dependency
+            for (const sourceId of dependencies) {
+                // Check if output exists
+                const currentOutputs = get().outputs;
+
+                if (!currentOutputs[sourceId]) {
+                    console.log(`[Workflow] Dependency ${sourceId} missing output. Recursively running...`);
+
+                    // First ensure ITS dependencies are ready
+                    const depsOk = await ensureDependencies(sourceId, visited);
+                    if (!depsOk) return false;
+
+                    // Then run the dependency itself
+                    const runOk = await executeNodeApi(sourceId);
+                    if (!runOk) return false;
+                }
+            }
+
+            return true;
+        };
+
+        // Start execution
+        // 1. Ensure all upstream dependencies have outputs
+        const dependenciesReady = await ensureDependencies(nodeId);
+
+        // 2. If dependencies ready, run the target node (always run target node when explicitly requested)
+        if (dependenciesReady) {
+            await executeNodeApi(nodeId);
         }
     },
 

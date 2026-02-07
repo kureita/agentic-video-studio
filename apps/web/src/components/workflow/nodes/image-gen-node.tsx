@@ -1,14 +1,16 @@
-import { memo } from "react";
+import React, { memo } from "react";
 import { NodeProps, useReactFlow } from "@xyflow/react";
 import { Image as ImageIcon, Sparkles, Minus, Plus, ChevronDown, Square, Loader2, Download } from "lucide-react";
 import { NodeWrapper } from "@/components/workflow/node-wrapper";
 
+import { useWorkflowStore } from "@/lib/workflow-store";
+
 export const ImageGenNode = memo(({ id, selected, data }: NodeProps) => {
     const { deleteElements, updateNodeData } = useReactFlow();
+    const { runNode, clearNodeOutput, outputs, runningNodeId } = useWorkflowStore();
 
-    const isRunning = data.isRunning as boolean;
-    const onRun = data.onRun as (() => void) | undefined;
-    const output = data.output as string | undefined;
+    const isRunning = runningNodeId === id;
+    const output = (outputs[id] as string | undefined) || (data.output as string | undefined); // Use store output first, fallback to data.output
 
     const handleDownload = () => {
         if (output) {
@@ -20,57 +22,218 @@ export const ImageGenNode = memo(({ id, selected, data }: NodeProps) => {
         }
     };
 
+    const ratio = (data.ratio as string) || "1:1";
+
+    // Calculate dimensions based on ratio
+    // Base dimension matches NodeWrapper min-width (approximately)
+    const BASE_DIM = 300;
+
+    const getDimensions = (r: string) => {
+        const [w, h] = r.split(':').map(Number);
+        if (!w || !h) return { width: BASE_DIM, height: BASE_DIM };
+
+        if (w > h) {
+            // Landscape: Increase width
+            return { width: BASE_DIM * (w / h), height: BASE_DIM };
+        } else if (h > w) {
+            // Portrait: Increase height
+            return { width: BASE_DIM, height: BASE_DIM * (h / w) };
+        }
+        return { width: BASE_DIM, height: BASE_DIM };
+    };
+
+    const styles = getDimensions(ratio);
+
+    const [showSuggestions, setShowSuggestions] = React.useState(false);
+    const [filterText, setFilterText] = React.useState("");
+    const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+
+    // Get all text nodes for suggestions
+    const nodes = useWorkflowStore((state) => state.nodes);
+    const textNodes = React.useMemo(() =>
+        nodes
+            .filter(n => n.type === 'text')
+            .map((n, i) => ({ id: n.id, label: `Text #${i + 1}`, content: (n.data.text as string) || "" })),
+        [nodes]
+    );
+
+    const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+        const val = e.target.value;
+        const cursor = e.target.selectionStart;
+
+        updateNodeData(id, { prompt: val });
+
+        // Check for trigger character @
+        // We look back from cursor to find the last @
+        const textBeforeCursor = val.slice(0, cursor);
+        const lastAt = textBeforeCursor.lastIndexOf('@');
+
+        if (lastAt !== -1) {
+            // Check if there are invalid chars (like newlines or spaces) between @ and cursor
+            const textAfterAt = textBeforeCursor.slice(lastAt + 1);
+            if (!textAfterAt.includes('\n') && !textAfterAt.includes(' ') && textAfterAt.length < 20) {
+                setShowSuggestions(true);
+                setFilterText(textAfterAt.toLowerCase());
+                return;
+            }
+        }
+        setShowSuggestions(false);
+    };
+
+    const insertSuggestion = (label: string) => {
+        const val = (typeof data.prompt === 'string' ? data.prompt : '');
+        const cursor = textareaRef.current?.selectionStart || val.length;
+
+        // Find the start of the mention
+        const textBeforeCursor = val.slice(0, cursor);
+        const lastAt = textBeforeCursor.lastIndexOf('@');
+
+        if (lastAt !== -1) {
+            const newVal = val.slice(0, lastAt) + `@${label} ` + val.slice(cursor);
+            updateNodeData(id, { prompt: newVal });
+            setShowSuggestions(false);
+
+            // Restore focus (timeout to allow render)
+            setTimeout(() => {
+                if (textareaRef.current) {
+                    textareaRef.current.focus();
+                    const newCursor = lastAt + label.length + 2; // @ + label + space
+                    textareaRef.current.setSelectionRange(newCursor, newCursor);
+                }
+            }, 0);
+        }
+    };
+
     return (
         <NodeWrapper
-            title="Image Generator"
+            title={`Image Generator #${useWorkflowStore((state) =>
+                state.nodes
+                    .filter(n => n.type === 'imageGen')
+                    .findIndex(n => n.id === id) + 1
+            )}`}
             icon={<ImageIcon className="w-4 h-4" />}
             selected={selected}
+            color="bg-purple-500"
             inputs={[
-                { id: "prompt", label: "Prompt", type: "text" },
-                { id: "image", label: "Ref Image", type: "image" }
+                { id: "prompt", label: "Prompt", type: "text", style: { bottom: '108px' } },
+                { id: "image", label: "Ref Image", type: "image", style: { bottom: '20px' } }
             ]}
             outputs={[{ id: "image", label: "Image", type: "image" }]}
-            contentClassName="p-0 overflow-hidden isolate"
+            contentClassName="relative bg-black"
             onDelete={() => deleteElements({ nodes: [{ id }] })}
-            onRun={onRun}
+            onRun={() => runNode(id)}
+            onClear={output ? () => clearNodeOutput(id) : undefined}
             isRunning={isRunning}
         >
             <div
-                className="relative w-full bg-muted/30 group/image transition-all duration-300 ease-in-out"
-                style={{ aspectRatio: (data.ratio as string || "1:1").replace(':', '/') }}
+                className="relative bg-muted/30 group/image transition-all duration-300 ease-in-out overflow-hidden"
+                style={{
+                    width: styles.width,
+                    height: styles.height
+                }}
             >
-                {isRunning ? (
-                    <div className="h-full flex flex-col items-center justify-center p-6 text-center bg-gradient-to-br from-primary/5 to-muted/10">
+                {/* 1. Background Image (Output) */}
+                {output && !isRunning && (
+                    <>
+                        <img
+                            src={output}
+                            alt="Generated"
+                            className="absolute inset-0 w-full h-full object-cover z-0 transition-transform duration-700 group-hover/image:scale-105"
+                            onLoad={(e) => {
+                                const img = e.currentTarget;
+                                const w = img.naturalWidth;
+                                const h = img.naturalHeight;
+                                if (!w || !h) return;
+
+                                const currentRatio = (data.ratio as string) || "1:1";
+                                const imageRatio = w / h;
+
+                                // Check standard ratios
+                                const standards = {
+                                    "1:1": 1,
+                                    "16:9": 16 / 9,
+                                    "9:16": 9 / 16,
+                                    "4:3": 4 / 3,
+                                    "3:4": 3 / 4
+                                };
+
+                                let closest = "1:1";
+                                let minDiff = Infinity;
+
+                                Object.entries(standards).forEach(([key, val]) => {
+                                    const diff = Math.abs(imageRatio - val);
+                                    if (diff < minDiff) {
+                                        minDiff = diff;
+                                        closest = key;
+                                    }
+                                });
+
+                                if (closest !== currentRatio && minDiff < 0.1) {
+                                    updateNodeData(id, { ratio: closest });
+                                }
+                            }}
+                        />
+                        <div className="absolute inset-0 z-0 pointer-events-none transition-opacity duration-300" />
+
+                        {/* Download button */}
+                        <button
+                            onClick={handleDownload}
+                            className="absolute top-3 right-3 w-8 h-8 bg-black/60 backdrop-blur-md border border-white/10 rounded-full flex items-center justify-center text-white/90 hover:bg-black/80 hover:text-white transition-all opacity-0 group-hover/image:opacity-100 z-30"
+                        >
+                            <Download className="w-4 h-4" />
+                        </button>
+                    </>
+                )}
+
+                {/* 2. Loading Overlay */}
+                {isRunning && (
+                    <div className="absolute inset-0 z-50 flex flex-col items-center justify-center p-6 text-center bg-background/90 backdrop-blur-sm">
                         <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-3 text-primary">
                             <Loader2 className="w-6 h-6 animate-spin" />
                         </div>
                         <p className="text-xs font-medium text-muted-foreground">Generating image...</p>
                     </div>
-                ) : output ? (
-                    <>
-                        <img
-                            src={output}
-                            alt="Generated"
-                            className="w-full h-full object-cover transition-transform duration-700 group-hover/image:scale-105"
-                        />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover/image:opacity-100 transition-opacity duration-300 pointer-events-none" />
-
-                        {/* Download button */}
-                        <button
-                            onClick={handleDownload}
-                            className="absolute top-3 right-3 w-8 h-8 bg-black/60 backdrop-blur-md border border-white/10 rounded-full flex items-center justify-center text-white/90 hover:bg-black/80 hover:text-white transition-all opacity-0 group-hover/image:opacity-100"
-                        >
-                            <Download className="w-4 h-4" />
-                        </button>
-                    </>
-                ) : (
-                    <div className="h-full flex flex-col items-center justify-center p-6 text-center bg-gradient-to-br from-muted/50 to-muted/10">
-                        <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-3 text-primary animate-pulse">
-                            <Sparkles className="w-6 h-6" />
-                        </div>
-                        <p className="text-xs font-medium text-muted-foreground">Waiting for input...</p>
-                    </div>
                 )}
+
+                {/* 3. Text Input Layer (Always Visible) */}
+                <div className={`relative z-10 h-full flex flex-col justify-end pb-12 pointer-events-none transition-all duration-300 ${output ? "opacity-0 group-hover/image:opacity-100 focus-within:opacity-100" : ""}`}>
+                    {/* Suggestions Popup (pointer-events-auto) */}
+                    {showSuggestions && textNodes.length > 0 && (
+                        <div className="absolute bottom-16 left-4 z-50 w-48 bg-popover text-popover-foreground rounded-md border shadow-md overflow-hidden animate-in fade-in zoom-in-95 duration-100 pointer-events-auto">
+                            <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground bg-muted/50 border-b">
+                                Suggested Inputs
+                            </div>
+                            <div className="max-h-[120px] overflow-y-auto p-1">
+                                {textNodes
+                                    .filter(n => n.label.toLowerCase().includes(filterText) || n.content.toLowerCase().includes(filterText))
+                                    .map((node) => (
+                                        <button
+                                            key={node.id}
+                                            className="w-full text-left px-2 py-1.5 text-xs rounded-sm hover:bg-accent hover:text-accent-foreground cursor-pointer flex items-center justify-between group/item"
+                                            onClick={() => insertSuggestion(node.label)}
+                                        >
+                                            <span className="font-medium text-primary">{node.label}</span>
+                                            <span className="text-[10px] text-muted-foreground truncate max-w-[80px] opacity-70 group-hover/item:opacity-100">
+                                                {node.content.slice(0, 15)}...
+                                            </span>
+                                        </button>
+                                    ))}
+                                {textNodes.length === 0 && (
+                                    <div className="px-2 py-1.5 text-xs text-muted-foreground italic">No text nodes found</div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    <textarea
+                        ref={textareaRef}
+                        className="w-full min-h-[80px] bg-transparent border-none px-4 pb-2 pt-4 text-sm font-medium placeholder:text-white/50 focus-visible:outline-none resize-y overflow-y-auto leading-relaxed text-white nodrag nowheel pointer-events-auto drop-shadow-md shadow-black/50"
+                        placeholder="Describe the image you want to generate..."
+                        value={typeof data.prompt === 'string' ? data.prompt : ''}
+                        onChange={handleTextChange}
+                        onKeyDown={(e) => e.stopPropagation()}
+                    />
+                </div>
 
                 {/* Controls Bar - Bottom Left (One Line) */}
                 <div className="absolute bottom-3 left-3 right-3 flex items-center gap-1 opacity-0 group-hover/image:opacity-100 transition-all duration-300 translate-y-2 group-hover/image:translate-y-0 z-20">

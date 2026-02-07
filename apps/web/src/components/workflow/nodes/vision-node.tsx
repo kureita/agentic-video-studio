@@ -1,18 +1,17 @@
 import { memo, useState, useRef, useMemo, ChangeEvent } from "react";
-import { Node, NodeProps, useReactFlow } from "@xyflow/react";
+import { NodeProps, useReactFlow } from "@xyflow/react";
 import { Eye, Sparkles } from "lucide-react";
 import { NodeWrapper } from "@/components/workflow/node-wrapper";
 import { useWorkflowStore } from "@/lib/workflow-store";
 
-type AssistantNodeData = {
-    output?: string;
-    instruction?: string;
-};
-
-type AssistantNodeType = Node<AssistantNodeData>;
-
-export const AssistantNode = memo(({ id, selected, data }: NodeProps<AssistantNodeType>) => {
+export const VisionNode = memo(({ id, selected, data }: NodeProps) => {
     const { deleteElements, updateNodeData } = useReactFlow();
+    const { runNode, clearNodeOutput, outputs, runningNodeId } = useWorkflowStore();
+
+    const isRunning = runningNodeId === id;
+    const output = (outputs[id] as string | undefined) || (data.output as string | undefined);
+
+
     const [showSuggestions, setShowSuggestions] = useState(false);
     const [filterText, setFilterText] = useState("");
     const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -71,7 +70,7 @@ export const AssistantNode = memo(({ id, selected, data }: NodeProps<AssistantNo
 
     return (
         <NodeWrapper
-            title="Assistant"
+            title="Vision"
             icon={<Eye className="w-4 h-4" />}
             selected={selected}
             inputs={[
@@ -82,12 +81,15 @@ export const AssistantNode = memo(({ id, selected, data }: NodeProps<AssistantNo
             outputs={[{ id: "output", label: "Output", type: "text" }]}
             color="bg-emerald-500"
             onDelete={() => deleteElements({ nodes: [{ id }] })}
+            onRun={() => runNode(id)}
+            onClear={output ? () => clearNodeOutput(id) : undefined}
+            isRunning={isRunning}
         >
-            <div className="flex flex-col h-[280px]">
+            <div className="flex flex-col h-[280px] w-[320px]">
                 {/* Output Area - Read Only (Top 2/3) */}
-                <div className="flex-[2] p-3 bg-muted/20 overflow-y-auto">
-                    <div className="text-xs text-muted-foreground/70 leading-relaxed whitespace-pre-wrap">
-                        {data.output || "Output will appear here after running..."}
+                <div className="flex-[2] p-3 bg-muted/20 overflow-y-auto overflow-x-hidden">
+                    <div className="text-xs text-muted-foreground/70 leading-relaxed whitespace-pre-wrap break-words">
+                        {output || "Output will appear here after running..."}
                     </div>
                 </div>
 
@@ -145,4 +147,4 @@ export const AssistantNode = memo(({ id, selected, data }: NodeProps<AssistantNo
     );
 });
 
-AssistantNode.displayName = "AssistantNode";
+VisionNode.displayName = "VisionNode";

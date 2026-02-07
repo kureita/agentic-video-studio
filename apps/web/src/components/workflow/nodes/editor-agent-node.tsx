@@ -1,18 +1,16 @@
 import { memo, useState, useRef, useMemo, ChangeEvent } from "react";
-import { Node, NodeProps, useReactFlow } from "@xyflow/react";
-import { Eye, Sparkles } from "lucide-react";
+import { NodeProps, useReactFlow } from "@xyflow/react";
+import { Clapperboard, Sparkles } from "lucide-react";
 import { NodeWrapper } from "@/components/workflow/node-wrapper";
 import { useWorkflowStore } from "@/lib/workflow-store";
 
-type AssistantNodeData = {
-    output?: string;
-    instruction?: string;
-};
-
-type AssistantNodeType = Node<AssistantNodeData>;
-
-export const AssistantNode = memo(({ id, selected, data }: NodeProps<AssistantNodeType>) => {
+export const EditorAgentNode = memo(({ id, selected, data }: NodeProps) => {
     const { deleteElements, updateNodeData } = useReactFlow();
+    const { runNode, clearNodeOutput, outputs, runningNodeId } = useWorkflowStore();
+
+    const isRunning = runningNodeId === id;
+    const output = (outputs[id] as string | undefined) || (data.output as string | undefined);
+
     const [showSuggestions, setShowSuggestions] = useState(false);
     const [filterText, setFilterText] = useState("");
     const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -71,34 +69,45 @@ export const AssistantNode = memo(({ id, selected, data }: NodeProps<AssistantNo
 
     return (
         <NodeWrapper
-            title="Assistant"
-            icon={<Eye className="w-4 h-4" />}
+            title="Editor Agent"
+            icon={<Clapperboard className="w-4 h-4" />}
             selected={selected}
             inputs={[
                 { id: "text", label: "Text", type: "text" },
                 { id: "ref_images", label: "Ref Images", type: "image" },
                 { id: "ref_videos", label: "Ref Videos", type: "video" }
             ]}
-            outputs={[{ id: "output", label: "Output", type: "text" }]}
-            color="bg-emerald-500"
+            outputs={[{ id: "output", label: "Video", type: "video" }]}
+            color="bg-purple-500"
             onDelete={() => deleteElements({ nodes: [{ id }] })}
+            onRun={() => runNode(id)}
+            onClear={output ? () => clearNodeOutput(id) : undefined}
+            isRunning={isRunning}
         >
-            <div className="flex flex-col h-[280px]">
-                {/* Output Area - Read Only (Top 2/3) */}
-                <div className="flex-[2] p-3 bg-muted/20 overflow-y-auto">
-                    <div className="text-xs text-muted-foreground/70 leading-relaxed whitespace-pre-wrap">
-                        {data.output || "Output will appear here after running..."}
-                    </div>
+            <div className="flex flex-col gap-3 p-3">
+                {/* Video Preview Area */}
+                <div className="w-full aspect-video bg-muted/30 rounded-lg overflow-hidden">
+                    {output ? (
+                        <video
+                            src={output as string}
+                            controls
+                            className="w-full h-full object-cover"
+                        />
+                    ) : (
+                        <div className="h-full flex flex-col items-center justify-center text-center">
+                            <div className="w-12 h-12 rounded-full bg-purple-500/10 flex items-center justify-center mb-3 text-purple-500">
+                                <Clapperboard className="w-6 h-6" />
+                            </div>
+                            <p className="text-xs font-medium text-muted-foreground">Video output will appear here</p>
+                        </div>
+                    )}
                 </div>
 
-                {/* Divider */}
-                <div className="h-[2px] bg-border/50" />
-
-                {/* Instruction Area - Editable (Bottom 1/3) */}
-                <div className="relative flex-1 flex flex-col">
+                {/* Instruction Area */}
+                <div className="relative w-full">
                     {/* Suggestions Popup */}
                     {showSuggestions && textNodes.length > 0 && (
-                        <div className="absolute bottom-12 left-2 z-50 w-48 bg-popover text-popover-foreground rounded-md border shadow-md overflow-hidden animate-in fade-in zoom-in-95 duration-100">
+                        <div className="absolute bottom-full left-0 mb-1 z-50 w-48 bg-popover text-popover-foreground rounded-md border shadow-md overflow-hidden animate-in fade-in zoom-in-95 duration-100">
                             <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground bg-muted/50 border-b">
                                 Suggested Inputs
                             </div>
@@ -123,21 +132,20 @@ export const AssistantNode = memo(({ id, selected, data }: NodeProps<AssistantNo
                             </div>
                         </div>
                     )}
-
                     <textarea
                         ref={textareaRef}
-                        className="flex-1 w-full rounded-none border-none bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground/50 focus-visible:outline-none resize-none leading-relaxed overflow-y-auto nowheel"
-                        placeholder="Enter your instruction..."
+                        className="w-full min-h-[80px] rounded-md border border-border/50 bg-muted/20 px-3 py-2 text-sm placeholder:text-muted-foreground/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary resize-y overflow-y-auto leading-relaxed nowheel"
+                        placeholder="Describe the editing task (e.g., stitch videos, add transitions, apply effects)..."
                         value={typeof data.instruction === 'string' ? data.instruction : ''}
                         onChange={handleTextChange}
                         onKeyDown={(e) => e.stopPropagation()}
                     />
+                </div>
 
-                    <div className="flex items-center justify-between px-3 pb-2 pt-1">
-                        <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
-                            <Sparkles className="w-3 h-3" />
-                            <span>Gemini 2.0 Flash</span>
-                        </div>
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-purple-500/10 border border-purple-500/20 text-[10px] font-medium text-purple-600 dark:text-purple-400">
+                        <Sparkles className="w-3 h-3" />
+                        <span>Remotion</span>
                     </div>
                 </div>
             </div>
@@ -145,4 +153,4 @@ export const AssistantNode = memo(({ id, selected, data }: NodeProps<AssistantNo
     );
 });
 
-AssistantNode.displayName = "AssistantNode";
+EditorAgentNode.displayName = "EditorAgentNode";

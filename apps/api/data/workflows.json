@@ -6,8 +6,8 @@
         "id": "tazy1i",
         "type": "text",
         "position": {
-          "x": 396.4116620062257,
-          "y": 331.4725516279043
+          "x": 546.8849145364527,
+          "y": -151.68360891785278
         },
         "data": {
           "label": "text node",
@@ -19,11 +19,67 @@
         "id": "5f39xm",
         "type": "imageGen",
         "position": {
-          "x": 1024.0819094094927,
-          "y": 132.53445033954586
+          "x": 568.8171889860884,
+          "y": 71.40777042512266
         },
         "data": {
-          "label": "imageGen node"
+          "label": "imageGen node",
+          "output": "http://localhost:8000/static/images/generated_1770236215_3458.png",
+          "isRunning": false,
+          "ratio": "1:1"
+        }
+      },
+      {
+        "id": "jkpzh",
+        "type": "text",
+        "position": {
+          "x": 533.4284670724905,
+          "y": -346.7722925661567
+        },
+        "data": {
+          "label": "text node",
+          "isRunning": false,
+          "text": "make the background of a beach"
+        }
+      },
+      {
+        "id": "7lqgxm",
+        "type": "imageGen",
+        "position": {
+          "x": 907.6035177241597,
+          "y": -367.01146998634647
+        },
+        "data": {
+          "label": "imageGen node",
+          "isRunning": false,
+          "ratio": "16:9"
+        }
+      },
+      {
+        "id": "fx2l36",
+        "type": "videoGen",
+        "position": {
+          "x": 1524.4459172557436,
+          "y": 35.2662631127547
+        },
+        "data": {
+          "label": "videoGen node",
+          "isRunning": false,
+          "duration": "4s"
+        }
+      },
+      {
+        "id": "997fbk",
+        "type": "text",
+        "position": {
+          "x": 1052.9932708026415,
+          "y": -11.60904110705087
+        },
+        "data": {
+          "label": "text node",
+          "isRunning": false,
+          "text": "he jumps from one background after being bored to another background",
+          "output": "he jumps from one background after being bored to another background"
         }
       }
     ],
@@ -34,12 +90,545 @@
         "target": "5f39xm",
         "sourceHandle": "text|text",
         "targetHandle": "text|prompt"
+      },
+      {
+        "id": "xy-edge__jkpzhtext|text-7lqgxmtext|prompt",
+        "source": "jkpzh",
+        "target": "7lqgxm",
+        "sourceHandle": "text|text",
+        "targetHandle": "text|prompt"
+      },
+      {
+        "id": "xy-edge__5f39xmimage|image-7lqgxmimage|image",
+        "source": "5f39xm",
+        "target": "7lqgxm",
+        "sourceHandle": "image|image",
+        "targetHandle": "image|image"
+      },
+      {
+        "id": "xy-edge__7lqgxmimage|image-fx2l36image|start_image",
+        "source": "7lqgxm",
+        "target": "fx2l36",
+        "sourceHandle": "image|image",
+        "targetHandle": "image|start_image"
+      },
+      {
+        "id": "xy-edge__5f39xmimage|image-fx2l36image|end_image",
+        "source": "5f39xm",
+        "target": "fx2l36",
+        "sourceHandle": "image|image",
+        "targetHandle": "image|end_image"
+      },
+      {
+        "id": "xy-edge__997fbktext|text-fx2l36text|text",
+        "source": "997fbk",
+        "target": "fx2l36",
+        "sourceHandle": "text|text",
+        "targetHandle": "text|text"
       }
     ],
-    "outputs": {},
+    "outputs": {
+      "tazy1i": "Frog with a hat",
+      "jkpzh": "make the background of a beach",
+      "5f39xm": "http://localhost:8000/static/images/generated_1770238043_3983.png",
+      "7lqgxm": "http://localhost:8000/static/images/generated_1770238054_5943.png",
+      "997fbk": "he jumps from one background after being bored to another background",
+      "fx2l36": "http://localhost:8000/static/videos/generated_1770265982.mp4"
+    },
     "created_at": "2026-02-04T10:08:09.970964+00:00",
-    "updated_at": "2026-02-04T10:24:20.682357+00:00",
+    "updated_at": "2026-02-05T05:18:49.805175+00:00",
     "_id": "69831a89cbd8df36392940d1",
-    "outputs.5f39xm": "https://picsum.photos/seed/1770200434/1344/768"
+    "outputs.5f39xm": "http://localhost:8000/static/images/generated_1770236215_3458.png",
+    "outputs.b1z4wm": "https://picsum.photos/seed/1770229350/1344/768",
+    "outputs.7lqgxm": "http://localhost:8000/static/images/generated_1770238185_7235.png",
+    "outputs.997fbk": "he jumps from one background after being bored to another background",
+    "outputs.fx2l36": "http://localhost:8000/static/videos/generated_1770241702.mp4"
+  },
+  {
+    "name": "Untitled Workflow",
+    "nodes": [
+      {
+        "id": "text_1",
+        "type": "text",
+        "position": {
+          "x": 100.0,
+          "y": 100.0
+        },
+        "data": {
+          "label": "Scene 1 Prompt",
+          "text": "Opening scene: A person hopefully taking a pill, followed by a subtle shift to discomfort or mild unease. Visuals highlight the initial trust in medicine, then hint at underlying issues. Focus on the contrast between advertised relief and potential immediate side effects like drowsiness or slight nausea.",
+          "output": "Opening scene: A person hopefully taking a pill, followed by a subtle shift to discomfort or mild unease. Visuals highlight the initial trust in medicine, then hint at underlying issues. Focus on the contrast between advertised relief and potential immediate side effects like drowsiness or slight nausea."
+        }
+      },
+      {
+        "id": "imageGen_1_start",
+        "type": "imageGen",
+        "position": {
+          "x": 519.1779351504538,
+          "y": 100.0
+        },
+        "data": {
+          "label": "Start Frame Scene 1",
+          "prompt": "Close up of a person's hand holding a pill with a glass of water, bright and hopeful lighting. Clean, modern medical setting background. Studio light.",
+          "output": "http://localhost:8000/static/images/generated_1770272030_4696.png"
+        }
+      },
+      {
+        "id": "imageGen_1_end",
+        "type": "imageGen",
+        "position": {
+          "x": 900.0,
+          "y": 100.0
+        },
+        "data": {
+          "label": "End Frame Scene 1",
+          "prompt": "Person's face showing slight discomfort or confusion after taking medicine, subtle furrowed brow, a slight grimace, blurred medical background, slightly desaturated colors."
+        }
+      },
+      {
+        "id": "videoGen_1",
+        "type": "videoGen",
+        "position": {
+          "x": 1300.0,
+          "y": 100.0
+        },
+        "data": {
+          "label": "Video Scene 1 (8s)",
+          "prompt": "A person takes a pill, initially feels a moment of relief, then gradually shows a subtle facial expression of slight discomfort or unease. Smooth transition.",
+          "duration": "8s",
+          "ratio": "16:9"
+        }
+      },
+      {
+        "id": "text_2",
+        "type": "text",
+        "position": {
+          "x": 100.0,
+          "y": 600.0
+        },
+        "data": {
+          "label": "Scene 2 Prompt",
+          "text": "Focus on common side effects: dizziness, stomach upset, or skin reactions. Show a person experiencing these, perhaps in everyday situations. Emphasize how these disrupt daily life. Visuals of mundane tasks becoming difficult due to medication side effects."
+        }
+      },
+      {
+        "id": "imageGen_2_end",
+        "type": "imageGen",
+        "position": {
+          "x": 900.0,
+          "y": 600.0
+        },
+        "data": {
+          "label": "End Frame Scene 2",
+          "prompt": "Close up of a person's hand clutching their stomach in mild pain, a worried expression on their face, in a slightly dark home setting. Focus on the discomfort."
+        }
+      },
+      {
+        "id": "videoGen_2",
+        "type": "videoGen",
+        "position": {
+          "x": 1300.0,
+          "y": 600.0
+        },
+        "data": {
+          "label": "Video Scene 2 (8s)",
+          "prompt": "Transition from mild unease to specific, noticeable side effects. Show quick cuts of a person feeling dizzy while walking, then clutching their stomach in discomfort. Visuals emphasize the physical toll.",
+          "duration": "8s",
+          "ratio": "16:9"
+        }
+      },
+      {
+        "id": "text_3",
+        "type": "text",
+        "position": {
+          "x": 100.0,
+          "y": 1100.0
+        },
+        "data": {
+          "label": "Scene 3 Prompt",
+          "text": "Address long-term issues: dependency, tolerance, and masking root causes. Show visuals of many different medicine bottles, a person looking weary or trapped by their medication routine. Emphasize the cycle of dependency and the lack of true healing."
+        }
+      },
+      {
+        "id": "imageGen_3_start",
+        "type": "imageGen",
+        "position": {
+          "x": 500.0,
+          "y": 1100.0
+        },
+        "data": {
+          "label": "Start Frame Scene 3",
+          "prompt": "A collection of various pill bottles and blister packs scattered on a table, partially in shadow, creating a sense of overwhelming medication."
+        }
+      },
+      {
+        "id": "imageGen_3_end",
+        "type": "imageGen",
+        "position": {
+          "x": 900.0,
+          "y": 1100.0
+        },
+        "data": {
+          "label": "End Frame Scene 3",
+          "prompt": "A person staring blankly at a large pile of prescription bottles, looking tired and resigned. Overcast light, melancholic atmosphere. Emphasis on feeling trapped."
+        }
+      },
+      {
+        "id": "videoGen_3",
+        "type": "videoGen",
+        "position": {
+          "x": 1300.0,
+          "y": 1100.0
+        },
+        "data": {
+          "label": "Video Scene 3 (8s)",
+          "prompt": "The scene opens with a table full of medicine bottles, a person interacts with them with resignation. Show a person taking multiple pills, then looking exhausted, highlighting the routine and burden of long-term medication use.",
+          "duration": "8s",
+          "ratio": "16:9"
+        }
+      },
+      {
+        "id": "text_4",
+        "type": "text",
+        "position": {
+          "x": 100.0,
+          "y": 1600.0
+        },
+        "data": {
+          "label": "Scene 4 Prompt",
+          "text": "Shift to a more hopeful tone. Explore the idea of seeking natural alternatives, lifestyle changes, or holistic approaches. Show visuals of nature, healthy activities, or consultation with a holistic practitioner. Conclude with a balanced perspective on health without over-reliance on medication."
+        }
+      },
+      {
+        "id": "imageGen_4_start",
+        "type": "imageGen",
+        "position": {
+          "x": 500.0,
+          "y": 1600.0
+        },
+        "data": {
+          "label": "Start Frame Scene 4",
+          "prompt": "A person walking through a peaceful natural setting, sunlight filtering through trees, a sense of calm and well-being. Focus on greenery and open spaces."
+        }
+      },
+      {
+        "id": "imageGen_4_end",
+        "type": "imageGen",
+        "position": {
+          "x": 900.0,
+          "y": 1600.0
+        },
+        "data": {
+          "label": "End Frame Scene 4",
+          "prompt": "A person smiling genuinely while meditating or engaging in a healthy activity outdoors, bright and optimistic lighting. Clear skies, open future. Focus on empowerment and natural health."
+        }
+      },
+      {
+        "id": "videoGen_4",
+        "type": "videoGen",
+        "position": {
+          "x": 1300.0,
+          "y": 1600.0
+        },
+        "data": {
+          "label": "Video Scene 4 (8s)",
+          "prompt": "From the resignation of dependency, transition to scenes of a person engaging in healthy lifestyle choices: eating fresh food, gentle exercise, or spending time in nature. The overall mood shifts to one of empowerment and natural well-being.",
+          "duration": "8s",
+          "ratio": "16:9"
+        }
+      },
+      {
+        "id": "text_editor",
+        "type": "text",
+        "position": {
+          "x": 100.0,
+          "y": 2100.0
+        },
+        "data": {
+          "label": "Editor Instructions",
+          "text": "Stitch all four video clips in sequence. Use smooth crossfade transitions between clips to maintain flow. Add a solemn background score for the first three clips, transitioning to a hopeful and uplifting score for the final clip. Ensure the overall message emphasizes a thoughtful approach to health, not outright rejection of medicine but careful consideration of its role and alternatives."
+        }
+      },
+      {
+        "id": "editorAgent_final",
+        "type": "editorAgent",
+        "position": {
+          "x": 700.0,
+          "y": 2100.0
+        },
+        "data": {
+          "label": "Video Editor",
+          "instruction": "Stitch all video clips in sequence with smooth transitions and appropriate background music as per the instructions provided."
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "edge_text1_imageGen1start",
+        "source": "text_1",
+        "target": "imageGen_1_start",
+        "sourceHandle": "text|text",
+        "targetHandle": "text|prompt"
+      },
+      {
+        "id": "edge_text1_imageGen1end",
+        "source": "text_1",
+        "target": "imageGen_1_end",
+        "sourceHandle": "text|text",
+        "targetHandle": "text|prompt"
+      },
+      {
+        "id": "edge_imageGen1start_videoGen1_start",
+        "source": "imageGen_1_start",
+        "target": "videoGen_1",
+        "sourceHandle": "image|image",
+        "targetHandle": "image|start_image"
+      },
+      {
+        "id": "edge_imageGen1end_videoGen1_end",
+        "source": "imageGen_1_end",
+        "target": "videoGen_1",
+        "sourceHandle": "image|image",
+        "targetHandle": "image|end_image"
+      },
+      {
+        "id": "edge_text1_videoGen1",
+        "source": "text_1",
+        "target": "videoGen_1",
+        "sourceHandle": "text|text",
+        "targetHandle": "text|text"
+      },
+      {
+        "id": "edge_text2_imageGen2end",
+        "source": "text_2",
+        "target": "imageGen_2_end",
+        "sourceHandle": "text|text",
+        "targetHandle": "text|prompt"
+      },
+      {
+        "id": "edge_imageGen1end_videoGen2_start",
+        "source": "imageGen_1_end",
+        "target": "videoGen_2",
+        "sourceHandle": "image|image",
+        "targetHandle": "image|start_image"
+      },
+      {
+        "id": "edge_imageGen2end_videoGen2_end",
+        "source": "imageGen_2_end",
+        "target": "videoGen_2",
+        "sourceHandle": "image|image",
+        "targetHandle": "image|end_image"
+      },
+      {
+        "id": "edge_text2_videoGen2",
+        "source": "text_2",
+        "target": "videoGen_2",
+        "sourceHandle": "text|text",
+        "targetHandle": "text|text"
+      },
+      {
+        "id": "edge_text3_imageGen3start",
+        "source": "text_3",
+        "target": "imageGen_3_start",
+        "sourceHandle": "text|text",
+        "targetHandle": "text|prompt"
+      },
+      {
+        "id": "edge_text3_imageGen3end",
+        "source": "text_3",
+        "target": "imageGen_3_end",
+        "sourceHandle": "text|text",
+        "targetHandle": "text|prompt"
+      },
+      {
+        "id": "edge_imageGen3start_videoGen3_start",
+        "source": "imageGen_3_start",
+        "target": "videoGen_3",
+        "sourceHandle": "image|image",
+        "targetHandle": "image|start_image"
+      },
+      {
+        "id": "edge_imageGen3end_videoGen3_end",
+        "source": "imageGen_3_end",
+        "target": "videoGen_3",
+        "sourceHandle": "image|image",
+        "targetHandle": "image|end_image"
+      },
+      {
+        "id": "edge_text3_videoGen3",
+        "source": "text_3",
+        "target": "videoGen_3",
+        "sourceHandle": "text|text",
+        "targetHandle": "text|text"
+      },
+      {
+        "id": "edge_text4_imageGen4start",
+        "source": "text_4",
+        "target": "imageGen_4_start",
+        "sourceHandle": "text|text",
+        "targetHandle": "text|prompt"
+      },
+      {
+        "id": "edge_text4_imageGen4end",
+        "source": "text_4",
+        "target": "imageGen_4_end",
+        "sourceHandle": "text|text",
+        "targetHandle": "text|prompt"
+      },
+      {
+        "id": "edge_imageGen4start_videoGen4_start",
+        "source": "imageGen_4_start",
+        "target": "videoGen_4",
+        "sourceHandle": "image|image",
+        "targetHandle": "image|start_image"
+      },
+      {
+        "id": "edge_imageGen4end_videoGen4_end",
+        "source": "imageGen_4_end",
+        "target": "videoGen_4",
+        "sourceHandle": "image|image",
+        "targetHandle": "image|end_image"
+      },
+      {
+        "id": "edge_text4_videoGen4",
+        "source": "text_4",
+        "target": "videoGen_4",
+        "sourceHandle": "text|text",
+        "targetHandle": "text|text"
+      },
+      {
+        "id": "edge_videoGen1_editor",
+        "source": "videoGen_1",
+        "target": "editorAgent_final",
+        "sourceHandle": "video|video",
+        "targetHandle": "video|ref_videos"
+      },
+      {
+        "id": "edge_videoGen2_editor",
+        "source": "videoGen_2",
+        "target": "editorAgent_final",
+        "sourceHandle": "video|video",
+        "targetHandle": "video|ref_videos"
+      },
+      {
+        "id": "edge_videoGen3_editor",
+        "source": "videoGen_3",
+        "target": "editorAgent_final",
+        "sourceHandle": "video|video",
+        "targetHandle": "video|ref_videos"
+      },
+      {
+        "id": "edge_videoGen4_editor",
+        "source": "videoGen_4",
+        "target": "editorAgent_final",
+        "sourceHandle": "video|video",
+        "targetHandle": "video|ref_videos"
+      },
+      {
+        "id": "edge_texteditor_editor",
+        "source": "text_editor",
+        "target": "editorAgent_final",
+        "sourceHandle": "text|text",
+        "targetHandle": "text|text"
+      }
+    ],
+    "outputs": {
+      "text_1": "Opening scene: A person hopefully taking a pill, followed by a subtle shift to discomfort or mild unease. Visuals highlight the initial trust in medicine, then hint at underlying issues. Focus on the contrast between advertised relief and potential immediate side effects like drowsiness or slight nausea.",
+      "imageGen_1_start": "http://localhost:8000/static/images/generated_1770273965_3355.png"
+    },
+    "created_at": "2026-02-05T05:23:16.399322+00:00",
+    "updated_at": "2026-02-05T06:46:05.360356+00:00",
+    "_id": "69842944b7c692f833cba915"
+  },
+  {
+    "name": "testing",
+    "nodes": [
+      {
+        "id": "lqrzu",
+        "type": "imageGen",
+        "position": {
+          "x": 671.4349368244668,
+          "y": 174.61230941127022
+        },
+        "data": {
+          "label": "imageGen node",
+          "isRunning": false,
+          "prompt": "@Text #1 and a lion",
+          "output": "http://localhost:8000/static/images/generated_1770452969_8953.png"
+        }
+      },
+      {
+        "id": "dxctgs",
+        "type": "text",
+        "position": {
+          "x": 170.14804036017966,
+          "y": 204.3421664696928
+        },
+        "data": {
+          "label": "text node",
+          "isRunning": false,
+          "text": "Create an image of an elephant",
+          "output": "Create a 2D animated ghibli style image"
+        }
+      },
+      {
+        "id": "l8kug7j",
+        "type": "vision",
+        "position": {
+          "x": 1268.5952244865769,
+          "y": 191.80389655186468
+        },
+        "data": {
+          "label": "vision node",
+          "output": "Okay, given the image of the lion and the elephant, and considering a hypothetical duel, the elephant would almost certainly be the winner due to its massive size and power.\n\nHere's a prompt to generate an image reflecting this:\n\n**Prompt:**\n\n\"A majestic African elephant stands triumphantly in a savanna landscape. It wears a golden crown on its head, slightly tilted, as if after a hard-won victory. Dust swirls around its feet. In the background, a defeated lion lies prone, looking up at the elephant with a respectful gaze. The sky is a dramatic mix of blue and orange, suggesting the end of a long day.\"\n",
+          "isRunning": false,
+          "instruction": "Whatever you see in the image, you think who'll be the winner in the duel between them, your task is to prompt output for the making an image expected winner and crown them"
+        }
+      },
+      {
+        "id": "v9xpcx",
+        "type": "imageGen",
+        "position": {
+          "x": 1803.9804421541892,
+          "y": 174.0967688806329
+        },
+        "data": {
+          "label": "imageGen node",
+          "output": "http://localhost:8000/static/images/generated_1770457111_2573.png"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "xy-edge__dxctgstext|text-lqrzutext|prompt",
+        "source": "dxctgs",
+        "target": "lqrzu",
+        "sourceHandle": "text|text",
+        "targetHandle": "text|prompt"
+      },
+      {
+        "id": "xy-edge__lqrzuimage|image-l8kug7jimage|ref_images",
+        "source": "lqrzu",
+        "target": "l8kug7j",
+        "sourceHandle": "image|image",
+        "targetHandle": "image|ref_images"
+      },
+      {
+        "id": "xy-edge__l8kug7jtext|output-v9xpcxtext|prompt",
+        "source": "l8kug7j",
+        "target": "v9xpcx",
+        "sourceHandle": "text|output",
+        "targetHandle": "text|prompt"
+      }
+    ],
+    "outputs": {
+      "dxctgs": "Create a 2D animated ghibli style image",
+      "lqrzu": "http://localhost:8000/static/images/generated_1770453012_8648.png",
+      "l8kug7j": "Okay, given the image of the lion and the elephant, and considering a hypothetical duel, the elephant would almost certainly be the winner due to its massive size and power.\n\nHere's a prompt to generate an image reflecting this:\n\n**Prompt:**\n\n\"A majestic African elephant stands triumphantly in a savanna landscape. It wears a golden crown on its head, slightly tilted, as if after a hard-won victory. Dust swirls around its feet. In the background, a defeated lion lies prone, looking up at the elephant with a respectful gaze. The sky is a dramatic mix of blue and orange, suggesting the end of a long day.\"\n",
+      "v9xpcx": "http://localhost:8000/static/images/generated_1770457111_2573.png"
+    },
+    "created_at": "2026-02-07T04:45:50.345107+00:00",
+    "updated_at": "2026-02-07T10:00:32.705504+00:00",
+    "_id": "6986c37effda07a18e7e5672"
   }
 ]

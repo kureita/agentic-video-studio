@@ -56,14 +56,21 @@ class NodeRunner:
                 return await self._run_upload_node(node_data, inputs)
             
             elif node_type == "imageGen":
-                return await self._run_image_gen_node(node_data, inputs)
+                return await self._run_image_gen_node(node_data, inputs, nodes)
             
             elif node_type == "videoGen":
                 return await self._run_video_gen_node(node_data, inputs)
             
-            elif node_type == "assistant":
-                return await self._run_assistant_node(node_data, inputs)
+            elif node_type == "vision" or node_type == "assistant":
+                return await self._run_vision_node(node_data, inputs)
             
+            elif node_type == "editorAgent":
+                return await self._run_editor_agent_node(node_data, inputs)
+            
+            elif node_type == "mediaUpload":
+                return await self._run_media_upload_node(node_data, inputs)
+            
+            # Legacy nodes (deprecated)
             elif node_type == "upscaler":
                 return await self._run_upscaler_node(node_data, inputs)
             
@@ -149,20 +156,65 @@ class NodeRunner:
             "output": file_url,
         }
 
+    def _resolve_prompt_references(self, prompt: str, nodes: List[Dict[str, Any]]) -> str:
+        """Resolve @Text #N references in prompt."""
+        if not prompt or not isinstance(prompt, str):
+            return prompt
+            
+        import re
+        
+        # Find all Text #N patterns
+        matches = re.finditer(r"@Text\s*#(\d+)", prompt, re.IGNORECASE)
+        
+        resolved_prompt = prompt
+        
+        # Get all text nodes, preserving order from the list (creation/list order)
+        text_nodes = [n for n in nodes if n.get("type") == "text"]
+        
+        for match in matches:
+            full_match = match.group(0)
+            index_str = match.group(1)
+            
+            try:
+                index = int(index_str) - 1 # 1-based to 0-based
+                if 0 <= index < len(text_nodes):
+                    target_node = text_nodes[index]
+                    # Get text content
+                    text_content = target_node.get("data", {}).get("text", "")
+                    resolved_prompt = resolved_prompt.replace(full_match, text_content)
+            except Exception:
+                pass # Ignore invalid references
+                
+        return resolved_prompt
+
     async def _run_image_gen_node(
         self,
         data: Dict[str, Any],
         inputs: Dict[str, Any],
+        nodes: List[Dict[str, Any]],
     ) -> Dict[str, Any]:
         """Generate image using the ImageGenerator service."""
-        # Get prompt from input or node data
-        prompt = inputs.get("prompt") or data.get("prompt", "")
+        # Get prompt from node data (typed) or inputs (connected)
+        # Favor typed prompt if it exists, allowing for template usage
+        raw_prompt = data.get("prompt", "")
+        if not raw_prompt:
+            raw_prompt = inputs.get("prompt", "")
+            
+        # Resolve references (e.g. @Text #1)
+        prompt = self._resolve_prompt_references(raw_prompt, nodes)
         
-        if not prompt:
+        # Get reference image from inputs (if any)
+        reference_image = inputs.get("image")
+        
+        if not prompt and not reference_image:
             return {
                 "success": False,
-                "error": "No prompt provided for image generation",
+                "error": "No prompt or reference image provided",
             }
+            
+        # If we have an image but no prompt, provide a default prompt
+        if reference_image and not prompt:
+            prompt = "Variation of this image"
         
         # Get generation parameters
         model = data.get("model", "Google Nano Banana")
@@ -177,25 +229,32 @@ class NodeRunner:
         if "Stable" in model:
             style = "cinematic"
         
-        print(f"[NodeRunner] Generating image: prompt='{prompt[:50]}...', model={model}, ratio={ratio}")
+        print(f"[NodeRunner] Generating image: prompt='{prompt[:50]}...', model={model}, ratio={ratio}, has_ref_image={bool(reference_image)}")
         
         # Generate image(s)
         # For now, generate one image (we could extend to generate multiple)
-        result = await self.image_generator.generate_image(
-            prompt=prompt,
-            aspect_ratio=ratio,
-            style=style,
-        )
-        
-        if result.get("success"):
-            return {
-                "success": True,
-                "output": result.get("image_url"),
-            }
-        else:
-            return {
+        try:
+            result = await self.image_generator.generate_image(
+                prompt=prompt,
+                aspect_ratio=ratio,
+                style=style,
+                reference_image=reference_image,
+            )
+            
+            if result.get("success"):
+                return {
+                    "success": True,
+                    "output": result.get("image_url"),
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": result.get("error", "Image generation failed"),
+                }
+        except Exception as e:
+             return {
                 "success": False,
-                "error": result.get("error", "Image generation failed"),
+                "error": f"Generator Error: {str(e)}",
             }
 
     async def _run_video_gen_node(
@@ -207,62 +266,297 @@ class NodeRunner:
         # Get prompt from text input
         prompt = inputs.get("text") or inputs.get("prompt") or data.get("prompt", "")
         
-        # Get reference image if provided
-        image_url = inputs.get("image") or data.get("image")
-        
-        if not prompt and not image_url:
-            return {
-                "success": False,
-                "error": "No prompt or image provided for video generation",
-            }
+        # Get various image/video inputs
+        start_image = inputs.get("start_image")
+        end_image = inputs.get("end_image")
+        reference_images = inputs.get("reference_images")
+        reference_video = inputs.get("reference_video")
         
         # Build prompt
-        full_prompt = prompt if prompt else "Animate this image with natural motion"
-        
-        # Get generation parameters
-        duration_str = data.get("duration", "5s")
-        duration = int(duration_str.replace("s", "")) if isinstance(duration_str, str) else 5
-        ratio = data.get("ratio", "1:1")
-        
-        print(f"[NodeRunner] Generating video: prompt='{full_prompt[:50]}...', duration={duration}s, ratio={ratio}")
-        
-        # Generate video (Veo supports 4, 6, 8 second durations)
-        if duration <= 4:
-            duration = 4
-        elif duration <= 6:
-            duration = 6
-        else:
-            duration = 8
-        
-        result = await self.video_generator.generate_clip(
-            prompt=full_prompt,
-            duration=duration,
-            use_fast_model=True,  # Use fast model for workflow execution
-            aspect_ratio=ratio,
-        )
-        
-        if result.get("success"):
-            return {
-                "success": True,
-                "output": result.get("video_url"),
-            }
-        else:
+        if not prompt and not start_image and not reference_images and not reference_video:
             return {
                 "success": False,
-                "error": result.get("error", "Video generation failed"),
+                "error": "No prompt or input media provided for video generation",
+            }
+        
+        # Default prompt if only media is provided
+        if not prompt:
+            if start_image:
+                prompt = "Animate this image with natural motion"
+            elif reference_images:
+                prompt = "Generate video using these reference images"
+            elif reference_video:
+                prompt = "Generate video based on this reference video"
+        
+        # Get generation parameters (duration: "4s"|"6s"|"8s" from UI, or int)
+        duration_val = data.get("duration", "4s")
+        if isinstance(duration_val, int):
+            duration = duration_val
+        elif isinstance(duration_val, str):
+            duration = int(duration_val.replace("s", "").strip()) if duration_val.replace("s", "").strip().isdigit() else 4
+        else:
+            duration = 4
+        ratio = data.get("ratio", "16:9")
+        resolution = data.get("resolution", "720p")
+        if resolution not in ("720p", "1080p"):
+            resolution = "720p"
+
+        # Validate duration for Veo 3.1 (only supports 4, 6, or 8 seconds)
+        if duration not in [4, 6, 8]:
+            if duration <= 4:
+                duration = 4
+            elif duration <= 6:
+                duration = 6
+            else:
+                duration = 8
+        
+        print(f"[NodeRunner] Generating video: prompt='{prompt[:50]}...', duration={duration}s, ratio={ratio}, resolution={resolution}")
+        print(f"[NodeRunner] Inputs: start_image={bool(start_image)}, end_image={bool(end_image)}, ref_images={bool(reference_images)}, ref_video={bool(reference_video)}")
+        
+        try:
+            # Determine which generation method to use based on inputs
+            
+            # Case 1: Start + End image (interpolation)
+            if start_image and end_image:
+                print("[NodeRunner] Using interpolation (start + end image)")
+                # Note: Need to fetch images first if they're URLs
+                # For now, assuming they're already local paths or URLs that VideoGenerator can handle
+                result = await self.video_generator.generate_with_interpolation(
+                    prompt=prompt,
+                    first_frame_path=start_image,
+                    last_frame_path=end_image,
+                    duration=duration,
+                )
+            
+            # Case 2: Start image only (image-to-video)
+            elif start_image:
+                print("[NodeRunner] Using image-to-video")
+                result = await self.video_generator.generate_from_image(
+                    prompt=prompt,
+                    image_path=start_image,
+                    duration=duration,
+                    resolution=resolution,
+                    aspect_ratio=ratio,
+                )
+            
+            # Case 3: Reference images (style/asset reference)
+            elif reference_images:
+                print("[NodeRunner] Using reference images")
+                # reference_images might be a single URL or list
+                ref_list = [reference_images] if isinstance(reference_images, str) else reference_images
+                result = await self.video_generator.generate_with_reference_images(
+                    prompt=prompt,
+                    reference_images=ref_list,
+                    duration=duration,
+                    aspect_ratio=ratio,
+                )
+            
+            # Case 4: Reference video (extend or use as reference)
+            elif reference_video:
+                print("[NodeRunner] Using reference video (extension)")
+                # For video extension, we need the video object, not just URL
+                # This might require downloading first - implement later
+                return {
+                    "success": False,
+                    "error": "Reference video input not yet fully implemented",
+                }
+            
+            # Case 5: Text-to-video (no input media)
+            else:
+                print("[NodeRunner] Using text-to-video")
+                result = await self.video_generator.generate_clip(
+                    prompt=prompt,
+                    duration=duration,
+                    use_fast_model=True,  # Use Veo 3.1 Fast by default
+                    resolution=resolution,
+                    aspect_ratio=ratio,
+                )
+            
+            if result.get("success"):
+                return {
+                    "success": True,
+                    "output": result.get("video_url"),
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": result.get("error", "Video generation failed"),
+                }
+                
+        except Exception as e:
+            print(f"[NodeRunner] Video generation error: {e}")
+            return {
+                "success": False,
+                "error": f"Video generation error: {str(e)}",
             }
 
+    async def _run_vision_node(
+        self,
+        data: Dict[str, Any],
+        inputs: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Vision node - uses Gemini model as a chat model to process text, images, and videos."""
+        import httpx
+        from google import genai
+        from google.genai import types
+        from app.core.config import settings
+        
+        # Get instruction from node data
+        instruction = data.get("instruction", "")
+        
+        # Get inputs
+        text_input = inputs.get("text", "")
+        ref_images = inputs.get("ref_images", [])
+        ref_videos = inputs.get("ref_videos", [])
+        
+        if not instruction:
+            return {
+                "success": False,
+                "error": "No instruction provided",
+            }
+        
+        # Normalize to lists
+        if isinstance(ref_images, str):
+            ref_images = [ref_images] if ref_images else []
+        if isinstance(ref_videos, str):
+            ref_videos = [ref_videos] if ref_videos else []
+        
+        try:
+            # Initialize Gemini client
+            client = genai.Client(api_key=settings.gemini_api_key)
+            
+            # Build content list - use strings for text, Part for binary
+            contents = []
+            
+            # Add instruction as text
+            if text_input:
+                contents.append(f"Context: {text_input}\n\nInstruction: {instruction}")
+            else:
+                contents.append(instruction)
+            
+            # Add images
+            async with httpx.AsyncClient() as http_client:
+                for img_url in ref_images:
+                    if img_url:
+                        try:
+                            print(f"[Vision] Fetching image: {img_url[:80]}...")
+                            response = await http_client.get(img_url, timeout=30.0)
+                            if response.status_code == 200:
+                                content_type = response.headers.get("content-type", "image/jpeg")
+                                mime_type = content_type.split(";")[0].strip()
+                                # Ensure valid mime type
+                                if not mime_type.startswith("image/"):
+                                    mime_type = "image/jpeg"
+                                contents.append(types.Part.from_bytes(data=response.content, mime_type=mime_type))
+                            else:
+                                print(f"[Vision] Failed to fetch image: {response.status_code}")
+                        except Exception as e:
+                            print(f"[Vision] Error fetching image: {e}")
+                
+                # Add videos (Gemini supports video frames)
+                for vid_url in ref_videos:
+                    if vid_url:
+                        try:
+                            print(f"[Vision] Fetching video: {vid_url[:80]}...")
+                            response = await http_client.get(vid_url, timeout=60.0)
+                            if response.status_code == 200:
+                                content_type = response.headers.get("content-type", "video/mp4")
+                                mime_type = content_type.split(";")[0].strip()
+                                if not mime_type.startswith("video/"):
+                                    mime_type = "video/mp4"
+                                contents.append(types.Part.from_bytes(data=response.content, mime_type=mime_type))
+                            else:
+                                print(f"[Vision] Failed to fetch video: {response.status_code}")
+                        except Exception as e:
+                            print(f"[Vision] Error fetching video: {e}")
+            
+            print(f"[Vision] Sending request with {len(contents)} parts to Gemini...")
+            
+            # Call Gemini 2.0 Flash (multimodal)
+            response = client.models.generate_content(
+                model="gemini-2.0-flash",
+                contents=contents,
+                config=types.GenerateContentConfig(
+                    temperature=0.7,
+                    max_output_tokens=2048,
+                ),
+            )
+            
+            output_text = response.text
+            print(f"[Vision] Response: {output_text[:100]}...")
+            
+            return {
+                "success": True,
+                "output": output_text,
+            }
+            
+        except Exception as e:
+            print(f"[Vision] Error: {e}")
+            return {
+                "success": False,
+                "error": f"Vision node error: {str(e)}",
+            }
+
+    async def _run_editor_agent_node(
+        self,
+        data: Dict[str, Any],
+        inputs: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Editor Agent node - uses Remotion to stitch videos and perform editing tasks."""
+        # Get instruction from node data
+        instruction = data.get("instruction", "")
+        
+        # Get inputs
+        text_input = inputs.get("text", "")
+        ref_images = inputs.get("ref_images", [])
+        ref_videos = inputs.get("ref_videos", [])
+        
+        if not instruction:
+            return {
+                "success": False,
+                "error": "No instruction provided",
+            }
+        
+        # TODO: Implement Remotion integration
+        # This should:
+        # 1. Parse the instruction to understand the editing task
+        # 2. Use Remotion to stitch videos, add transitions, effects, etc.
+        # 3. Return the edited video URL
+        
+        return {
+            "success": False,
+            "error": "Editor Agent node not yet implemented",
+        }
+
+    async def _run_media_upload_node(
+        self,
+        data: Dict[str, Any],
+        inputs: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Media Upload node - outputs uploaded image or video."""
+        file_url = data.get("file_url") or data.get("url") or data.get("output")
+        media_type = data.get("mediaType", "image")
+        
+        if not file_url:
+            return {
+                "success": False,
+                "error": "No media uploaded",
+            }
+        
+        return {
+            "success": True,
+            "output": file_url,
+            "mediaType": media_type,
+        }
+
+    # Legacy node (deprecated)
     async def _run_assistant_node(
         self,
         data: Dict[str, Any],
         inputs: Dict[str, Any],
     ) -> Dict[str, Any]:
-        """Assistant node - placeholder for LLM-based processing."""
-        # TODO: Implement LLM-based text processing
-        return {
-            "success": False,
-            "error": "Assistant node not yet implemented",
-        }
+        """Legacy assistant node - redirects to vision node."""
+        return await self._run_vision_node(data, inputs)
 
     async def _run_upscaler_node(
         self,

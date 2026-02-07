@@ -6,6 +6,7 @@ import { useEffect, useState, useCallback } from "react";
 import { Plus, MoreHorizontal, Clock, FileVideo, Trash2, Pencil, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { workflowApi, WorkflowListItem } from "@/lib/workflow-api";
+import { cn } from "@/lib/utils";
 
 export default function DashboardPage() {
     const router = useRouter();
@@ -145,7 +146,10 @@ export default function DashboardPage() {
                             </Link>
 
                             {/* Overlay Actions */}
-                            <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <div className={cn(
+                                "absolute top-2 right-2 transition-opacity",
+                                menuOpenId === workflow.id ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                            )}>
                                 <div className="relative">
                                     <Button
                                         variant="ghost"
