@@ -104,7 +104,11 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
 
     return (
         <NodeWrapper
-            title="Video Generator"
+            title={`Video Generator #${useWorkflowStore((state) =>
+                state.nodes
+                    .filter(n => n.type === 'videoGen')
+                    .findIndex(n => n.id === id) + 1
+            )}`}
             icon={<Video className="w-4 h-4" />}
             selected={selected}
             inputs={[

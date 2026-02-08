@@ -34,7 +34,7 @@ app.post("/render", async (req, res) => {
     if (!parsed.success) {
       return res.status(400).json({ 
         error: "Invalid request", 
-        details: parsed.error.issues 
+        details: parsed.error?.issues || [] 
       });
     }
     

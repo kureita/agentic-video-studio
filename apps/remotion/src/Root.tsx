@@ -1,3 +1,4 @@
+// @ts-nocheck - React type conflict between workspace React 19 and Remotion's React 18
 import { Composition } from "remotion";
 import { VideoComposition } from "./compositions/VideoComposition";
 import type { VideoCompositionProps } from "./types";

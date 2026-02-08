@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { Node, Edge } from "@xyflow/react";
-import { workflowApi, Workflow } from "./workflow-api";
+import { workflowApi, Workflow, ChatMessage } from "./workflow-api";
 
 // ============================================
 // Types
@@ -13,6 +13,7 @@ interface WorkflowState {
     nodes: Node[];
     edges: Edge[];
     outputs: Record<string, string>; // nodeId -> output URL
+    chatHistory: ChatMessage[];
 
     // Loading states
     isLoading: boolean;
@@ -33,6 +34,9 @@ interface WorkflowState {
     setEdges: (edges: Edge[]) => void;
     setNodeOutput: (nodeId: string, output: string) => void;
     clearNodeOutput: (nodeId: string) => void;
+    addChatMessage: (message: ChatMessage) => void;
+    setChatHistory: (messages: ChatMessage[]) => void;
+    saveChatHistory: () => Promise<void>;
     markDirty: () => void;
     markClean: () => void;
 
@@ -53,6 +57,7 @@ const initialState = {
     nodes: [],
     edges: [],
     outputs: {},
+    chatHistory: [],
     isLoading: false,
     isSaving: false,
     isRunning: false,
@@ -70,12 +75,35 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 
     // Basic setters
     setWorkflow: (workflow: Workflow) => {
+        // Ensure nodes and edges are properly formatted arrays
+        const nodes = Array.isArray(workflow.nodes) ? workflow.nodes : [];
+        const edges = Array.isArray(workflow.edges) ? workflow.edges : [];
+        const chatHistory = Array.isArray(workflow.chat_history) ? workflow.chat_history : [];
+        
+        // Validate and sanitize nodes
+        const validNodes = nodes.map((node: any) => ({
+            id: node.id || String(Math.random()),
+            type: node.type || 'default',
+            position: node.position || { x: 0, y: 0 },
+            data: node.data || {},
+        })) as Node[];
+        
+        // Validate and sanitize edges
+        const validEdges = edges.map((edge: any) => ({
+            id: edge.id || `${edge.source}-${edge.target}`,
+            source: edge.source,
+            target: edge.target,
+            sourceHandle: edge.sourceHandle || undefined,
+            targetHandle: edge.targetHandle || undefined,
+        })) as Edge[];
+        
         set({
             id: workflow.id,
             name: workflow.name,
-            nodes: workflow.nodes as Node[],
-            edges: workflow.edges as Edge[],
+            nodes: validNodes,
+            edges: validEdges,
             outputs: workflow.outputs || {},
+            chatHistory: chatHistory,
             isDirty: false,
         });
     },
@@ -141,6 +169,35 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
         });
     },
 
+    addChatMessage: (message: ChatMessage) => {
+        set((state) => ({
+            chatHistory: [...state.chatHistory, message],
+        }));
+        // Auto-save chat history immediately
+        get().saveChatHistory();
+    },
+
+    setChatHistory: (messages: ChatMessage[]) => {
+        set({ chatHistory: messages });
+    },
+
+    saveChatHistory: async () => {
+        const { id, chatHistory } = get();
+        if (!id) {
+            console.log("[WorkflowStore] No workflow ID to save chat history");
+            return;
+        }
+
+        try {
+            await workflowApi.update(id, {
+                chat_history: chatHistory,
+            });
+            console.log("[WorkflowStore] Chat history saved successfully");
+        } catch (error) {
+            console.error("[WorkflowStore] Chat history save error:", error);
+        }
+    },
+
     markDirty: () => set({ isDirty: true }),
     markClean: () => set({ isDirty: false }),
 
@@ -156,6 +213,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
                 nodes: [],
                 edges: [],
                 outputs: {},
+                chatHistory: [],
                 isLoading: false,
                 isDirty: false,
             });
@@ -173,18 +231,45 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
         try {
             const response = await workflowApi.get(id);
             const workflow = response.data;
+            
+            // Ensure nodes and edges are properly formatted arrays
+            const nodes = Array.isArray(workflow.nodes) ? workflow.nodes : [];
+            const edges = Array.isArray(workflow.edges) ? workflow.edges : [];
+            const chatHistory = Array.isArray(workflow.chat_history) ? workflow.chat_history : [];
+            
+            // Validate and sanitize nodes
+            const validNodes = nodes.map((node: any) => ({
+                id: node.id || String(Math.random()),
+                type: node.type || 'default',
+                position: node.position || { x: 0, y: 0 },
+                data: node.data || {},
+            })) as Node[];
+            
+            // Validate and sanitize edges
+            const validEdges = edges.map((edge: any) => ({
+                id: edge.id || `${edge.source}-${edge.target}`,
+                source: edge.source,
+                target: edge.target,
+                sourceHandle: edge.sourceHandle || undefined,
+                targetHandle: edge.targetHandle || undefined,
+            })) as Edge[];
+            
+            console.log(`[WorkflowStore] Loaded workflow ${id}: ${validNodes.length} nodes, ${validEdges.length} edges`);
+            
             set({
                 id: workflow.id,
                 name: workflow.name,
-                nodes: workflow.nodes as Node[],
-                edges: workflow.edges as Edge[],
+                nodes: validNodes,
+                edges: validEdges,
                 outputs: workflow.outputs || {},
+                chatHistory: chatHistory,
                 isLoading: false,
                 isDirty: false,
             });
         } catch (error) {
             console.error("[WorkflowStore] Load error:", error);
             set({ isLoading: false, error: "Failed to load workflow" });
+            throw error; // Re-throw to allow caller to handle
         }
     },
 

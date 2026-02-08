@@ -4,6 +4,8 @@ from typing import Dict, Any, List, Optional
 
 from app.services.image_generator import ImageGenerator
 from app.services.video_generator import VideoGenerator
+from app.services.audio_generator import AudioGenerator
+from app.services.editor_agent import EditorAgent
 
 
 class NodeRunner:
@@ -12,6 +14,8 @@ class NodeRunner:
     def __init__(self):
         self.image_generator = ImageGenerator()
         self.video_generator = VideoGenerator()
+        self.audio_generator = AudioGenerator()
+        self.editor_agent = EditorAgent()
 
     async def run_node(
         self,
@@ -58,6 +62,9 @@ class NodeRunner:
             elif node_type == "imageGen":
                 return await self._run_image_gen_node(node_data, inputs, nodes)
             
+            elif node_type == "audioGen":
+                return await self._run_audio_gen_node(node_data, inputs, nodes)
+            
             elif node_type == "videoGen":
                 return await self._run_video_gen_node(node_data, inputs)
             
@@ -98,6 +105,8 @@ class NodeRunner:
         Resolve inputs for a node based on connected edges and existing outputs.
         
         Returns a dict with input handle names as keys.
+        For inputs that can accept multiple connections (like ref_videos, ref_images),
+        values are collected into lists.
         """
         inputs = {}
         
@@ -107,13 +116,32 @@ class NodeRunner:
                 source_handle = edge.get("sourceHandle", "")
                 target_handle = edge.get("targetHandle", "")
                 
+                print(f"[NodeRunner] Resolving edge: source={source_id}, target={node_id}")
+                print(f"[NodeRunner] Handles: source_handle={source_handle}, target_handle={target_handle}")
+                
                 # Extract the handle name (format: "type|name")
                 target_input_name = target_handle.split("|")[-1] if "|" in target_handle else target_handle
+                
+                print(f"[NodeRunner] Extracted target_input_name: {target_input_name}")
                 
                 # Get output from source node
                 if source_id in outputs:
                     source_output = outputs[source_id]
-                    inputs[target_input_name] = source_output
+                    
+                    # For inputs that can accept multiple connections, collect into list
+                    if target_input_name in ["ref_videos", "ref_images"]:
+                        if target_input_name not in inputs:
+                            inputs[target_input_name] = []
+                        # Append to list if not already there
+                        if isinstance(inputs[target_input_name], list):
+                            inputs[target_input_name].append(source_output)
+                        else:
+                            inputs[target_input_name] = [inputs[target_input_name], source_output]
+                    else:
+                        # Single value inputs (overwrite if multiple connections)
+                        inputs[target_input_name] = source_output
+                    
+                    print(f"[NodeRunner] Set input '{target_input_name}' from outputs: {str(source_output)[:100]}")
                 else:
                     # Try to get from node data directly (for text nodes, etc.)
                     source_node = next((n for n in nodes if n["id"] == source_id), None)
@@ -122,6 +150,7 @@ class NodeRunner:
                         # For text nodes, the output is the text field
                         if source_node.get("type") == "text":
                             inputs[target_input_name] = source_data.get("text", "")
+                            print(f"[NodeRunner] Set input '{target_input_name}' from text node data")
         
         return inputs
 
@@ -206,6 +235,10 @@ class NodeRunner:
         # Get reference image from inputs (if any)
         reference_image = inputs.get("image")
         
+        print(f"[NodeRunner] Image Gen Debug - inputs keys: {list(inputs.keys())}")
+        print(f"[NodeRunner] Image Gen Debug - reference_image: {reference_image[:100] if reference_image else None}")
+        print(f"[NodeRunner] Image Gen Debug - prompt: {prompt[:100] if prompt else None}")
+        
         if not prompt and not reference_image:
             return {
                 "success": False,
@@ -255,6 +288,54 @@ class NodeRunner:
              return {
                 "success": False,
                 "error": f"Generator Error: {str(e)}",
+            }
+
+    async def _run_audio_gen_node(
+        self,
+        data: Dict[str, Any],
+        inputs: Dict[str, Any],
+        nodes: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Generate audio using the AudioGenerator service."""
+        # Get text from node data (typed) or inputs (connected)
+        raw_text = data.get("prompt", "")
+        if not raw_text:
+            raw_text = inputs.get("prompt", "")
+            
+        # Resolve references (e.g. @Text #1)
+        text = self._resolve_prompt_references(raw_text, nodes)
+        
+        if not text or not text.strip():
+            return {
+                "success": False,
+                "error": "No text provided for speech generation",
+            }
+        
+        # Get voice parameter
+        voice = data.get("voice", "Rachel")
+        
+        print(f"[NodeRunner] Generating audio: text='{text[:50]}...', voice={voice}")
+        
+        try:
+            result = await self.audio_generator.generate_speech(
+                text=text,
+                voice=voice,
+            )
+            
+            if result.get("success"):
+                return {
+                    "success": True,
+                    "output": result.get("audio_url"),
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": result.get("error", "Audio generation failed"),
+                }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Audio Generator Error: {str(e)}",
             }
 
     async def _run_video_gen_node(
@@ -508,8 +589,20 @@ class NodeRunner:
         
         # Get inputs
         text_input = inputs.get("text", "")
+        audio = inputs.get("audio")
         ref_images = inputs.get("ref_images", [])
         ref_videos = inputs.get("ref_videos", [])
+        
+        # Normalize to lists (handle both single values and lists)
+        if isinstance(ref_images, str):
+            ref_images = [ref_images] if ref_images else []
+        elif not isinstance(ref_images, list):
+            ref_images = []
+            
+        if isinstance(ref_videos, str):
+            ref_videos = [ref_videos] if ref_videos else []
+        elif not isinstance(ref_videos, list):
+            ref_videos = []
         
         if not instruction:
             return {
@@ -517,16 +610,39 @@ class NodeRunner:
                 "error": "No instruction provided",
             }
         
-        # TODO: Implement Remotion integration
-        # This should:
-        # 1. Parse the instruction to understand the editing task
-        # 2. Use Remotion to stitch videos, add transitions, effects, etc.
-        # 3. Return the edited video URL
+        if not ref_videos and not ref_images:
+            return {
+                "success": False,
+                "error": "No video or image inputs provided. Connect videos or images to edit.",
+            }
         
-        return {
-            "success": False,
-            "error": "Editor Agent node not yet implemented",
-        }
+        print(f"[NodeRunner] Editor Agent: instruction='{instruction[:50]}...', videos={len(ref_videos)}, images={len(ref_images)}, has_audio={bool(audio)}")
+        
+        try:
+            result = await self.editor_agent.edit_video(
+                instruction=instruction,
+                ref_videos=ref_videos,
+                audio=audio,
+                text_input=text_input,
+                ref_images=ref_images,
+            )
+            
+            if result.get("success"):
+                return {
+                    "success": True,
+                    "output": result.get("video_url"),
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": result.get("error", "Video editing failed"),
+                }
+        except Exception as e:
+            print(f"[NodeRunner] Editor Agent error: {e}")
+            return {
+                "success": False,
+                "error": f"Editor Agent error: {str(e)}",
+            }
 
     async def _run_media_upload_node(
         self,

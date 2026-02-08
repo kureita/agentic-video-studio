@@ -74,18 +74,33 @@ class ImageGenerator:
         }
 
     async def _fetch_image(self, url: str) -> Optional[bytes]:
-        """Fetch image bytes from URL."""
+        """Fetch image bytes from URL or decode from data URL."""
         if not url:
             return None
         try:
-            # Handle local static files differently if needed, but httpx handles http://localhost
+            # Handle data URLs (base64 encoded images)
+            if url.startswith('data:'):
+                import base64
+                # Format: data:image/png;base64,iVBORw0KG...
+                if ';base64,' in url:
+                    # Extract the base64 data
+                    base64_data = url.split(';base64,')[1]
+                    image_bytes = base64.b64decode(base64_data)
+                    print(f"[ImageGenerator] Decoded data URL ({len(image_bytes)} bytes)")
+                    return image_bytes
+                else:
+                    print(f"[ImageGenerator] Unsupported data URL format")
+                    return None
+            
+            # Handle regular HTTP/HTTPS URLs
             async with httpx.AsyncClient() as client:
                 response = await client.get(url, timeout=30.0)
                 if response.status_code == 200:
+                    print(f"[ImageGenerator] Fetched image from URL ({len(response.content)} bytes)")
                     return response.content
                 print(f"[ImageGenerator] Failed to fetch image {url}: status {response.status_code}")
         except Exception as e:
-            print(f"[ImageGenerator] Error fetching image {url}: {e}")
+            print(f"[ImageGenerator] Error fetching image {url[:100]}...: {e}")
         return None
 
     async def generate_image(
@@ -128,22 +143,40 @@ class ImageGenerator:
             print(f"[ImageGenerator] Generating image: {enhanced_prompt[:100]}...")
             
             # Prepare contents
-            contents = [enhanced_prompt]
+            contents = []
             
-            # Add reference image if provided
+            # Add reference image FIRST if provided (so the model sees it before the prompt)
             if reference_image:
-                print(f"[ImageGenerator] Fetching reference image: {reference_image}")
+                print(f"[ImageGenerator] Processing reference image: {reference_image[:80]}...")
                 image_bytes = await self._fetch_image(reference_image)
                 if image_bytes:
-                    print(f"[ImageGenerator] Added reference image ({len(image_bytes)} bytes)")
-                    # Simple mime detection or default to png/jpeg based on extension or header
-                    # For safety with Gemini, assume jpeg or png.
-                    # We can fallback to 'image/jpeg' if unknown
-                    mime_type = "image/jpeg" 
-                    if reference_image.lower().endswith(".png"):
-                        mime_type = "image/png"
+                    print(f"[ImageGenerator] Fetched reference image ({len(image_bytes)} bytes)")
                     
+                    # Detect mime type from data URL or file extension
+                    mime_type = "image/jpeg"  # default
+                    
+                    if reference_image.startswith('data:'):
+                        # Extract mime type from data URL: data:image/png;base64,...
+                        if ';' in reference_image:
+                            mime_type = reference_image.split(';')[0].replace('data:', '')
+                    elif reference_image.lower().endswith('.png'):
+                        mime_type = "image/png"
+                    elif reference_image.lower().endswith('.webp'):
+                        mime_type = "image/webp"
+                    elif reference_image.lower().endswith('.gif'):
+                        mime_type = "image/gif"
+                    
+                    print(f"[ImageGenerator] Using mime type: {mime_type}")
                     contents.append(types.Part.from_bytes(data=image_bytes, mime_type=mime_type))
+                    print(f"[ImageGenerator] Reference image added to contents")
+                    
+                    # Enhance prompt to reference the image
+                    enhanced_prompt = f"Based on the provided reference image: {enhanced_prompt}"
+                else:
+                    print(f"[ImageGenerator] WARNING: Failed to fetch/decode reference image")
+            
+            # Add the text prompt
+            contents.append(enhanced_prompt)
             
             # Configure image generation
             config = types.GenerateContentConfig(

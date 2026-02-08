@@ -26,6 +26,7 @@ dependencies = [
     "playwright>=1.48.0",
     # Audio
     "elevenlabs>=1.10.0",
+    "gtts>=2.5.0",  # Google Text-to-Speech for mock mode
     # Utils
     "boto3>=1.35.0",
     "pillow>=10.4.0",

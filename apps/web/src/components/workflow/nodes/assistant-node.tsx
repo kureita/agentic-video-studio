@@ -71,7 +71,11 @@ export const AssistantNode = memo(({ id, selected, data }: NodeProps<AssistantNo
 
     return (
         <NodeWrapper
-            title="Assistant"
+            title={`Assistant #${useWorkflowStore((state) =>
+                state.nodes
+                    .filter(n => n.type === 'assistant')
+                    .findIndex(n => n.id === id) + 1
+            )}`}
             icon={<Eye className="w-4 h-4" />}
             selected={selected}
             inputs={[

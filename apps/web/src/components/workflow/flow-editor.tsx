@@ -22,6 +22,7 @@ import "@xyflow/react/dist/style.css";
 import { TextNode } from "./nodes/text-node";
 import { UploadNode } from "./nodes/upload-node";
 import { ImageGenNode } from "./nodes/image-gen-node";
+import { AudioGenNode } from "./nodes/audio-gen-node";
 import { VideoGenNode } from "./nodes/video-gen-node";
 import { VisionNode } from "./nodes/vision-node";
 import { EditorAgentNode } from "./nodes/editor-agent-node";
@@ -34,6 +35,7 @@ const nodeTypes = {
     text: TextNode,
     upload: UploadNode,
     imageGen: ImageGenNode,
+    audioGen: AudioGenNode,
     videoGen: VideoGenNode,
     vision: VisionNode,
     assistant: VisionNode, // Keep backward compatibility
@@ -68,16 +70,38 @@ export default function FlowEditor({ workflowId }: FlowEditorProps) {
 
     // Load workflow on mount if ID is provided
     useEffect(() => {
-        if (workflowId && workflowId !== "new" && !isInitialized) {
-            loadWorkflow(workflowId).then(() => setIsInitialized(true));
-        } else {
-            setIsInitialized(true);
-        }
+        let mounted = true;
+        
+        const loadWorkflowData = async () => {
+            if (workflowId && workflowId !== "new" && !isInitialized) {
+                try {
+                    await loadWorkflow(workflowId);
+                    // Small delay to ensure state has propagated
+                    await new Promise(resolve => setTimeout(resolve, 50));
+                    if (mounted) {
+                        setIsInitialized(true);
+                    }
+                } catch (error) {
+                    console.error("[FlowEditor] Failed to load workflow:", error);
+                    if (mounted) {
+                        setIsInitialized(true); // Still mark as initialized to prevent infinite loop
+                    }
+                }
+            } else if (workflowId === "new") {
+                setIsInitialized(true);
+            }
+        };
+        
+        loadWorkflowData();
+        
+        return () => {
+            mounted = false;
+        };
     }, [workflowId, loadWorkflow, isInitialized]);
 
     // Take snapshot for undo/redo when nodes/edges change
     useEffect(() => {
-        if (isInitialized) {
+        if (isInitialized && (nodes.length > 0 || edges.length > 0)) {
             takeSnapshot(nodes, edges);
         }
     }, [nodes, edges, takeSnapshot, isInitialized]);
@@ -193,6 +217,15 @@ export default function FlowEditor({ workflowId }: FlowEditorProps) {
         }
     }, [redo, nodes, edges, setNodes, setEdges]);
 
+
+    // Don't render ReactFlow until initialized to prevent race conditions
+    if (!isInitialized) {
+        return (
+            <div className="w-full h-full flex items-center justify-center">
+                <div className="text-muted-foreground">Loading workflow...</div>
+            </div>
+        );
+    }
 
     return (
         <div className="w-full h-full relative">

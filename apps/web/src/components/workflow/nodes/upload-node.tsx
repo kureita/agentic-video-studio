@@ -2,13 +2,18 @@ import { memo } from "react";
 import { NodeProps, useReactFlow } from "@xyflow/react";
 import { Upload, Image as ImageIcon } from "lucide-react";
 import { NodeWrapper } from "@/components/workflow/node-wrapper";
+import { useWorkflowStore } from "@/lib/workflow-store";
 
 export const UploadNode = memo(({ id, selected, data }: NodeProps) => {
     const { deleteElements } = useReactFlow();
 
     return (
         <NodeWrapper
-            title="Upload Media"
+            title={`Upload #${useWorkflowStore((state) =>
+                state.nodes
+                    .filter(n => n.type === 'upload')
+                    .findIndex(n => n.id === id) + 1
+            )}`}
             icon={<Upload className="w-4 h-4" />}
             selected={selected}
             outputs={[{ id: "media", label: "Media", type: "image" }]}

@@ -13,17 +13,17 @@ interface Message {
 }
 
 export function AgentSidebar() {
-    const [messages, setMessages] = useState<Message[]>([
-        {
-            role: "assistant",
-            content: "Hello! I'm your AI creative assistant using Gemini. Tell me what video you want to create, and I'll build the workflow for you."
-        }
-    ]);
+    const { chatHistory, addChatMessage, setNodes, setEdges, nodes, edges } = useWorkflowStore();
     const [input, setInput] = useState("");
     const [isLoading, setIsLoading] = useState(false);
 
-    // Get store actions
-    const { setNodes, setEdges, nodes, edges } = useWorkflowStore();
+    // Show welcome message if no chat history
+    const displayMessages = chatHistory.length === 0 
+        ? [{
+            role: "assistant" as const,
+            content: "Hello! I'm your AI creative assistant using Gemini. Tell me what video you want to create, and I'll build the workflow for you."
+        }]
+        : chatHistory;
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -31,7 +31,7 @@ export function AgentSidebar() {
 
         const userMessage = input.trim();
         setInput("");
-        setMessages(prev => [...prev, { role: "user", content: userMessage }]);
+        addChatMessage({ role: "user", content: userMessage });
         setIsLoading(true);
 
         try {
@@ -50,28 +50,28 @@ export function AgentSidebar() {
                     setNodes(result.nodes);
                     setEdges(result.edges || []);
 
-                    setMessages(prev => [...prev, {
+                    addChatMessage({
                         role: "assistant",
                         content: result.message || "I've updated the workflow based on your request."
-                    }]);
+                    });
                 } else {
-                    setMessages(prev => [...prev, {
+                    addChatMessage({
                         role: "assistant",
                         content: result.message || "I couldn't generate a workflow for that request. Please try again."
-                    }]);
+                    });
                 }
             } else {
-                setMessages(prev => [...prev, {
+                addChatMessage({
                     role: "assistant",
                     content: "Sorry, I encountered an error creating the workflow."
-                }]);
+                });
             }
         } catch (error) {
             console.error("Agent error:", error);
-            setMessages(prev => [...prev, {
+            addChatMessage({
                 role: "assistant",
                 content: "Sorry, something went wrong with the AI service."
-            }]);
+            });
         } finally {
             setIsLoading(false);
         }
@@ -92,9 +92,9 @@ export function AgentSidebar() {
 
             {/* Messages Area */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                {messages.map((msg, i) => (
+                {displayMessages.map((msg, i) => (
                     <div
-                        key={i}
+                        key={`${i}-${msg.role}-${msg.content.substring(0, 20)}`}
                         className={cn(
                             "flex flex-col gap-1 max-w-[90%]",
                             msg.role === "user" ? "ml-auto items-end" : "mr-auto items-start"

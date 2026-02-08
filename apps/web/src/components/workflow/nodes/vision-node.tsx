@@ -70,7 +70,11 @@ export const VisionNode = memo(({ id, selected, data }: NodeProps) => {
 
     return (
         <NodeWrapper
-            title="Vision"
+            title={`Vision #${useWorkflowStore((state) =>
+                state.nodes
+                    .filter(n => n.type === 'vision')
+                    .findIndex(n => n.id === id) + 1
+            )}`}
             icon={<Eye className="w-4 h-4" />}
             selected={selected}
             inputs={[

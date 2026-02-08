@@ -1,10 +1,10 @@
-import { memo, useState, useRef, useMemo, ChangeEvent } from "react";
+import React, { memo } from "react";
 import { NodeProps, useReactFlow } from "@xyflow/react";
-import { Clapperboard, Loader2, Download } from "lucide-react";
+import { Music, Loader2, Download, ChevronDown } from "lucide-react";
 import { NodeWrapper } from "@/components/workflow/node-wrapper";
 import { useWorkflowStore } from "@/lib/workflow-store";
 
-export const EditorAgentNode = memo(({ id, selected, data }: NodeProps) => {
+export const AudioGenNode = memo(({ id, selected, data }: NodeProps) => {
     const { deleteElements, updateNodeData } = useReactFlow();
     const { runNode, clearNodeOutput, outputs, runningNodeId } = useWorkflowStore();
 
@@ -15,32 +15,31 @@ export const EditorAgentNode = memo(({ id, selected, data }: NodeProps) => {
         if (output) {
             const link = document.createElement('a');
             link.href = output;
-            link.download = `edited-video-${Date.now()}.mp4`;
+            link.download = `generated-audio-${Date.now()}.mp3`;
             link.target = '_blank';
             link.click();
         }
     };
 
-    const [showSuggestions, setShowSuggestions] = useState(false);
-    const [filterText, setFilterText] = useState("");
-    const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+    const [showSuggestions, setShowSuggestions] = React.useState(false);
+    const [filterText, setFilterText] = React.useState("");
 
     // Get all text nodes for suggestions
     const nodes = useWorkflowStore((state) => state.nodes);
-    const textNodes = useMemo(() =>
+    const textNodes = React.useMemo(() =>
         nodes
             .filter(n => n.type === 'text')
             .map((n, i) => ({ id: n.id, label: `Text #${i + 1}`, content: (n.data.text as string) || "" })),
         [nodes]
     );
 
-    const handleTextChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
+    const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
         const val = e.target.value;
         const cursor = e.target.selectionStart;
 
-        updateNodeData(id, { instruction: val });
+        updateNodeData(id, { prompt: val });
 
-        // Check for trigger character @
         const textBeforeCursor = val.slice(0, cursor);
         const lastAt = textBeforeCursor.lastIndexOf('@');
 
@@ -56,7 +55,7 @@ export const EditorAgentNode = memo(({ id, selected, data }: NodeProps) => {
     };
 
     const insertSuggestion = (label: string) => {
-        const val = (typeof data.instruction === 'string' ? data.instruction : '');
+        const val = (typeof data.prompt === 'string' ? data.prompt : '');
         const cursor = textareaRef.current?.selectionStart || val.length;
 
         const textBeforeCursor = val.slice(0, cursor);
@@ -64,7 +63,7 @@ export const EditorAgentNode = memo(({ id, selected, data }: NodeProps) => {
 
         if (lastAt !== -1) {
             const newVal = val.slice(0, lastAt) + `@${label} ` + val.slice(cursor);
-            updateNodeData(id, { instruction: newVal });
+            updateNodeData(id, { prompt: newVal });
             setShowSuggestions(false);
 
             setTimeout(() => {
@@ -79,38 +78,35 @@ export const EditorAgentNode = memo(({ id, selected, data }: NodeProps) => {
 
     return (
         <NodeWrapper
-            title={`Editor Agent #${useWorkflowStore((state) =>
+            title={`Audio Generator #${useWorkflowStore((state) =>
                 state.nodes
-                    .filter(n => n.type === 'editorAgent')
+                    .filter(n => n.type === 'audioGen')
                     .findIndex(n => n.id === id) + 1
             )}`}
-            icon={<Clapperboard className="w-4 h-4" />}
+            icon={<Music className="w-4 h-4" />}
             selected={selected}
+            color="bg-orange-500"
             inputs={[
-                { id: "text", label: "Text", type: "text", style: { bottom: '20px' } },
-                { id: "audio", label: "Audio", type: "audio", style: { bottom: '60px' } },
-                { id: "ref_images", label: "Ref Images", type: "image", style: { bottom: '100px' } },
-                { id: "ref_videos", label: "Ref Videos", type: "video", style: { bottom: '140px' } }
+                { id: "prompt", label: "Text", type: "text", style: { bottom: '20px' } }
             ]}
-            outputs={[{ id: "output", label: "Video", type: "video" }]}
-            color="bg-purple-500"
+            outputs={[{ id: "audio", label: "Audio", type: "audio" }]}
             contentClassName="relative bg-black"
             onDelete={() => deleteElements({ nodes: [{ id }] })}
             onRun={() => runNode(id)}
             onClear={output ? () => clearNodeOutput(id) : undefined}
             isRunning={isRunning}
         >
-            <div className="relative bg-muted/30 group/editor transition-all duration-300 ease-in-out overflow-hidden w-[400px]">
+            <div className="relative bg-muted/30 group/audio transition-all duration-300 ease-in-out overflow-hidden w-[320px]">
                 
-                {/* Top Section: Video Player */}
-                <div className="relative h-[225px] flex items-center justify-center">
+                {/* Top Section: Audio Player */}
+                <div className="relative h-[120px] flex items-center justify-center p-4">
                     {output && !isRunning ? (
                         <>
-                            <video
+                            <audio
                                 src={output}
-                                className="absolute inset-0 w-full h-full object-cover"
                                 controls
-                                playsInline
+                                className="w-full"
+                                style={{ filter: 'drop-shadow(0 4px 6px rgba(0, 0, 0, 0.3))' }}
                             />
                             
                             {/* Download button */}
@@ -123,15 +119,14 @@ export const EditorAgentNode = memo(({ id, selected, data }: NodeProps) => {
                         </>
                     ) : isRunning ? (
                         <div className="flex flex-col items-center justify-center text-center">
-                            <div className="w-12 h-12 rounded-full bg-purple-500/10 flex items-center justify-center mb-3 text-purple-500">
+                            <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-3 text-primary">
                                 <Loader2 className="w-6 h-6 animate-spin" />
                             </div>
-                            <p className="text-xs font-medium text-muted-foreground">Editing video...</p>
+                            <p className="text-xs font-medium text-muted-foreground">Generating audio...</p>
                         </div>
                     ) : (
-                        <div className="flex flex-col items-center justify-center text-center text-muted-foreground/50">
-                            <Clapperboard className="w-12 h-12 mb-2" />
-                            <p className="text-xs">Edited video will appear here</p>
+                        <div className="flex items-center justify-center text-muted-foreground/50">
+                            <Music className="w-8 h-8" />
                         </div>
                     )}
                 </div>
@@ -139,7 +134,7 @@ export const EditorAgentNode = memo(({ id, selected, data }: NodeProps) => {
                 {/* Divider Line */}
                 <div className="h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
 
-                {/* Bottom Section: Text Input */}
+                {/* Bottom Section: Text Input & Controls */}
                 <div className="relative bg-black/20">
                     {/* Suggestions Popup */}
                     {showSuggestions && textNodes.length > 0 && (
@@ -169,16 +164,41 @@ export const EditorAgentNode = memo(({ id, selected, data }: NodeProps) => {
                     {/* Text Input */}
                     <textarea
                         ref={textareaRef}
-                        className="w-full min-h-[120px] bg-transparent border-none px-4 py-3 text-sm font-medium placeholder:text-white/50 focus-visible:outline-none resize-none overflow-y-auto leading-relaxed text-white nodrag nowheel"
-                        placeholder="Describe the editing task (e.g., stitch videos, add transitions, apply effects)..."
-                        value={typeof data.instruction === 'string' ? data.instruction : ''}
+                        className="w-full min-h-[100px] bg-transparent border-none px-4 py-3 text-sm font-medium placeholder:text-white/50 focus-visible:outline-none resize-none overflow-y-auto leading-relaxed text-white nodrag nowheel"
+                        placeholder="Enter text to convert to speech..."
+                        value={typeof data.prompt === 'string' ? data.prompt : ''}
                         onChange={handleTextChange}
                         onKeyDown={(e) => e.stopPropagation()}
                     />
+
+                    {/* Controls Bar */}
+                    <div className="px-3 pb-3 flex items-center gap-2">
+                        {/* Voice Selector */}
+                        <div className="relative h-7 flex items-center gap-1.5 bg-black/40 backdrop-blur-sm border border-white/10 rounded-full px-3 text-white/90 hover:bg-black/60 transition-colors flex-grow">
+                            <Music className="w-3 h-3 text-white/70" />
+                            <span className="text-[10px] font-medium truncate">{typeof data.voice === 'string' ? data.voice : "Rachel"}</span>
+                            <ChevronDown className="w-2.5 h-2.5 text-white/50 flex-shrink-0" />
+                            <select
+                                className="absolute inset-0 opacity-0 cursor-pointer"
+                                value={typeof data.voice === 'string' ? data.voice : "Rachel"}
+                                onChange={(e) => updateNodeData(id, { voice: e.target.value })}
+                            >
+                                <option value="Rachel">Rachel</option>
+                                <option value="Adam">Adam</option>
+                                <option value="Antoni">Antoni</option>
+                                <option value="Arnold">Arnold</option>
+                                <option value="Bella">Bella</option>
+                                <option value="Domi">Domi</option>
+                                <option value="Elli">Elli</option>
+                                <option value="Josh">Josh</option>
+                                <option value="Sam">Sam</option>
+                            </select>
+                        </div>
+                    </div>
                 </div>
             </div>
         </NodeWrapper>
     );
 });
 
-EditorAgentNode.displayName = "EditorAgentNode";
+AudioGenNode.displayName = "AudioGenNode";

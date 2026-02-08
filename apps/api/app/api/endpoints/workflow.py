@@ -41,10 +41,17 @@ class CreateWorkflowRequest(BaseModel):
     name: Optional[str] = "Untitled Workflow"
 
 
+class ChatMessage(BaseModel):
+    role: str  # "user" or "assistant"
+    content: str
+    timestamp: Optional[str] = None
+
+
 class UpdateWorkflowRequest(BaseModel):
     name: Optional[str] = None
     nodes: Optional[List[WorkflowNode]] = None
     edges: Optional[List[WorkflowEdge]] = None
+    chat_history: Optional[List[ChatMessage]] = None
 
 
 class WorkflowResponse(BaseModel):
@@ -53,6 +60,7 @@ class WorkflowResponse(BaseModel):
     nodes: List[Dict[str, Any]] = []
     edges: List[Dict[str, Any]] = []
     outputs: Dict[str, Any] = {}
+    chat_history: List[Dict[str, Any]] = []
     created_at: str
     updated_at: str
 
@@ -94,12 +102,33 @@ def get_workflows_collection():
 
 def serialize_workflow(workflow: dict) -> dict:
     """Convert MongoDB document to response format."""
+    # Ensure nodes and edges are always lists
+    nodes = workflow.get("nodes", [])
+    edges = workflow.get("edges", [])
+    chat_history = workflow.get("chat_history", [])
+    
+    # Validate nodes structure
+    if not isinstance(nodes, list):
+        print(f"[Workflow] Warning: nodes is not a list, got {type(nodes)}")
+        nodes = []
+    
+    # Validate edges structure
+    if not isinstance(edges, list):
+        print(f"[Workflow] Warning: edges is not a list, got {type(edges)}")
+        edges = []
+    
+    # Validate chat_history structure
+    if not isinstance(chat_history, list):
+        print(f"[Workflow] Warning: chat_history is not a list, got {type(chat_history)}")
+        chat_history = []
+    
     return {
         "id": str(workflow["_id"]),
         "name": workflow.get("name", "Untitled Workflow"),
-        "nodes": workflow.get("nodes", []),
-        "edges": workflow.get("edges", []),
+        "nodes": nodes,
+        "edges": edges,
         "outputs": workflow.get("outputs", {}),
+        "chat_history": chat_history,
         "created_at": workflow.get("created_at", datetime.now(timezone.utc)).isoformat(),
         "updated_at": workflow.get("updated_at", datetime.now(timezone.utc)).isoformat(),
     }
@@ -120,6 +149,7 @@ async def create_workflow(request: CreateWorkflowRequest):
         "nodes": [],
         "edges": [],
         "outputs": {},
+        "chat_history": [],
         "created_at": now,
         "updated_at": now,
     }
@@ -158,13 +188,18 @@ async def get_workflow(workflow_id: str):
     
     try:
         workflow = await collection.find_one({"_id": ObjectId(workflow_id)})
-    except Exception:
+    except Exception as e:
+        print(f"[Workflow] Invalid workflow ID: {workflow_id}, error: {e}")
         raise HTTPException(status_code=400, detail="Invalid workflow ID")
     
     if not workflow:
+        print(f"[Workflow] Workflow not found: {workflow_id}")
         raise HTTPException(status_code=404, detail="Workflow not found")
     
-    return serialize_workflow(workflow)
+    serialized = serialize_workflow(workflow)
+    print(f"[Workflow] Retrieved workflow {workflow_id}: {len(serialized['nodes'])} nodes, {len(serialized['edges'])} edges")
+    
+    return serialized
 
 
 @router.put("/{workflow_id}", response_model=WorkflowResponse)
@@ -186,6 +221,8 @@ async def update_workflow(workflow_id: str, request: UpdateWorkflowRequest):
         update_data["nodes"] = [node.model_dump() for node in request.nodes]
     if request.edges is not None:
         update_data["edges"] = [edge.model_dump() for edge in request.edges]
+    if request.chat_history is not None:
+        update_data["chat_history"] = [msg.model_dump() for msg in request.chat_history]
     
     result = await collection.update_one(
         {"_id": oid},

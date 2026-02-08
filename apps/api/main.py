@@ -19,6 +19,7 @@ async def lifespan(app: FastAPI):
     # Ensure static directories exist
     Path("static/videos").mkdir(parents=True, exist_ok=True)
     Path("static/images").mkdir(parents=True, exist_ok=True)
+    Path("static/audio").mkdir(parents=True, exist_ok=True)
     
     yield
     # Shutdown

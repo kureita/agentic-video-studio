@@ -1,6 +1,6 @@
 import { memo } from "react";
 import { Handle, Position } from "@xyflow/react";
-import { Copy, Trash2, Play, Type, Image as ImageIcon, Video, FileText, Loader2, Eraser } from "lucide-react";
+import { Copy, Trash2, Play, Type, Image as ImageIcon, Video, Music, Loader2, Eraser } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
@@ -25,6 +25,7 @@ interface NodeWrapperProps {
     isRunning?: boolean;
     inputBaseOffset?: number;
     contentClassName?: string;
+    style?: React.CSSProperties;
 }
 
 const getHandleIcon = (type?: string) => {
@@ -32,7 +33,7 @@ const getHandleIcon = (type?: string) => {
         case "text": return <Type className="w-2.5 h-2.5" />;
         case "image": return <ImageIcon className="w-2.5 h-2.5" />;
         case "video": return <Video className="w-2.5 h-2.5" />;
-        case "audio": return <FileText className="w-2.5 h-2.5" />; // Placeholder
+        case "audio": return <Music className="w-2.5 h-2.5" />;
         default: return <div className="w-1.5 h-1.5 rounded-full bg-current" />;
     }
 };
@@ -50,6 +51,7 @@ export const NodeWrapper = memo(({
     onClear,
     isRunning,
     contentClassName,
+    style,
     inputBaseOffset = 75,
 }: NodeWrapperProps) => {
 
@@ -113,13 +115,16 @@ export const NodeWrapper = memo(({
             )}
 
             {/* Main Node Content Box */}
-            <div className={cn(
-                "min-w-[300px] rounded-[20px] bg-card border-[3px] transition-all duration-300 overflow-hidden",
-                selected
-                    ? "border-primary/20 shadow-[0_0_40px_-10px_hsl(var(--primary)/0.2)] ring-1 ring-primary/40"
-                    : "border-border/40 shadow-sm hover:border-border/80",
-                isRunning && "ring-2 ring-primary/30 ring-offset-2 ring-offset-background"
-            )}>
+            <div
+                className={cn(
+                    "min-w-[300px] rounded-[20px] bg-card border-[3px] transition-all duration-300 overflow-hidden",
+                    selected
+                        ? "border-primary/20 shadow-[0_0_40px_-10px_hsl(var(--primary)/0.2)] ring-1 ring-primary/40"
+                        : "border-border/40 shadow-sm hover:border-border/80",
+                    isRunning && "ring-2 ring-primary/30 ring-offset-2 ring-offset-background"
+                )}
+                style={style}
+            >
                 <div className={cn("p-0 relative", contentClassName)}>
                     {children}
                 </div>

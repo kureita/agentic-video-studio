@@ -7,7 +7,8 @@ import {
     Video,
     Eye,
     Clapperboard,
-    Upload
+    Upload,
+    Music
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 
@@ -20,6 +21,7 @@ export function NodeSelector({ onSelect, onClose }: NodeSelectorProps) {
     const NODE_TYPES = [
         { id: "text", label: "Text", icon: <Type className="w-4 h-4 text-emerald-500" /> },
         { id: "imageGen", label: "Image Generator", icon: <ImageIcon className="w-4 h-4 text-blue-500" /> },
+        { id: "audioGen", label: "Audio Generator", icon: <Music className="w-4 h-4 text-orange-500" /> },
         { id: "videoGen", label: "Video Generator", icon: <Video className="w-4 h-4 text-purple-500" /> },
         { id: "vision", label: "Vision", icon: <Eye className="w-4 h-4 text-indigo-500" /> },
         { id: "editorAgent", label: "Editor Agent", icon: <Clapperboard className="w-4 h-4 text-purple-600" /> },

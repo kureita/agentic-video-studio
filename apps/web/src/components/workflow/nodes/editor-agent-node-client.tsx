@@ -1,32 +1,81 @@
-import { memo, useState, useRef, useMemo, ChangeEvent } from "react";
+import { memo, useState, useRef, useMemo, ChangeEvent, useEffect } from "react";
 import { NodeProps, useReactFlow } from "@xyflow/react";
-import { Clapperboard, Loader2, Download } from "lucide-react";
+import { Clapperboard, Loader2, Download, Play } from "lucide-react";
 import { NodeWrapper } from "@/components/workflow/node-wrapper";
 import { useWorkflowStore } from "@/lib/workflow-store";
+import { RemotionVideoPlayer } from "@/components/video/RemotionVideoPlayer";
 
-export const EditorAgentNode = memo(({ id, selected, data }: NodeProps) => {
+interface VideoClip {
+  url: string;
+  startTime: number;
+  duration: number;
+  transition?: "fade" | "slide" | "cut";
+}
+
+export const EditorAgentNodeClient = memo(({ id, selected, data }: NodeProps) => {
     const { deleteElements, updateNodeData } = useReactFlow();
-    const { runNode, clearNodeOutput, outputs, runningNodeId } = useWorkflowStore();
+    const { nodes, edges, runNode, clearNodeOutput, outputs, runningNodeId } = useWorkflowStore();
 
     const isRunning = runningNodeId === id;
-    const output = (outputs[id] as string | undefined) || (data.output as string | undefined);
+    const [showPreview, setShowPreview] = useState(false);
+    const [videoClips, setVideoClips] = useState<VideoClip[]>([]);
+    const [audioUrl, setAudioUrl] = useState<string | undefined>();
 
-    const handleDownload = () => {
-        if (output) {
-            const link = document.createElement('a');
-            link.href = output;
-            link.download = `edited-video-${Date.now()}.mp4`;
-            link.target = '_blank';
-            link.click();
+    // Get connected inputs
+    const connectedInputs = useMemo(() => {
+        const inputs: { videos: string[]; audio?: string; images: string[] } = {
+            videos: [],
+            images: [],
+        };
+
+        edges.forEach((edge) => {
+            if (edge.target === id) {
+                const sourceOutput = outputs[edge.source];
+                const targetHandle = edge.targetHandle || "";
+
+                if (targetHandle.includes("ref_videos") && sourceOutput) {
+                    if (Array.isArray(sourceOutput)) {
+                        inputs.videos.push(...sourceOutput);
+                    } else if (typeof sourceOutput === "string") {
+                        inputs.videos.push(sourceOutput);
+                    }
+                } else if (targetHandle.includes("audio") && sourceOutput) {
+                    inputs.audio = sourceOutput as string;
+                } else if (targetHandle.includes("ref_images") && sourceOutput) {
+                    if (Array.isArray(sourceOutput)) {
+                        inputs.images.push(...sourceOutput);
+                    } else if (typeof sourceOutput === "string") {
+                        inputs.images.push(sourceOutput);
+                    }
+                }
+            }
+        });
+
+        return inputs;
+    }, [edges, id, outputs]);
+
+    // Update video clips when inputs change
+    useEffect(() => {
+        if (connectedInputs.videos.length > 0) {
+            const clips: VideoClip[] = connectedInputs.videos.map((url, index) => ({
+                url,
+                startTime: index * 4, // 4 seconds per clip by default
+                duration: 4,
+                transition: "fade",
+            }));
+            setVideoClips(clips);
+            setAudioUrl(connectedInputs.audio);
+            setShowPreview(true);
+        } else {
+            setVideoClips([]);
+            setShowPreview(false);
         }
-    };
+    }, [connectedInputs]);
 
     const [showSuggestions, setShowSuggestions] = useState(false);
     const [filterText, setFilterText] = useState("");
     const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-    // Get all text nodes for suggestions
-    const nodes = useWorkflowStore((state) => state.nodes);
     const textNodes = useMemo(() =>
         nodes
             .filter(n => n.type === 'text')
@@ -40,7 +89,6 @@ export const EditorAgentNode = memo(({ id, selected, data }: NodeProps) => {
 
         updateNodeData(id, { instruction: val });
 
-        // Check for trigger character @
         const textBeforeCursor = val.slice(0, cursor);
         const lastAt = textBeforeCursor.lastIndexOf('@');
 
@@ -77,13 +125,19 @@ export const EditorAgentNode = memo(({ id, selected, data }: NodeProps) => {
         }
     };
 
+    const handleExport = async () => {
+        // TODO: Implement export to file
+        // This could call the server-side Remotion renderer for high-quality export
+        console.log("Export video", { videoClips, audioUrl });
+    };
+
     return (
         <NodeWrapper
             title={`Editor Agent #${useWorkflowStore((state) =>
                 state.nodes
                     .filter(n => n.type === 'editorAgent')
                     .findIndex(n => n.id === id) + 1
-            )}`}
+            )} (Client)`}
             icon={<Clapperboard className="w-4 h-4" />}
             selected={selected}
             inputs={[
@@ -97,41 +151,49 @@ export const EditorAgentNode = memo(({ id, selected, data }: NodeProps) => {
             contentClassName="relative bg-black"
             onDelete={() => deleteElements({ nodes: [{ id }] })}
             onRun={() => runNode(id)}
-            onClear={output ? () => clearNodeOutput(id) : undefined}
+            onClear={() => {
+                clearNodeOutput(id);
+                setShowPreview(false);
+            }}
             isRunning={isRunning}
         >
             <div className="relative bg-muted/30 group/editor transition-all duration-300 ease-in-out overflow-hidden w-[400px]">
                 
                 {/* Top Section: Video Player */}
-                <div className="relative h-[225px] flex items-center justify-center">
-                    {output && !isRunning ? (
-                        <>
-                            <video
-                                src={output}
-                                className="absolute inset-0 w-full h-full object-cover"
+                <div className="relative h-[225px] flex items-center justify-center bg-black">
+                    {showPreview && videoClips.length > 0 ? (
+                        <div className="relative w-full h-full">
+                            <RemotionVideoPlayer
+                                clips={videoClips}
+                                audio={audioUrl}
+                                width={1920}
+                                height={1080}
+                                fps={30}
                                 controls
-                                playsInline
+                                className="w-full h-full"
                             />
                             
-                            {/* Download button */}
+                            {/* Export button */}
                             <button
-                                onClick={handleDownload}
+                                onClick={handleExport}
                                 className="absolute top-3 right-3 w-8 h-8 bg-black/60 backdrop-blur-md border border-white/10 rounded-full flex items-center justify-center text-white/90 hover:bg-black/80 hover:text-white transition-all z-30"
+                                title="Export video"
                             >
                                 <Download className="w-4 h-4" />
                             </button>
-                        </>
+                        </div>
                     ) : isRunning ? (
                         <div className="flex flex-col items-center justify-center text-center">
                             <div className="w-12 h-12 rounded-full bg-purple-500/10 flex items-center justify-center mb-3 text-purple-500">
                                 <Loader2 className="w-6 h-6 animate-spin" />
                             </div>
-                            <p className="text-xs font-medium text-muted-foreground">Editing video...</p>
+                            <p className="text-xs font-medium text-muted-foreground">Processing...</p>
                         </div>
                     ) : (
                         <div className="flex flex-col items-center justify-center text-center text-muted-foreground/50">
-                            <Clapperboard className="w-12 h-12 mb-2" />
-                            <p className="text-xs">Edited video will appear here</p>
+                            <Play className="w-12 h-12 mb-2" />
+                            <p className="text-xs">Connect videos to preview</p>
+                            <p className="text-[10px] mt-1 opacity-70">Real-time client-side rendering</p>
                         </div>
                     )}
                 </div>
@@ -181,4 +243,4 @@ export const EditorAgentNode = memo(({ id, selected, data }: NodeProps) => {
     );
 });
 
-EditorAgentNode.displayName = "EditorAgentNode";
+EditorAgentNodeClient.displayName = "EditorAgentNodeClient";

@@ -1,4 +1,6 @@
-import { AbsoluteFill, Sequence, useCurrentFrame, useVideoConfig, OffthreadVideo, interpolate, spring } from "remotion";
+// @ts-nocheck - React type conflict between workspace React 19 and Remotion's React 18
+import React from "react";
+import { AbsoluteFill, Sequence, useCurrentFrame, useVideoConfig, OffthreadVideo, interpolate } from "remotion";
 import type { VideoCompositionProps, Scene } from "../types";
 
 // Text overlay component with animation
@@ -10,7 +12,7 @@ const TextOverlay: React.FC<{
 }> = ({ text, position, style = "subtitle", delay = 0 }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
-  
+
   // Fade in animation
   const opacity = interpolate(
     frame - delay,
@@ -18,7 +20,7 @@ const TextOverlay: React.FC<{
     [0, 1],
     { extrapolateRight: "clamp" }
   );
-  
+
   // Slide up animation
   const translateY = interpolate(
     frame - delay,
@@ -73,7 +75,7 @@ const BrandWatermark: React.FC<{
 }> = ({ brandName, logoUrl }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
-  
+
   const opacity = interpolate(
     frame,
     [0, fps * 0.5],
@@ -124,11 +126,11 @@ const SceneClip: React.FC<{
 }> = ({ scene, isFirst, isLast, brandName, callToAction }) => {
   const frame = useCurrentFrame();
   const { fps, durationInFrames } = useVideoConfig();
-  
+
   // Fade transition at start and end
   const fadeInDuration = fps * 0.3;
   const fadeOutDuration = fps * 0.3;
-  
+
   const opacity = interpolate(
     frame,
     [0, fadeInDuration, durationInFrames - fadeOutDuration, durationInFrames],
@@ -137,9 +139,11 @@ const SceneClip: React.FC<{
   );
 
   return (
+    // @ts-expect-error - React 18/19 type conflict in monorepo
     <AbsoluteFill style={{ opacity }}>
       {/* Background video */}
       {scene.asset_url && (
+        // @ts-expect-error - React 18/19 type conflict in monorepo
         <OffthreadVideo
           src={scene.asset_url}
           style={{
@@ -149,7 +153,7 @@ const SceneClip: React.FC<{
           }}
         />
       )}
-      
+
       {/* Gradient overlay for text readability */}
       <div
         style={{
@@ -158,7 +162,7 @@ const SceneClip: React.FC<{
           background: "linear-gradient(to bottom, rgba(0,0,0,0.3) 0%, transparent 30%, transparent 70%, rgba(0,0,0,0.5) 100%)",
         }}
       />
-      
+
       {/* On-screen text */}
       {scene.on_screen_text && (
         <TextOverlay
@@ -168,7 +172,7 @@ const SceneClip: React.FC<{
           delay={fps * 0.5}
         />
       )}
-      
+
       {/* CTA on last scene */}
       {isLast && callToAction && (
         <TextOverlay
@@ -199,6 +203,7 @@ export const VideoComposition: React.FC<VideoCompositionProps> = ({
   let currentFrame = 0;
 
   return (
+    // @ts-expect-error - React 18/19 type conflict in monorepo
     <AbsoluteFill style={{ backgroundColor: "black" }}>
       {scenes.map((scene, index) => {
         const from = currentFrame;
@@ -206,6 +211,7 @@ export const VideoComposition: React.FC<VideoCompositionProps> = ({
         currentFrame += duration;
 
         return (
+          // @ts-expect-error - React 18/19 type conflict in monorepo
           <Sequence key={scene.id} from={from} durationInFrames={duration}>
             <SceneClip
               scene={scene}
@@ -217,7 +223,7 @@ export const VideoComposition: React.FC<VideoCompositionProps> = ({
           </Sequence>
         );
       })}
-      
+
       {/* Brand watermark (always visible) */}
       <BrandWatermark brandName={brand.name} logoUrl={brand.logo_url} />
     </AbsoluteFill>

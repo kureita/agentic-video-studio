@@ -19,12 +19,19 @@ export interface WorkflowEdge {
     targetHandle?: string;
 }
 
+export interface ChatMessage {
+    role: "user" | "assistant";
+    content: string;
+    timestamp?: string;
+}
+
 export interface Workflow {
     id: string;
     name: string;
     nodes: WorkflowNode[];
     edges: WorkflowEdge[];
     outputs: Record<string, string>;
+    chat_history: ChatMessage[];
     created_at: string;
     updated_at: string;
 }
@@ -40,6 +47,7 @@ export interface UpdateWorkflowData {
     name?: string;
     nodes?: WorkflowNode[];
     edges?: WorkflowEdge[];
+    chat_history?: ChatMessage[];
 }
 
 export interface RunNodeResponse {
