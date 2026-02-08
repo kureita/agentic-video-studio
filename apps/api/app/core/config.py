@@ -31,6 +31,7 @@ class Settings(BaseSettings):
 
     # AI/LLM APIs
     openai_api_key: str = ""
+    anthropic_api_key: str = ""  # For Claude models
     gemini_api_key: str = ""  # Can also use GOOGLE_API_KEY
     google_api_key: str = ""  # Alternative to GEMINI_API_KEY
     use_mock_veo: bool = True  # Set to False to use real Veo API

@@ -6,6 +6,15 @@ import { workflowApi, Workflow } from "./workflow-api";
 // Types
 // ============================================
 
+export interface AgentAction {
+    type: "addNode" | "removeNode" | "updateNode" | "addEdge" | "removeEdge";
+    node?: any;
+    nodeId?: string;
+    data?: any;
+    edge?: any;
+    edgeId?: string;
+}
+
 interface WorkflowState {
     // Workflow data
     id: string | null;
@@ -26,6 +35,10 @@ interface WorkflowState {
     // Dirty tracking
     isDirty: boolean;
 
+    // Agent state
+    pendingAgentActions: AgentAction[];
+    isAgentPanelOpen: boolean;
+
     // Actions
     setWorkflow: (workflow: Workflow) => void;
     setName: (name: string) => void;
@@ -35,6 +48,12 @@ interface WorkflowState {
     clearNodeOutput: (nodeId: string) => void;
     markDirty: () => void;
     markClean: () => void;
+
+    // Agent actions
+    setAgentPanelOpen: (open: boolean) => void;
+    setPendingAgentActions: (actions: AgentAction[]) => void;
+    applyAgentActions: (actions: AgentAction[]) => void;
+    clearPendingAgentActions: () => void;
 
     // API actions
     createWorkflow: (name?: string) => Promise<string | null>;
@@ -59,6 +78,8 @@ const initialState = {
     runningNodeId: null,
     error: null,
     isDirty: false,
+    pendingAgentActions: [] as AgentAction[],
+    isAgentPanelOpen: false,
 };
 
 // ============================================
@@ -143,6 +164,87 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 
     markDirty: () => set({ isDirty: true }),
     markClean: () => set({ isDirty: false }),
+
+    // Agent panel actions
+    setAgentPanelOpen: (open: boolean) => set({ isAgentPanelOpen: open }),
+
+    setPendingAgentActions: (actions: AgentAction[]) => set({ pendingAgentActions: actions }),
+
+    clearPendingAgentActions: () => set({ pendingAgentActions: [] }),
+
+    applyAgentActions: (actions: AgentAction[]) => {
+        set((state) => {
+            let newNodes = [...state.nodes];
+            let newEdges = [...state.edges];
+
+            for (const action of actions) {
+                switch (action.type) {
+                    case "addNode":
+                        if (action.node) {
+                            // Ensure node has required fields
+                            const node: Node = {
+                                id: action.node.id,
+                                type: action.node.type || "text",
+                                position: action.node.position || { x: 100, y: 100 },
+                                data: action.node.data || {},
+                            };
+                            newNodes.push(node);
+                        }
+                        break;
+
+                    case "removeNode":
+                        if (action.nodeId) {
+                            newNodes = newNodes.filter((n) => n.id !== action.nodeId);
+                            // Also remove connected edges
+                            newEdges = newEdges.filter(
+                                (e) => e.source !== action.nodeId && e.target !== action.nodeId
+                            );
+                        }
+                        break;
+
+                    case "updateNode":
+                        if (action.nodeId && action.data) {
+                            newNodes = newNodes.map((n) => {
+                                if (n.id === action.nodeId) {
+                                    return {
+                                        ...n,
+                                        data: { ...n.data, ...action.data },
+                                    };
+                                }
+                                return n;
+                            });
+                        }
+                        break;
+
+                    case "addEdge":
+                        if (action.edge) {
+                            const edge: Edge = {
+                                id: action.edge.id,
+                                source: action.edge.source,
+                                target: action.edge.target,
+                                sourceHandle: action.edge.sourceHandle,
+                                targetHandle: action.edge.targetHandle,
+                            };
+                            newEdges.push(edge);
+                        }
+                        break;
+
+                    case "removeEdge":
+                        if (action.edgeId) {
+                            newEdges = newEdges.filter((e) => e.id !== action.edgeId);
+                        }
+                        break;
+                }
+            }
+
+            return {
+                nodes: newNodes,
+                edges: newEdges,
+                pendingAgentActions: [],
+                isDirty: true,
+            };
+        });
+    },
 
     // Create a new workflow
     createWorkflow: async (name?: string) => {

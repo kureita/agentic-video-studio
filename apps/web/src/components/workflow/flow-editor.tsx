@@ -44,6 +44,7 @@ const nodeTypes = {
 import { useState } from "react";
 import { WorkflowToolbar } from "./toolbar";
 import { useUndoRedo } from "@/hooks/use-undo-redo";
+import { AgentPanel } from "./ai-panel";
 
 interface FlowEditorProps {
     workflowId?: string;
@@ -55,6 +56,8 @@ export default function FlowEditor({ workflowId }: FlowEditorProps) {
         edges,
         outputs,
         runningNodeId,
+        isAgentPanelOpen,
+        setAgentPanelOpen,
         setNodes,
         setEdges,
         loadWorkflow,
@@ -195,50 +198,57 @@ export default function FlowEditor({ workflowId }: FlowEditorProps) {
 
 
     return (
-        <div className="w-full h-full relative">
-            <WorkflowToolbar
-                onAddNode={handleAddNode}
-                activeTool={activeTool}
-                onToolChange={setActiveTool}
-                onUndo={handleUndo}
-                onRedo={handleRedo}
-                canUndo={canUndo}
-                canRedo={canRedo}
-            />
+        <div className="flex w-full h-full relative overflow-hidden">
+            {/* Agent Panel - Resizable Left Sidebar */}
+            <AgentPanel isOpen={isAgentPanelOpen} onClose={() => setAgentPanelOpen(false)} />
 
-            <ReactFlow
-                nodes={nodesWithOutputs}
-                edges={edges}
-                onNodesChange={onNodesChange}
-                onEdgesChange={onEdgesChange}
-                onConnect={onConnect}
-                isValidConnection={isValidConnection}
-                onEdgeClick={onEdgeClick}
-                nodeTypes={nodeTypes}
-                fitView
-                className={cn(
-                    "bg-background-secondary",
-                    activeTool === "pointer" && "[&_.react-flow__pane]:!cursor-default [&_.react-flow__pane.selection]:!cursor-default [&_.react-flow__node]:!cursor-default",
-                    activeTool === "cut" && "[&_.react-flow__pane]:!cursor-crosshair [&_.react-flow__pane.selection]:!cursor-crosshair [&_.react-flow__node]:!cursor-crosshair",
-                    activeTool === "hand" && "[&_.react-flow__pane]:!cursor-grab [&_.react-flow__pane.selection]:!cursor-grab [&_.react-flow__node]:!cursor-grab"
-                )}
-                minZoom={0.5}
-                maxZoom={1.5}
-                panOnDrag={activeTool === "hand"}
-                selectionOnDrag={activeTool === "pointer" || activeTool === "cut"}
-                selectionMode={"partial" as never}
-                panOnScroll={true}
-                defaultEdgeOptions={{
-                    animated: true,
-                    style: { stroke: 'hsl(var(--primary))', strokeWidth: 2, cursor: activeTool === 'cut' ? 'crosshair' : (activeTool === 'pointer' ? 'default' : 'pointer') },
-                }}
-            >
-                <Background variant={BackgroundVariant.Dots} gap={50} size={2} color="rgba(255, 255, 255, 0.2)" />
-                <Controls
-                    orientation="horizontal"
-                    className="!flex !flex-row !absolute !bottom-4 !right-4 !left-auto !top-auto !transform-none !bg-card !border !border-border !rounded-full !shadow-lg !p-1"
+            <div className="flex-1 h-full relative min-w-0">
+                <WorkflowToolbar
+                    onAddNode={handleAddNode}
+                    activeTool={activeTool}
+                    onToolChange={setActiveTool}
+                    onUndo={handleUndo}
+                    onRedo={handleRedo}
+                    canUndo={canUndo}
+                    canRedo={canRedo}
+                    isAIPanelOpen={isAgentPanelOpen}
+                    onToggleAIPanel={() => setAgentPanelOpen(!isAgentPanelOpen)}
                 />
-            </ReactFlow>
+
+                <ReactFlow
+                    nodes={nodesWithOutputs}
+                    edges={edges}
+                    onNodesChange={onNodesChange}
+                    onEdgesChange={onEdgesChange}
+                    onConnect={onConnect}
+                    isValidConnection={isValidConnection}
+                    onEdgeClick={onEdgeClick}
+                    nodeTypes={nodeTypes}
+                    fitView
+                    className={cn(
+                        "bg-background-secondary",
+                        activeTool === "pointer" && "[&_.react-flow__pane]:!cursor-default [&_.react-flow__pane.selection]:!cursor-default [&_.react-flow__node]:!cursor-default",
+                        activeTool === "cut" && "[&_.react-flow__pane]:!cursor-crosshair [&_.react-flow__pane.selection]:!cursor-crosshair [&_.react-flow__node]:!cursor-crosshair",
+                        activeTool === "hand" && "[&_.react-flow__pane]:!cursor-grab [&_.react-flow__pane.selection]:!cursor-grab [&_.react-flow__node]:!cursor-grab"
+                    )}
+                    minZoom={0.5}
+                    maxZoom={1.5}
+                    panOnDrag={activeTool === "hand"}
+                    selectionOnDrag={activeTool === "pointer" || activeTool === "cut"}
+                    selectionMode={"partial" as never}
+                    panOnScroll={true}
+                    defaultEdgeOptions={{
+                        animated: true,
+                        style: { stroke: 'hsl(var(--primary))', strokeWidth: 2, cursor: activeTool === 'cut' ? 'crosshair' : (activeTool === 'pointer' ? 'default' : 'pointer') },
+                    }}
+                >
+                    <Background variant={BackgroundVariant.Dots} gap={50} size={2} color="rgba(255, 255, 255, 0.2)" />
+                    <Controls
+                        orientation="horizontal"
+                        className="!flex !flex-row !absolute !bottom-4 !right-4 !left-auto !top-auto !transform-none !bg-card !border !border-border !rounded-full !shadow-lg !p-1"
+                    />
+                </ReactFlow>
+            </div>
         </div>
     );
 }

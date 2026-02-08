@@ -10,7 +10,8 @@ import {
     Undo2,
     Redo2,
     Settings,
-    MousePointer2
+    MousePointer2,
+    Sparkles
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -24,6 +25,8 @@ export interface WorkflowToolbarProps {
     onRedo: () => void;
     canUndo: boolean;
     canRedo: boolean;
+    isAIPanelOpen?: boolean;
+    onToggleAIPanel?: () => void;
 }
 
 export function WorkflowToolbar({
@@ -33,7 +36,9 @@ export function WorkflowToolbar({
     onUndo,
     onRedo,
     canUndo,
-    canRedo
+    canRedo,
+    isAIPanelOpen,
+    onToggleAIPanel
 }: WorkflowToolbarProps) {
     const [isSelectorOpen, setIsSelectorOpen] = useState(false);
 
@@ -108,6 +113,22 @@ export function WorkflowToolbar({
                 </Button>
 
                 <div className="w-full h-[1px] bg-border my-1" />
+
+                {/* AI Agent Toggle */}
+                <Button
+                    variant={isAIPanelOpen ? "default" : "ghost"}
+                    size="icon"
+                    className={cn(
+                        "rounded-full w-10 h-10",
+                        isAIPanelOpen
+                            ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                            : "text-muted-foreground hover:text-foreground"
+                    )}
+                    onClick={onToggleAIPanel}
+                    title="AI Workflow Agent"
+                >
+                    <Sparkles className="w-5 h-5" />
+                </Button>
 
                 <Button variant="ghost" size="icon" className="rounded-full w-10 h-10 text-muted-foreground hover:text-foreground">
                     <Settings className="w-5 h-5" />
