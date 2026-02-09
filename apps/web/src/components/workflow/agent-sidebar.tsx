@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Sparkles, Send, Loader2, Bot } from "lucide-react";
+import { Sparkles, Send, Loader2, Bot, Paperclip, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { useWorkflowStore } from "@/lib/workflow-store";
@@ -16,9 +16,38 @@ export function AgentSidebar() {
     const { chatHistory, addChatMessage, setNodes, setEdges, nodes, edges } = useWorkflowStore();
     const [input, setInput] = useState("");
     const [isLoading, setIsLoading] = useState(false);
+    const [isUploading, setIsUploading] = useState(false);
+    const [pendingAttachment, setPendingAttachment] = useState<{ url: string, type: string, filename: string } | null>(null);
+
+    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        setIsUploading(true);
+        try {
+            const formData = new FormData();
+            formData.append("file", file);
+
+            const response = await api.post("/api/assets/upload", formData, {
+                headers: { "Content-Type": "multipart/form-data" },
+            });
+
+            if (response.data.success) {
+                const { filename, url, type } = response.data;
+                setPendingAttachment({ filename, url, type });
+            }
+        } catch (error) {
+            console.error("Upload error:", error);
+            // Optional: Show error toast or temporary message
+        } finally {
+            setIsUploading(false);
+            // Reset input
+            e.target.value = "";
+        }
+    };
 
     // Show welcome message if no chat history
-    const displayMessages = chatHistory.length === 0 
+    const displayMessages = chatHistory.length === 0
         ? [{
             role: "assistant" as const,
             content: "Hello! I'm your AI creative assistant using Gemini. Tell me what video you want to create, and I'll build the workflow for you."
@@ -27,10 +56,15 @@ export function AgentSidebar() {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!input.trim() || isLoading) return;
+        if ((!input.trim() && !pendingAttachment) || isLoading) return;
 
-        const userMessage = input.trim();
+        let userMessage = input.trim();
+        if (pendingAttachment) {
+            userMessage += `\n[Attached: ${pendingAttachment.filename}] (${pendingAttachment.type}) - URL: ${pendingAttachment.url}`;
+        }
+
         setInput("");
+        setPendingAttachment(null);
         addChatMessage({ role: "user", content: userMessage });
         setIsLoading(true);
 
@@ -39,7 +73,8 @@ export function AgentSidebar() {
             const response = await api.post("/api/agent/flow", {
                 prompt: userMessage,
                 current_nodes: nodes,
-                current_edges: edges
+                current_edges: edges,
+                chat_history: chatHistory
             });
 
             const result = response.data;
@@ -108,7 +143,33 @@ export function AgentSidebar() {
                                     : "bg-muted text-foreground"
                             )}
                         >
-                            {msg.content}
+                            {(() => {
+                                // Check for attachment
+                                const attachmentMatch = msg.content.match(/\[Attached: (.*?)\] \((.*?)\) - URL: (.*?)$/);
+                                if (attachmentMatch) {
+                                    const [_, filename, type, url] = attachmentMatch;
+                                    const cleanContent = msg.content.replace(attachmentMatch[0], "").trim();
+                                    const isImage = type.startsWith("image");
+                                    const isVideo = type.startsWith("video");
+
+                                    return (
+                                        <div className="flex flex-col gap-2">
+                                            {cleanContent && <p>{cleanContent}</p>}
+                                            <div className="mt-1 rounded-md overflow-hidden border bg-background/50 max-w-[200px]">
+                                                {isImage && <img src={url} alt={filename} className="w-full h-auto object-cover" />}
+                                                {isVideo && <video src={url} className="w-full h-auto" controls />}
+                                                {!isImage && !isVideo && (
+                                                    <div className="p-2 text-xs flex items-center gap-1">
+                                                        <Paperclip className="w-3 h-3" />
+                                                        <span className="truncate">{filename}</span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    );
+                                }
+                                return msg.content;
+                            })()}
                         </div>
                     </div>
                 ))}
@@ -122,23 +183,59 @@ export function AgentSidebar() {
 
             {/* Input Area */}
             <div className="p-4 border-t bg-background">
-                <form onSubmit={handleSubmit} className="relative">
-                    <input
-                        type="text"
-                        value={input}
-                        onChange={(e) => setInput(e.target.value)}
-                        placeholder="Describe what you want me to do..."
-                        className="w-full bg-muted/50 border border-input rounded-md pl-3 pr-10 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
-                        disabled={isLoading}
-                    />
-                    <Button
-                        type="submit"
-                        size="icon"
-                        className="absolute right-1 top-1 h-7 w-7"
-                        disabled={!input.trim() || isLoading}
-                    >
-                        <Send className="w-3 h-3" />
-                    </Button>
+                {pendingAttachment && (
+                    <div className="mb-2 p-2 bg-muted rounded-md flex items-center justify-between">
+                        <div className="flex items-center gap-2 overflow-hidden">
+                            {pendingAttachment.type.startsWith("image") ? (
+                                <img src={pendingAttachment.url} alt="Preview" className="h-8 w-8 object-cover rounded" />
+                            ) : (
+                                <div className="h-8 w-8 bg-background rounded flex items-center justify-center">
+                                    <Paperclip className="w-4 h-4" />
+                                </div>
+                            )}
+                            <span className="text-xs truncate max-w-[150px]">{pendingAttachment.filename}</span>
+                        </div>
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6"
+                            onClick={() => setPendingAttachment(null)}
+                        >
+                            <X className="w-3 h-3" />
+                        </Button>
+                    </div>
+                )}
+                <form onSubmit={handleSubmit} className="relative flex items-center gap-2">
+                    <label className={cn(
+                        "cursor-pointer hover:bg-muted p-2 rounded-md transition-colors",
+                        isUploading ? "opacity-50 cursor-not-allowed" : ""
+                    )}>
+                        <Paperclip className="w-4 h-4 text-muted-foreground" />
+                        <input
+                            type="file"
+                            className="hidden"
+                            onChange={handleFileUpload}
+                            disabled={isUploading || isLoading}
+                        />
+                    </label>
+                    <div className="relative flex-1">
+                        <input
+                            type="text"
+                            value={input}
+                            onChange={(e) => setInput(e.target.value)}
+                            placeholder="Describe what you want me to do..."
+                            className="w-full bg-muted/50 border border-input rounded-md pl-3 pr-10 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                            disabled={isLoading}
+                        />
+                        <Button
+                            type="submit"
+                            size="icon"
+                            className="absolute right-1 top-1 h-7 w-7"
+                            disabled={(!input.trim() && !pendingAttachment) || isLoading}
+                        >
+                            <Send className="w-3 h-3" />
+                        </Button>
+                    </div>
                 </form>
             </div>
         </div>

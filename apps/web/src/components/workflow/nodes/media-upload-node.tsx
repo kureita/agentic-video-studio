@@ -1,4 +1,4 @@
-import { memo, useRef } from "react";
+import { memo, useRef, useEffect } from "react";
 import { NodeProps, useReactFlow } from "@xyflow/react";
 import { Upload, Image as ImageIcon, Video, Music } from "lucide-react";
 import { NodeWrapper } from "@/components/workflow/node-wrapper";
@@ -21,6 +21,44 @@ export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
 
     // Get stored dimensions if available
     const aspectRatio = data.aspectRatio as number || 1;
+
+    // Calculate aspect ratio for pre-filled media if missing
+    useEffect(() => {
+        if (output && (!data.aspectRatio || data.aspectRatio === 1)) {
+            // Create a cleanup flag
+            let isMounted = true;
+
+            const updateRatio = (ar: number) => {
+                if (!isMounted) return;
+
+                // Update note data with aspect ratio
+                const { setNodes, nodes } = useWorkflowStore.getState();
+                setNodes(nodes.map(n => n.id === id ? { ...n, data: { ...n.data, aspectRatio: ar } } : n));
+            };
+
+            if (mediaType === 'video' || output.toString().match(/\.(mp4|mov|webm)$/i)) {
+                const video = document.createElement('video');
+                video.onloadedmetadata = () => {
+                    if (video.videoWidth && video.videoHeight) {
+                        updateRatio(video.videoWidth / video.videoHeight);
+                    }
+                };
+                video.src = output as string;
+            } else if (mediaType === 'image' || output.toString().match(/\.(jpg|jpeg|png|webp|gif)$/i)) {
+                const img = new Image();
+                img.onload = () => {
+                    if (img.naturalWidth && img.naturalHeight) {
+                        updateRatio(img.naturalWidth / img.naturalHeight);
+                    }
+                };
+                img.src = output as string;
+            }
+
+            return () => {
+                isMounted = false;
+            };
+        }
+    }, [output, data.aspectRatio, id, mediaType]);
 
     const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];

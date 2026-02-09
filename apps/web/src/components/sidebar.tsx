@@ -24,8 +24,7 @@ export function Sidebar({ className }: SidebarProps) {
             <div className="space-y-4 py-4">
                 <div className="px-3 py-2">
                     <div className="flex items-center gap-2 px-4 mb-8">
-                        <Sparkles className="w-6 h-6 text-primary" />
-                        <h2 className="text-xl font-bold tracking-tight">Kureita</h2>
+                        <img src="/kureita_logo.png" alt="Kureita" className="h-8" />
                     </div>
 
                     <div className="space-y-1">

@@ -19,7 +19,7 @@ class AgentService:
             os.environ["GEMINI_API_KEY"] = self.api_key
             self.client = genai.Client()
             
-    async def generate_workflow(self, prompt: str, current_nodes: List[Dict] = [], current_edges: List[Dict] = []) -> Dict[str, Any]:
+    async def generate_workflow(self, prompt: str, current_nodes: List[Dict] = [], current_edges: List[Dict] = [], chat_history: List[Dict] = []) -> Dict[str, Any]:
         """
         Generate a workflow based on a user prompt.
         """
@@ -136,6 +136,33 @@ This creates visual continuity where each scene flows into the next!
     "nodes": [ ... ],
     "edges": [ ... ]
 }}
+
+6. **mediaUpload** - Asset/Media Upload node
+   - Outputs: "image|output" (type: image) OR "video|output" (type: video)
+   - Data: {{ "label": "Upload Asset", "mediaType": "image" or "video", "output": "URL_IF_KNOWN" }}
+   - Use this when the user mentions a specific file or wants to use an external asset!
+
+# CRITICAL: CHAT HISTORY & CONTEXT AWARENESS
+
+You have access to the chat history and the current state of the workflow.
+
+1. **Analyze Context**: Look at previous messages to understand if the user is refining a request (e.g., "make it longer", "change the second scene").
+2. **Modify vs Create**:
+   - If the user wants to CHANGE something in the existing workflow, PRESERVE existing nodes that shouldn't change.
+   - You can ADD, DELETE, or MODIFY nodes/edges.
+   - If the user says "start over" or "new video", create a fresh workflow.
+3. **Asset Handling**:
+   - If the user mentions a specific file (e.g., "use my logo.png", "intro.mp4"), add a **mediaUpload** node.
+   - Set the label to the filename.
+   - **IMPORTANT**: If the chat history shows an asset was attached (e.g. `[Attached: filename] ... URL: http://...`), you MUST set the `"output"` field in `data` to that URL. This will pre-load the asset in the node.
+   - Example Data: {{ "label": "my_logo.png", "mediaType": "image", "output": "http://localhost:8000/static/uploads/..." }}
+
+# Current Workflow State:
+Nodes: {json.dumps(current_nodes)}
+Edges: {json.dumps(current_edges)}
+
+# Chat History:
+{json.dumps(chat_history)}
 
 # User Request:
 "{prompt}"

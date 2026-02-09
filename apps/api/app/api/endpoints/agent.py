@@ -11,6 +11,7 @@ class GenerateFlowRequest(BaseModel):
     prompt: str
     current_nodes: Optional[List[Dict[str, Any]]] = []
     current_edges: Optional[List[Dict[str, Any]]] = []
+    chat_history: Optional[List[Dict[str, Any]]] = []
 
 class GenerateFlowResponse(BaseModel):
     success: bool
@@ -26,7 +27,8 @@ async def generate_flow(request: GenerateFlowRequest):
     result = await agent_service.generate_workflow(
         prompt=request.prompt,
         current_nodes=request.current_nodes,
-        current_edges=request.current_edges
+        current_edges=request.current_edges,
+        chat_history=request.chat_history
     )
     
     return result

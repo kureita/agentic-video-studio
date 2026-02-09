@@ -145,7 +145,7 @@
     "outputs.fx2l36": "http://localhost:8000/static/videos/generated_1770241702.mp4"
   },
   {
-    "name": "Untitled Workflow",
+    "name": "testing_flow",
     "nodes": [
       {
         "id": "text_1",
@@ -537,7 +537,7 @@
       "imageGen_1_start": "http://localhost:8000/static/images/generated_1770273965_3355.png"
     },
     "created_at": "2026-02-05T05:23:16.399322+00:00",
-    "updated_at": "2026-02-05T06:46:05.360356+00:00",
+    "updated_at": "2026-02-09T05:12:37.058259+00:00",
     "_id": "69842944b7c692f833cba915"
   },
   {
@@ -653,7 +653,7 @@
     ]
   },
   {
-    "name": "Untitled Workflow",
+    "name": "stitching_videos",
     "nodes": [
       {
         "id": "mmxn0q",
@@ -752,17 +752,414 @@
       },
       {
         "role": "user",
-        "content": "ok",
+        "content": "change the editor agent prompt to \"Editor do your magic\"",
         "timestamp": null
       },
       {
         "role": "assistant",
-        "content": "A simple 8-second video workflow depicting a serene forest scene transitioning from early morning to late afternoon.",
+        "content": "Updated the instruction for the Editor Agent node.",
         "timestamp": null
       }
     ],
     "created_at": "2026-02-07T20:41:30.499630+00:00",
-    "updated_at": "2026-02-08T09:37:49.007073+00:00",
+    "updated_at": "2026-02-09T05:12:20.406549+00:00",
     "_id": "6987a37a56b663cfde47cdc1"
+  },
+  {
+    "name": "face_clean_up",
+    "nodes": [
+      {
+        "id": "node_1",
+        "type": "mediaUpload",
+        "position": {
+          "x": 124.80886039593827,
+          "y": 68.63148223331218
+        },
+        "data": {
+          "label": "Uploaded Image",
+          "mediaType": "image",
+          "output": "http://localhost:8000/static/uploads/8dd7b4e4-bff9-4c5b-8b00-790e275ae853.png",
+          "aspectRatio": 0.6666666666666666
+        }
+      },
+      {
+        "id": "node_3",
+        "type": "imageGen",
+        "position": {
+          "x": 542.9174732023863,
+          "y": 85.90151400636373
+        },
+        "data": {
+          "label": "Remove Beard",
+          "prompt": "A close-up portrait of a person's face, same person as reference image, clean-shaven, no beard, clear skin, natural lighting.",
+          "isRunning": false,
+          "ratio": "3:4",
+          "output": "http://localhost:8000/static/images/generated_1770586214_4338.png"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "edge_1_3_image",
+        "source": "node_1",
+        "target": "node_3",
+        "sourceHandle": "image|output",
+        "targetHandle": "image|image"
+      }
+    ],
+    "outputs": {
+      "node_1": "http://localhost:8000/static/uploads/8dd7b4e4-bff9-4c5b-8b00-790e275ae853.png",
+      "node_3": "http://localhost:8000/static/images/generated_1770586214_4338.png"
+    },
+    "chat_history": [
+      {
+        "role": "user",
+        "content": "[Attached: ChatGPT Image Jul 5, 2025, 04_33_55 PM.png] (image/png) - URL: http://localhost:8000/static/uploads/8dd7b4e4-bff9-4c5b-8b00-790e275ae853.png",
+        "timestamp": null
+      },
+      {
+        "role": "user",
+        "content": "Given this image, I want to remove beard from this person's face.",
+        "timestamp": null
+      },
+      {
+        "role": "assistant",
+        "content": "To remove the beard, I've set up a workflow where your uploaded image is used as a reference for an Image Generator. The Image Generator will then regenerate the person's face without the beard based on the provided prompt.",
+        "timestamp": null
+      }
+    ],
+    "created_at": "2026-02-08T20:50:22.929684+00:00",
+    "updated_at": "2026-02-08T21:34:51.409369+00:00",
+    "_id": "6988f70e9f878b9c062cee77"
+  },
+  {
+    "name": "google deepmind video ad",
+    "nodes": [
+      {
+        "id": "text_1_prompt",
+        "type": "text",
+        "position": {
+          "x": 100.0,
+          "y": 100.0
+        },
+        "data": {
+          "label": "Scene 1 Prompt",
+          "text": "An inspiring opening, setting the stage for Google's AI innovation. Abstract glowing neural network patterns, subtle Google branding, and a sense of futuristic wonder."
+        }
+      },
+      {
+        "id": "img_1_start",
+        "type": "imageGen",
+        "position": {
+          "x": 500.0,
+          "y": 100.0
+        },
+        "data": {
+          "label": "Start Frame Scene 1",
+          "prompt": "Abstract glowing neural network patterns, very subtle Google branding, dark, futuristic aesthetic, digital art."
+        }
+      },
+      {
+        "id": "img_1_end",
+        "type": "imageGen",
+        "position": {
+          "x": 900.0,
+          "y": 100.0
+        },
+        "data": {
+          "label": "End Frame Scene 1",
+          "prompt": "Stylized representation of data flowing elegantly, transforming into complex patterns, hinting at emerging intelligence, soft blue and purple tones."
+        }
+      },
+      {
+        "id": "video_1",
+        "type": "videoGen",
+        "position": {
+          "x": 1300.0,
+          "y": 100.0
+        },
+        "data": {
+          "label": "Video Scene 1 (8s)",
+          "prompt": "Seamless data flow, elegant visualization of intelligent systems, a hint of potential. Transitioning from abstract networks to data patterns.",
+          "duration": "8s",
+          "ratio": "16:9"
+        }
+      },
+      {
+        "id": "text_2_prompt",
+        "type": "text",
+        "position": {
+          "x": 100.0,
+          "y": 600.0
+        },
+        "data": {
+          "label": "Scene 2 Prompt",
+          "text": "Gemini's capabilities in action. Focus on multi-modal interaction: understanding text, generating images, processing video, and natural language."
+        }
+      },
+      {
+        "id": "img_2_end",
+        "type": "imageGen",
+        "position": {
+          "x": 900.0,
+          "y": 600.0
+        },
+        "data": {
+          "label": "End Frame Scene 2",
+          "prompt": "A dynamic split-screen showing a user interacting with text, image generation, and a video call on different parts of a futuristic transparent screen, demonstrating Gemini's versatility."
+        }
+      },
+      {
+        "id": "video_2",
+        "type": "videoGen",
+        "position": {
+          "x": 1300.0,
+          "y": 600.0
+        },
+        "data": {
+          "label": "Video Scene 2 (8s)",
+          "prompt": "Dynamic showcase of Gemini's multi-modal intelligence: understanding complex queries, generating creative content, fluid human-AI interaction across various media formats.",
+          "duration": "8s",
+          "ratio": "16:9"
+        }
+      },
+      {
+        "id": "text_3_prompt",
+        "type": "text",
+        "position": {
+          "x": 134.0,
+          "y": 1084.0
+        },
+        "data": {
+          "label": "Scene 3 Prompt",
+          "text": "DeepMind's scientific breakthroughs. Visualize AI assisting in medical research, climate modeling, and complex problem-solving. Collaborative human-AI future."
+        }
+      },
+      {
+        "id": "img_3_end",
+        "type": "imageGen",
+        "position": {
+          "x": 902.0,
+          "y": 1176.0
+        },
+        "data": {
+          "label": "End Frame Scene 3",
+          "prompt": "Scientists and doctors collaboratively working with AI interfaces in a lab setting, displaying complex data visualizations, solving medical puzzles, and making scientific breakthroughs. Positive, optimistic future."
+        }
+      },
+      {
+        "id": "video_3",
+        "type": "videoGen",
+        "position": {
+          "x": 1286.0,
+          "y": 1082.0
+        },
+        "data": {
+          "label": "Video Scene 3 (8s)",
+          "prompt": "DeepMind's groundbreaking research in action: accelerating scientific discovery, solving grand challenges, AI assisting in medical diagnostics, drug discovery, and environmental modeling.",
+          "duration": "8s",
+          "ratio": "16:9"
+        }
+      },
+      {
+        "id": "text_4_prompt",
+        "type": "text",
+        "position": {
+          "x": 100.0,
+          "y": 1600.0
+        },
+        "data": {
+          "label": "Scene 4 Prompt",
+          "text": "The combined power of Gemini and DeepMind, a unified future of AI. Emphasize ethical AI, empowerment, and Google's vision. Conclude with Google branding."
+        }
+      },
+      {
+        "id": "img_4_end",
+        "type": "imageGen",
+        "position": {
+          "x": 900.0,
+          "y": 1600.0
+        },
+        "data": {
+          "label": "End Frame Scene 4",
+          "prompt": "A powerful and hopeful vision of AI, with diverse individuals empowered by technology, subtle Google logo appearing, text overlay 'AI for everyone' or similar slogan. Warm, inviting colors."
+        }
+      },
+      {
+        "id": "video_4",
+        "type": "videoGen",
+        "position": {
+          "x": 1300.0,
+          "y": 1600.0
+        },
+        "data": {
+          "label": "Video Scene 4 (8s)",
+          "prompt": "A unified vision of AI's future, where Gemini and DeepMind's innovations converge, empowering individuals and driving societal progress across all aspects of life. Google's commitment to responsible AI.",
+          "duration": "8s",
+          "ratio": "16:9"
+        }
+      },
+      {
+        "id": "text_editor_instruction",
+        "type": "text",
+        "position": {
+          "x": 500.0,
+          "y": 2100.0
+        },
+        "data": {
+          "label": "Editor Instructions",
+          "text": "Stitch all video clips in sequence (Video Scene 1, then 2, then 3, then 4) with smooth crossfade transitions. Add uplifting, futuristic background music and a voiceover reinforcing Google's AI vision, Gemini's capabilities, DeepMind's impact, and a call to action to learn more about Google AI. Ensure final output is a seamless 32-second ad."
+        }
+      },
+      {
+        "id": "editor_final",
+        "type": "editorAgent",
+        "position": {
+          "x": 900.0,
+          "y": 2100.0
+        },
+        "data": {
+          "label": "Video Editor",
+          "instruction": "Stitch all video clips in sequence with smooth transitions"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "edge_text_1_prompt_to_video_1_text",
+        "source": "text_1_prompt",
+        "target": "video_1",
+        "sourceHandle": "text|text",
+        "targetHandle": "text|text"
+      },
+      {
+        "id": "edge_img_1_start_to_video_1_start_image",
+        "source": "img_1_start",
+        "target": "video_1",
+        "sourceHandle": "image|image",
+        "targetHandle": "image|start_image"
+      },
+      {
+        "id": "edge_img_1_end_to_video_1_end_image",
+        "source": "img_1_end",
+        "target": "video_1",
+        "sourceHandle": "image|image",
+        "targetHandle": "image|end_image"
+      },
+      {
+        "id": "edge_text_2_prompt_to_video_2_text",
+        "source": "text_2_prompt",
+        "target": "video_2",
+        "sourceHandle": "text|text",
+        "targetHandle": "text|text"
+      },
+      {
+        "id": "edge_img_1_end_to_video_2_start_image",
+        "source": "img_1_end",
+        "target": "video_2",
+        "sourceHandle": "image|image",
+        "targetHandle": "image|start_image"
+      },
+      {
+        "id": "edge_img_2_end_to_video_2_end_image",
+        "source": "img_2_end",
+        "target": "video_2",
+        "sourceHandle": "image|image",
+        "targetHandle": "image|end_image"
+      },
+      {
+        "id": "edge_text_3_prompt_to_video_3_text",
+        "source": "text_3_prompt",
+        "target": "video_3",
+        "sourceHandle": "text|text",
+        "targetHandle": "text|text"
+      },
+      {
+        "id": "edge_img_2_end_to_video_3_start_image",
+        "source": "img_2_end",
+        "target": "video_3",
+        "sourceHandle": "image|image",
+        "targetHandle": "image|start_image"
+      },
+      {
+        "id": "edge_img_3_end_to_video_3_end_image",
+        "source": "img_3_end",
+        "target": "video_3",
+        "sourceHandle": "image|image",
+        "targetHandle": "image|end_image"
+      },
+      {
+        "id": "edge_text_4_prompt_to_video_4_text",
+        "source": "text_4_prompt",
+        "target": "video_4",
+        "sourceHandle": "text|text",
+        "targetHandle": "text|text"
+      },
+      {
+        "id": "edge_img_3_end_to_video_4_start_image",
+        "source": "img_3_end",
+        "target": "video_4",
+        "sourceHandle": "image|image",
+        "targetHandle": "image|start_image"
+      },
+      {
+        "id": "edge_img_4_end_to_video_4_end_image",
+        "source": "img_4_end",
+        "target": "video_4",
+        "sourceHandle": "image|image",
+        "targetHandle": "image|end_image"
+      },
+      {
+        "id": "edge_text_editor_instruction_to_editor_final_text",
+        "source": "text_editor_instruction",
+        "target": "editor_final",
+        "sourceHandle": "text|text",
+        "targetHandle": "text|text"
+      },
+      {
+        "id": "edge_video_1_to_editor_final_ref_videos",
+        "source": "video_1",
+        "target": "editor_final",
+        "sourceHandle": "video|video",
+        "targetHandle": "video|ref_videos"
+      },
+      {
+        "id": "edge_video_2_to_editor_final_ref_videos",
+        "source": "video_2",
+        "target": "editor_final",
+        "sourceHandle": "video|video",
+        "targetHandle": "video|ref_videos"
+      },
+      {
+        "id": "edge_video_3_to_editor_final_ref_videos",
+        "source": "video_3",
+        "target": "editor_final",
+        "sourceHandle": "video|video",
+        "targetHandle": "video|ref_videos"
+      },
+      {
+        "id": "edge_video_4_to_editor_final_ref_videos",
+        "source": "video_4",
+        "target": "editor_final",
+        "sourceHandle": "video|video",
+        "targetHandle": "video|ref_videos"
+      }
+    ],
+    "outputs": {},
+    "chat_history": [
+      {
+        "role": "user",
+        "content": "help me create 32 seconds video ad for google where they advertise their Gemini and deepmind models",
+        "timestamp": null
+      },
+      {
+        "role": "assistant",
+        "content": "I've designed a 32-second video ad for Google's Gemini and DeepMind models, broken into four 8-second sequences. Each sequence transitions smoothly into the next by reusing the end frame of the previous clip as the start frame for the next. The final video editor stitches all segments together with a detailed instruction for transitions and audio.",
+        "timestamp": null
+      }
+    ],
+    "created_at": "2026-02-09T05:08:16.226097+00:00",
+    "updated_at": "2026-02-09T05:11:00.937321+00:00",
+    "_id": "69896bc0386099516d32577b"
   }
 ]
