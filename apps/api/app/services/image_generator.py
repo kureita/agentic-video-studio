@@ -109,6 +109,7 @@ class ImageGenerator:
         aspect_ratio: str = "16:9",
         style: str = "realistic",
         reference_image: Optional[str] = None,
+        model_name: Optional[str] = None,
     ) -> dict:
         """
         Generate an image from a text prompt using Gemini.
@@ -118,6 +119,7 @@ class ImageGenerator:
             aspect_ratio: Aspect ratio (16:9, 9:16, 1:1, etc.)
             style: Visual style (realistic, cinematic, animated, etc.)
             reference_image: Optional URL of a reference image
+            model_name: Specific model to use (e.g. 'imagen-3.0-generate-001')
             
         Returns:
             Dictionary with image URL and metadata
@@ -126,6 +128,18 @@ class ImageGenerator:
         if self.use_mock:
             return await self._mock_generate(prompt)
         
+        target_model = self.model
+        if model_name:
+            if "Imagen 3" in model_name:
+                if "Fast" in model_name:
+                    target_model = "imagen-3.0-fast-generate-001"
+                else:
+                    target_model = "imagen-3.0-generate-001"
+            elif "Gemini" in model_name:
+                 target_model = "gemini-2.5-flash-image" # Or gemini-2.0-flash-exp if preferred
+            else:
+                 target_model = model_name
+
         try:
             # Enhance prompt with style
             style_prompts = {
@@ -140,7 +154,7 @@ class ImageGenerator:
             style_suffix = style_prompts.get(style, style_prompts["realistic"])
             enhanced_prompt = f"{prompt}. Style: {style_suffix}"
             
-            print(f"[ImageGenerator] Generating image: {enhanced_prompt[:100]}...")
+            print(f"[ImageGenerator] Generating image with {target_model}: {enhanced_prompt[:100]}...")
             
             # Prepare contents
             contents = []
@@ -191,7 +205,7 @@ class ImageGenerator:
             
             # Generate image using Gemini
             response = self.client.models.generate_content(
-                model=self.model,
+                model=target_model,
                 contents=contents,
                 config=config,
             )

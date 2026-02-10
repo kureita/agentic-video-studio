@@ -25,13 +25,19 @@ export const AudioGenNode = memo(({ id, selected, data }: NodeProps) => {
     const [showSuggestions, setShowSuggestions] = React.useState(false);
     const [filterText, setFilterText] = React.useState("");
 
-    // Get all text nodes for suggestions
+    // Get only connected text nodes for suggestions
     const nodes = useWorkflowStore((state) => state.nodes);
-    const textNodes = React.useMemo(() =>
-        nodes
-            .filter(n => n.type === 'text')
-            .map((n, i) => ({ id: n.id, label: `Text #${i + 1}`, content: (n.data.text as string) || "" })),
+    const edges = useWorkflowStore((state) => state.edges);
+    const connectedTextNodeIds = React.useMemo(() => new Set(
+        edges.filter(e => e.target === id).map(e => e.source)
+    ), [edges, id]);
+    const allTextNodes = React.useMemo(() =>
+        nodes.filter(n => n.type === 'text').map((n, i) => ({ id: n.id, label: `Text #${i + 1}`, content: (n.data.text as string) || "" })),
         [nodes]
+    );
+    const textNodes = React.useMemo(() =>
+        allTextNodes.filter(n => connectedTextNodeIds.has(n.id)),
+        [allTextNodes, connectedTextNodeIds]
     );
 
     const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -97,7 +103,7 @@ export const AudioGenNode = memo(({ id, selected, data }: NodeProps) => {
             isRunning={isRunning}
         >
             <div className="relative bg-muted/30 group/audio transition-all duration-300 ease-in-out overflow-hidden w-[320px]">
-                
+
                 {/* Top Section: Audio Player */}
                 <div className="relative h-[120px] flex items-center justify-center p-4">
                     {output && !isRunning ? (
@@ -108,7 +114,7 @@ export const AudioGenNode = memo(({ id, selected, data }: NodeProps) => {
                                 className="w-full"
                                 style={{ filter: 'drop-shadow(0 4px 6px rgba(0, 0, 0, 0.3))' }}
                             />
-                            
+
                             {/* Download button */}
                             <button
                                 onClick={handleDownload}

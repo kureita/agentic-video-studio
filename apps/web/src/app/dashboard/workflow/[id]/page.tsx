@@ -62,10 +62,6 @@ export default function WorkflowEditorPage() {
         }
     }, [handleSaveName, name]);
 
-    const handleSave = useCallback(async () => {
-        await saveWorkflow();
-    }, [saveWorkflow]);
-
     const handleRun = useCallback(async () => {
         await runWorkflow();
     }, [runWorkflow]);
@@ -81,6 +77,19 @@ export default function WorkflowEditorPage() {
             </div>
         );
     }
+
+    // Auto-save effect
+    useEffect(() => {
+        let timeout: NodeJS.Timeout;
+
+        if (isDirty && !isSaving && !isLoading) {
+            timeout = setTimeout(() => {
+                saveWorkflow();
+            }, 1000); // 1-second debounce
+        }
+
+        return () => clearTimeout(timeout);
+    }, [isDirty, isSaving, isLoading, saveWorkflow, name]); // name included so rename triggers it too
 
     return (
         <div className="h-[calc(100vh-2rem)] flex flex-col overflow-hidden rounded-xl border border-border bg-background shadow-2xl">
@@ -114,8 +123,20 @@ export default function WorkflowEditorPage() {
                                 <Pencil className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
                             </button>
                         )}
-                        <p className="text-[10px] text-muted-foreground">
-                            {isDirty ? "unsaved changes" : "saved"}
+                        <p className="text-[10px] text-muted-foreground flex items-center gap-1.5">
+                            {isSaving ? (
+                                <>
+                                    <Loader2 className="w-3 h-3 animate-spin" />
+                                    Saving...
+                                </>
+                            ) : isDirty ? (
+                                "Unsaved changes..."
+                            ) : (
+                                <>
+                                    <Check className="w-3 h-3 text-green-500" />
+                                    All changes saved
+                                </>
+                            )}
                         </p>
                     </div>
                 </div>
@@ -128,22 +149,7 @@ export default function WorkflowEditorPage() {
                         <Settings2 className="w-4 h-4 mr-2" />
                         Settings
                     </Button>
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        className="hidden sm:flex"
-                        onClick={handleSave}
-                        disabled={isSaving || !isDirty}
-                    >
-                        {isSaving ? (
-                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        ) : isDirty ? (
-                            <Save className="w-4 h-4 mr-2" />
-                        ) : (
-                            <Check className="w-4 h-4 mr-2 text-green-500" />
-                        )}
-                        {isSaving ? "Saving..." : isDirty ? "Save" : "Saved"}
-                    </Button>
+                    {/* Auto-save enabled, manual button removed */}
                     <Button
                         size="sm"
                         className="bg-accent text-accent-foreground hover:bg-accent/90"

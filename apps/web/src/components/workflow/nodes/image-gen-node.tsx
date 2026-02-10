@@ -22,7 +22,18 @@ export const ImageGenNode = memo(({ id, selected, data }: NodeProps) => {
         }
     };
 
-    const ratio = (data.ratio as string) || "1:1";
+    // Calculate ratio from dimensions if not explicitly set
+    const getRatioFromDimensions = (w?: number, h?: number): string => {
+        if (!w || !h) return "1:1";
+        const r = w / h;
+        if (Math.abs(r - 16 / 9) < 0.1) return "16:9";
+        if (Math.abs(r - 9 / 16) < 0.1) return "9:16";
+        if (Math.abs(r - 4 / 3) < 0.1) return "4:3";
+        if (Math.abs(r - 3 / 4) < 0.1) return "3:4";
+        return "1:1";
+    };
+
+    const ratio = (data.ratio as string) || getRatioFromDimensions(data.width as number, data.height as number);
 
     // Calculate dimensions based on ratio
     // Base dimension matches NodeWrapper min-width (approximately)
@@ -48,13 +59,19 @@ export const ImageGenNode = memo(({ id, selected, data }: NodeProps) => {
     const [filterText, setFilterText] = React.useState("");
     const textareaRef = React.useRef<HTMLTextAreaElement>(null);
 
-    // Get all text nodes for suggestions
+    // Get only connected text nodes for suggestions
     const nodes = useWorkflowStore((state) => state.nodes);
-    const textNodes = React.useMemo(() =>
-        nodes
-            .filter(n => n.type === 'text')
-            .map((n, i) => ({ id: n.id, label: `Text #${i + 1}`, content: (n.data.text as string) || "" })),
+    const edges = useWorkflowStore((state) => state.edges);
+    const connectedTextNodeIds = React.useMemo(() => new Set(
+        edges.filter(e => e.target === id).map(e => e.source)
+    ), [edges, id]);
+    const allTextNodes = React.useMemo(() =>
+        nodes.filter(n => n.type === 'text').map((n, i) => ({ id: n.id, label: `Text #${i + 1}`, content: (n.data.text as string) || "" })),
         [nodes]
+    );
+    const textNodes = React.useMemo(() =>
+        allTextNodes.filter(n => connectedTextNodeIds.has(n.id)),
+        [allTextNodes, connectedTextNodeIds]
     );
 
     const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -269,11 +286,12 @@ export const ImageGenNode = memo(({ id, selected, data }: NodeProps) => {
                         <ChevronDown className="w-2.5 h-2.5 text-white/50 flex-shrink-0" />
                         <select
                             className="absolute inset-0 opacity-0 cursor-pointer"
-                            value={typeof data.model === 'string' ? data.model : "Google Imagen"}
+                            value={typeof data.model === 'string' ? data.model : "Imagen 3"}
                             onChange={(e) => updateNodeData(id, { model: e.target.value })}
                         >
-                            <option value="Google Imagen">Google Imagen</option>
-                            <option value="Gemini Flash">Gemini Flash</option>
+                            <option value="Imagen 3">Imagen 3</option>
+                            <option value="Imagen 3 Fast">Imagen 3 Fast</option>
+                            <option value="Gemini 2.5 Flash">Gemini 2.5 Flash</option>
                         </select>
                     </div>
 

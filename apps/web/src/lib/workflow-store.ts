@@ -79,7 +79,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
         const nodes = Array.isArray(workflow.nodes) ? workflow.nodes : [];
         const edges = Array.isArray(workflow.edges) ? workflow.edges : [];
         const chatHistory = Array.isArray(workflow.chat_history) ? workflow.chat_history : [];
-        
+
         // Validate and sanitize nodes
         const validNodes = nodes.map((node: any) => ({
             id: node.id || String(Math.random()),
@@ -87,7 +87,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
             position: node.position || { x: 0, y: 0 },
             data: node.data || {},
         })) as Node[];
-        
+
         // Validate and sanitize edges
         const validEdges = edges.map((edge: any) => ({
             id: edge.id || `${edge.source}-${edge.target}`,
@@ -96,7 +96,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
             sourceHandle: edge.sourceHandle || undefined,
             targetHandle: edge.targetHandle || undefined,
         })) as Edge[];
-        
+
         set({
             id: workflow.id,
             name: workflow.name,
@@ -231,12 +231,12 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
         try {
             const response = await workflowApi.get(id);
             const workflow = response.data;
-            
+
             // Ensure nodes and edges are properly formatted arrays
             const nodes = Array.isArray(workflow.nodes) ? workflow.nodes : [];
             const edges = Array.isArray(workflow.edges) ? workflow.edges : [];
             const chatHistory = Array.isArray(workflow.chat_history) ? workflow.chat_history : [];
-            
+
             // Validate and sanitize nodes
             const validNodes = nodes.map((node: any) => ({
                 id: node.id || String(Math.random()),
@@ -244,7 +244,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
                 position: node.position || { x: 0, y: 0 },
                 data: node.data || {},
             })) as Node[];
-            
+
             // Validate and sanitize edges
             const validEdges = edges.map((edge: any) => ({
                 id: edge.id || `${edge.source}-${edge.target}`,
@@ -253,9 +253,9 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
                 sourceHandle: edge.sourceHandle || undefined,
                 targetHandle: edge.targetHandle || undefined,
             })) as Edge[];
-            
+
             console.log(`[WorkflowStore] Loaded workflow ${id}: ${validNodes.length} nodes, ${validEdges.length} edges`);
-            
+
             set({
                 id: workflow.id,
                 name: workflow.name,
@@ -361,31 +361,37 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
             let inputOverrides: Record<string, unknown> | undefined;
             const targetNode = currentStore.nodes.find(n => n.id === targetId);
 
-            if (targetNode && targetNode.data && typeof targetNode.data.prompt === 'string') {
-                let resolvedPrompt = targetNode.data.prompt;
+            if (targetNode && targetNode.data) {
+                // Check for prompt (Image/Video) or instruction (Vision/Editor)
+                const textKey = typeof targetNode.data.prompt === 'string' ? 'prompt' :
+                    (typeof targetNode.data.instruction === 'string' ? 'instruction' : null);
 
-                // Find all text nodes to generate the same labels as the UI
-                const textNodes = currentStore.nodes
-                    .filter(n => n.type === 'text')
-                    .map((n, i) => ({
-                        label: `Text #${i + 1}`,
-                        content: (n.data.text as string) || ""
-                    }))
-                    // Sort by length desc to prevent partial replacements (e.g. replacing @Text #1 in @Text #10)
-                    .sort((a, b) => b.label.length - a.label.length);
+                if (textKey) {
+                    let resolvedText = targetNode.data[textKey] as string;
 
-                let hasReplacements = false;
-                textNodes.forEach(textNode => {
-                    const mention = `@${textNode.label}`;
-                    if (resolvedPrompt.includes(mention)) {
-                        // Global replacement
-                        resolvedPrompt = resolvedPrompt.split(mention).join(textNode.content);
-                        hasReplacements = true;
+                    // Find all text nodes to generate the same labels as the UI
+                    const textNodes = currentStore.nodes
+                        .filter(n => n.type === 'text')
+                        .map((n, i) => ({
+                            label: `Text #${i + 1}`,
+                            content: (n.data.text as string) || ""
+                        }))
+                        // Sort by length desc to prevent partial replacements
+                        .sort((a, b) => b.label.length - a.label.length);
+
+                    let hasReplacements = false;
+                    textNodes.forEach(textNode => {
+                        const mention = `@${textNode.label}`;
+                        if (resolvedText.includes(mention)) {
+                            // Global replacement
+                            resolvedText = resolvedText.split(mention).join(textNode.content);
+                            hasReplacements = true;
+                        }
+                    });
+
+                    if (hasReplacements) {
+                        inputOverrides = { [textKey]: resolvedText };
                     }
-                });
-
-                if (hasReplacements) {
-                    inputOverrides = { prompt: resolvedPrompt };
                 }
             }
 

@@ -66,13 +66,13 @@ class NodeRunner:
                 return await self._run_audio_gen_node(node_data, inputs, nodes)
             
             elif node_type == "videoGen":
-                return await self._run_video_gen_node(node_data, inputs)
+                return await self._run_video_gen_node(node_data, inputs, nodes)
             
             elif node_type == "vision" or node_type == "assistant":
-                return await self._run_vision_node(node_data, inputs)
+                return await self._run_vision_node(node_data, inputs, nodes)
             
             elif node_type == "editorAgent":
-                return await self._run_editor_agent_node(node_data, inputs)
+                return await self._run_editor_agent_node(node_data, inputs, nodes)
             
             elif node_type == "mediaUpload":
                 return await self._run_media_upload_node(node_data, inputs)
@@ -250,7 +250,7 @@ class NodeRunner:
             prompt = "Variation of this image"
         
         # Get generation parameters
-        model = data.get("model", "Google Nano Banana")
+        model = data.get("model", "Imagen 3 Fast")
         ratio = data.get("ratio", "1:1")
         count = data.get("count", 1)
         
@@ -272,6 +272,7 @@ class NodeRunner:
                 aspect_ratio=ratio,
                 style=style,
                 reference_image=reference_image,
+                model_name=model,
             )
             
             if result.get("success"):
@@ -342,10 +343,14 @@ class NodeRunner:
         self,
         data: Dict[str, Any],
         inputs: Dict[str, Any],
+        nodes: List[Dict[str, Any]],
     ) -> Dict[str, Any]:
         """Generate video using the VideoGenerator service."""
         # Get prompt from text input
-        prompt = inputs.get("text") or inputs.get("prompt") or data.get("prompt", "")
+        raw_prompt = inputs.get("text") or inputs.get("prompt") or data.get("prompt", "")
+        
+        # Resolve references (e.g. @Text #1)
+        prompt = self._resolve_prompt_references(raw_prompt, nodes)
         
         # Get various image/video inputs
         start_image = inputs.get("start_image")
@@ -379,6 +384,10 @@ class NodeRunner:
             duration = 4
         ratio = data.get("ratio", "16:9")
         resolution = data.get("resolution", "720p")
+        # Determine model
+        model_str = data.get("model", "Veo 3.1 Fast")
+        use_fast_model = "Fast" in model_str
+
         if resolution not in ("720p", "1080p"):
             resolution = "720p"
 
@@ -391,7 +400,7 @@ class NodeRunner:
             else:
                 duration = 8
         
-        print(f"[NodeRunner] Generating video: prompt='{prompt[:50]}...', duration={duration}s, ratio={ratio}, resolution={resolution}")
+        print(f"[NodeRunner] Generating video: prompt='{prompt[:50]}...', duration={duration}s, ratio={ratio}, resolution={resolution}, fast={use_fast_model}")
         print(f"[NodeRunner] Inputs: start_image={bool(start_image)}, end_image={bool(end_image)}, ref_images={bool(reference_images)}, ref_video={bool(reference_video)}")
         
         try:
@@ -448,7 +457,7 @@ class NodeRunner:
                 result = await self.video_generator.generate_clip(
                     prompt=prompt,
                     duration=duration,
-                    use_fast_model=True,  # Use Veo 3.1 Fast by default
+                    use_fast_model=use_fast_model,  # Use Veo 3.1 Fast by default
                     resolution=resolution,
                     aspect_ratio=ratio,
                 )
@@ -475,6 +484,7 @@ class NodeRunner:
         self,
         data: Dict[str, Any],
         inputs: Dict[str, Any],
+        nodes: List[Dict[str, Any]],
     ) -> Dict[str, Any]:
         """Vision node - uses Gemini model as a chat model to process text, images, and videos."""
         import httpx
@@ -483,7 +493,10 @@ class NodeRunner:
         from app.core.config import settings
         
         # Get instruction from node data
-        instruction = data.get("instruction", "")
+        raw_instruction = data.get("instruction", "")
+        
+        # Resolve references
+        instruction = self._resolve_prompt_references(raw_instruction, nodes)
         
         # Get inputs
         text_input = inputs.get("text", "")
@@ -582,10 +595,14 @@ class NodeRunner:
         self,
         data: Dict[str, Any],
         inputs: Dict[str, Any],
+        nodes: List[Dict[str, Any]],
     ) -> Dict[str, Any]:
         """Editor Agent node - uses Remotion to stitch videos and perform editing tasks."""
         # Get instruction from node data
-        instruction = data.get("instruction", "")
+        raw_instruction = data.get("instruction", "")
+        
+        # Resolve references
+        instruction = self._resolve_prompt_references(raw_instruction, nodes)
         
         # Get inputs
         text_input = inputs.get("text", "")

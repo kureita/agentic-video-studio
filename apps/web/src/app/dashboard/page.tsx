@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useCallback } from "react";
-import { Plus, MoreHorizontal, Clock, FileVideo, Trash2, Pencil, Loader2 } from "lucide-react";
+import { Plus, MoreHorizontal, Clock, Trash2, Pencil, Loader2 } from "lucide-react";
+import { WorkflowPreview } from "@/components/workflow/workflow-preview";
 import { Button } from "@/components/ui/button";
 import { workflowApi, WorkflowListItem } from "@/lib/workflow-api";
 import { cn } from "@/lib/utils";
@@ -130,10 +131,8 @@ export default function DashboardPage() {
                                 className="block"
                             >
                                 <div className="relative aspect-video rounded-lg border border-border bg-card overflow-hidden transition-all hover:border-accent hover:shadow-md">
-                                    <div className="absolute inset-0 bg-muted/20 flex items-center justify-center p-8">
-                                        <div className="w-16 h-16 rounded-full bg-background/50 flex items-center justify-center text-muted-foreground group-hover:bg-background group-hover:text-accent transition-colors">
-                                            <FileVideo className="w-8 h-8" />
-                                        </div>
+                                    <div className="absolute inset-0 bg-[hsl(230,15%,10%)]">
+                                        <WorkflowPreview nodes={workflow.nodes} edges={workflow.edges} />
                                     </div>
 
                                     {/* Node count badge */}

@@ -61,7 +61,7 @@ export function Sidebar({ className }: SidebarProps) {
                     </div>
                 </div>
 
-                <div className="px-3 py-2">
+                {/* <div className="px-3 py-2">
                     <h3 className="mb-2 px-4 text-xs font-semibold tracking-tight text-muted-foreground uppercase">
                         Tools
                     </h3>
@@ -79,7 +79,7 @@ export function Sidebar({ className }: SidebarProps) {
                             Assistant
                         </div>
                     </div>
-                </div>
+                </div> */}
             </div>
         </div>
     );

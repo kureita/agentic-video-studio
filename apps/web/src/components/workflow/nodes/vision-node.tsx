@@ -16,13 +16,19 @@ export const VisionNode = memo(({ id, selected, data }: NodeProps) => {
     const [filterText, setFilterText] = useState("");
     const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-    // Get all text nodes for suggestions
+    // Get only connected text nodes for suggestions
     const nodes = useWorkflowStore((state) => state.nodes);
-    const textNodes = useMemo(() =>
-        nodes
-            .filter(n => n.type === 'text')
-            .map((n, i) => ({ id: n.id, label: `Text #${i + 1}`, content: (n.data.text as string) || "" })),
+    const edges = useWorkflowStore((state) => state.edges);
+    const connectedTextNodeIds = useMemo(() => new Set(
+        edges.filter(e => e.target === id).map(e => e.source)
+    ), [edges, id]);
+    const allTextNodes = useMemo(() =>
+        nodes.filter(n => n.type === 'text').map((n, i) => ({ id: n.id, label: `Text #${i + 1}`, content: (n.data.text as string) || "" })),
         [nodes]
+    );
+    const textNodes = useMemo(() =>
+        allTextNodes.filter(n => connectedTextNodeIds.has(n.id)),
+        [allTextNodes, connectedTextNodeIds]
     );
 
     const handleTextChange = (e: ChangeEvent<HTMLTextAreaElement>) => {

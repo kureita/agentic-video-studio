@@ -70,6 +70,8 @@ class WorkflowListItem(BaseModel):
     name: str
     updated_at: str
     node_count: int = 0
+    nodes: List[Dict[str, Any]] = []
+    edges: List[Dict[str, Any]] = []
 
 
 class RunNodeRequest(BaseModel):
@@ -176,6 +178,14 @@ async def list_workflows():
             name=w.get("name", "Untitled Workflow"),
             updated_at=w.get("updated_at", datetime.now(timezone.utc)).isoformat(),
             node_count=len(w.get("nodes", [])),
+            nodes=[
+                {"id": n.get("id"), "type": n.get("type"), "position": n.get("position", {})}
+                for n in w.get("nodes", [])
+            ],
+            edges=[
+                {"id": e.get("id"), "source": e.get("source"), "target": e.get("target")}
+                for e in w.get("edges", [])
+            ],
         )
         for w in workflows
     ]

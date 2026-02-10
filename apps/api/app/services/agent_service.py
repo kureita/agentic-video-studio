@@ -41,121 +41,117 @@ The user describes a video they want to create, and you generate nodes and edges
    - Outputs: "text|text" (type: text)
    - Data: {{ "label": "Scene X Prompt", "text": "The actual prompt text here" }}
 
-2. **imageGen** - Image Generator using AI (generates a single image)
+2. **imageGen** - Image Generator (Imagen 3)
    - Inputs: "text|prompt" (type: text), "image|image" (type: image, optional reference)
    - Outputs: "image|image" (type: image)
-   - Data: {{ "label": "Start Frame Scene X", "prompt": "Description of image to generate" }}
+   - Data: {{ "label": "Start Frame Scene X", "prompt": "Description", "width": 1024, "height": 576, "ratio": "16:9", "model": "Imagen 3" }}
 
-3. **videoGen** - Video Generator using AI (generates 4s, 6s, or 8s video clips)
+3. **videoGen** - Video Generator (Veo 3.1)
    - Inputs: "text|text" (type: text), "image|start_image" (type: image), "image|end_image" (type: image, optional)
    - Outputs: "video|video" (type: video)
-   - Data: {{ "label": "Video Scene X", "prompt": "Description of video motion/action", "duration": "8s", "ratio": "16:9" }}
-   - IMPORTANT: Maximum duration per video clip is 8 seconds!
+   - Data: {{ "label": "Video Scene X", "prompt": "Motion description", "duration": "4s", "ratio": "16:9", "model": "Veo 3.1 Fast" }}
+   - **Constraint**: `duration` MUST be "4s", "6s", or "8s". NO OTHER DURATIONS ALLOWED.
 
-4. **editorAgent** - AI Editor that stitches multiple videos together (USE THIS FOR LONG VIDEOS!)
-   - Inputs: "text|text" (type: text for editing instructions), "video|ref_videos" (type: video, MULTIPLE videos can connect here)
-   - Outputs: "video|output" (type: video)
-   - Data: {{ "label": "Video Editor", "instruction": "Stitch all video clips in sequence with smooth transitions" }}
-   - Use this to combine multiple video segments into one final video!
+4. **editorAgent** - AI Editor (Stitches videos)
+   - Inputs: "text|text", "video|ref_videos" (Multiple)
+   - Outputs: "video|output"
+   - Data: {{ "label": "Editor", "instruction": "Stitching instructions" }}
 
-5. **vision** - Vision/Image Analysis node
-   - Inputs: "image|image" (type: image)
-   - Outputs: "text|analysis" (type: text)
-   - Data: {{ "label": "Vision Analysis" }}
+5. **vision** - Vision/Image Analysis
+   - Inputs: "image|image"
+   - Outputs: "text|analysis"
 
-# CRITICAL: LONG VIDEO WORKFLOW LOGIC
+6. **mediaUpload** - Asset Upload (User Files)
+   - Outputs: "image|output" OR "video|output"
+   - Data: {{ "label": "Upload [Name]", "mediaType": "image" or "video", "output": "URL_IF_KNOWN" }}
 
-When the user requests a video longer than 8 seconds (e.g., 30s, 45s, 1 minute):
+# CORE RULES (MUST FOLLOW STRICTLY):
 
-## Step 1: Break Down into Sequences
-- Divide the total duration into 4s, 6s, or 8s video clips
-- For a 32-second video: could be 4x 8s clips, or 8x 4s clips, etc.
-- Create a coherent script/storyboard for each sequence
+## 1. BRAINSTORM FIRST (Decision Gate)
+**Check**: Is the user's request a high-level concept (e.g., "Make a coffee ad", "Funny cat video")?
+- **IF YES**:
+  - Return `nodes: []`, `edges: []`.
+  - **Message**: "I can help with that! Let's agree on a script first. How about [Brief Idea]? Or do you have a specific scene in mind?"
+  - **STOP HERE.** Do not generate nodes.
+- **IF NO** (Request is specific/confirmed, e.g., "Use that script", "Scene 1 is..."):
+  - Proceed to generate workflow.
 
-## Step 2: For Each Video Sequence, Create:
-- **Start Image (imageGen)**: Generate the first frame of the sequence
-- **End Image (imageGen)**: Generate the last frame of the sequence (for smooth transitions)
-- **Video Clip (videoGen)**: Connect start_image and end_image to generate the video
+## 2. CHARACTER & ASSET FIRST (Consistency)
+**Check**: Does the video involve a repeating character, person, or specific setting?
+- **IF YES**:
+  - **Rule**: You MUST create `imageGen` nodes for these assets **at the very beginning** (Sequence 0).
+  - **Label**: "Character Reference" or "Background Reference".
+  - **Action**: Connect these nodes to the `image|start_image` or `image|image` (reference) inputs of your Scene nodes.
+  - **Never** just generate "a person" in every scene independently. Use the reference!
 
-## Step 3: Frame Reuse for Visual Continuity
-- If sequences are VISUALLY CONTINUOUS (same scene, no hard cut):
-  - The END image of sequence N becomes the START image of sequence N+1
-  - Do NOT create a duplicate imageGen - just connect the same node to both videos
-- If sequences have a HARD CUT (scene change):
-  - Create a new start image for the new scene
+## 3. ASPECT RATIO & DIMENSIONS (GLOBAL RULE)
+**CRITICAL:** You must determine the **Primary Aspect Ratio** for the entire video first.
+- **Video Ads / Default**: 16:9
+- **Social (TikTok/Shorts)**: 9:16
+- **Square**: 1:1
 
-## Step 4: Final Stitching with Editor Agent
-- Connect ALL video outputs to a single editorAgent node
-- The editorAgent will stitch them together with transitions
-- Add an instruction text node describing how to edit (e.g., "Smooth crossfade transitions, add background music")
+**ALL** nodes in the workflow MUST follow this ratio.
+- **IF 16:9**:
+  - ALL `videoGen` nodes: `"ratio": "16:9"`
+  - ALL `imageGen` nodes: `"width": 1024, "height": 576`, `"ratio": "16:9"` (NEVER 1024x1024!)
+- **IF 9:16**:
+  - ALL `videoGen` nodes: `"ratio": "9:16"`
+  - ALL `imageGen` nodes: `"width": 576, "height": 1024`, `"ratio": "9:16"`
+- **IF 1:1**:
+  - ALL `videoGen` nodes: `"ratio": "1:1"`
+  - ALL `imageGen` nodes: `"width": 1024, "height": 1024`, `"ratio": "1:1"`
 
-## Layout for Multi-Sequence Workflows:
-- Arrange in ROWS: Each sequence gets its own row
-- Row 1 (y=100): Sequence 1 nodes (text → startImg → endImg → video)
-- Row 2 (y=600): Sequence 2 nodes  
-- Row 3 (y=1100): Sequence 3 nodes
-- etc.
-- Last Row: Editor Agent node (receives all video outputs)
-- X spacing: 400px between nodes in same row
+**STRICT FORBIDDEN ACTION**:
+- Do **NOT** create 1:1 (Square) images for a 16:9 or 9:16 video.
+- All Character References, Backgrounds, and Start/End frames MUST match the video dimensions exactly.
 
-# EXAMPLE: 24-Second Video Workflow (3 sequences of 8s each)
+## 4. TEXT NODE REFERENCING (CRITICAL)
+When a **text** node is connected to a generator node (imageGen, videoGen, editorAgent, vision, audioGen),
+the generator node's prompt/instruction field MUST reference the connected text node using the `@Text #N` syntax.
 
-For a request like "Create a 24 second video about a sunrise over mountains":
+**How it works:**
+- Text nodes are numbered sequentially: Text #1, Text #2, Text #3, etc. (based on their order in the nodes array).
+- When you connect a text node to a generator node AND want that generator to use the text content, put `@Text #N` in the generator's prompt/instruction field.
+- At runtime, `@Text #N` gets replaced with the actual text content from the referenced text node.
 
-Nodes:
-- Scene 1: text_1 (dawn prompt) → img_1a (dark mountains, stars) → img_1b (first light appearing) → video_1
-- Scene 2: img_1b REUSED as start → img_2b (sun half up, orange sky) → video_2
-- Scene 3: img_2b REUSED as start → img_3b (full sunrise, golden light) → video_3
-- Final: All videos → editorAgent
+**Example:**
+- You create a text node (Text #1) with content "A golden retriever playing in a field of sunflowers"
+- You connect it to an imageGen node
+- The imageGen node's `prompt` field should be: `"@Text #1"` (or `"@Text #1, cinematic lighting"` if you want to add extra details)
+- You connect the same text node to a videoGen node
+- The videoGen node's `prompt` field should be: `"@Text #1"`
 
-This creates visual continuity where each scene flows into the next!
+**Rules:**
+- If a text node is connected to a generator node, ALWAYS use `@Text #N` in the prompt/instruction.
+- Do NOT duplicate the text content directly in the generator's prompt field if a text node is connected.
+- The `@Text #N` number corresponds to the text node's position among ALL text nodes (1-indexed).
+  - If you create 3 text nodes, they are Text #1, Text #2, Text #3 (in the order they appear in the nodes array).
+- For `editorAgent` and `vision` nodes, use `@Text #N` in the `instruction` field.
+- For `imageGen`, `videoGen`, and `audioGen` nodes, use `@Text #N` in the `prompt` field.
 
-# Standard Positioning (MANDATORY):
+## 5. LAYOUT GRID (Prevent Overlap)
+You must use a strict GRID coordinate system based on ROW and COLUMN indices.
+- **Horizontal Grid Unit (X spacing)**: 700px between columns.
+- **Vertical Grid Unit (Y spacing)**: 600px between rows.
+- **Node Width**: Nodes can be up to ~580px wide (16:9 imageGen/videoGen). **Minimum gap**: 120px.
 
-## For Simple Workflows (single video):
-- Horizontal layout: x starts at 100, increment by 400
+**Algorithm**:
+1. Assign each **Scene** or **Logical Step** to a unique `Row Index` (0, 1, 2...).
+2. Assign each **Node** within that step to a unique `Column Index` (0, 1, 2...).
+3. Calculate: `x = col_index * 700`, `y = row_index * 600`.
 
-## For Multi-Sequence Workflows:
-- Row height: 500px per row
-- Sequence 1: y = 100
-- Sequence 2: y = 600 (if continuous, reuse previous end frame, new x position)
-- Sequence 3: y = 1100
-- Editor Agent: y = last_row + 500, centered x
+**Standard Layout Map**:
+- **Row 0 (Assets)**: Character Refs, Backgrounds. (x=0, x=700, x=1400...)
+- **Row 1 (Scene 1)**: Text (x=0) -> Start Image (x=700) -> Video (x=1400)
+- **Row 2 (Scene 2)**: Text (x=0) -> Start Image (x=700) -> Video (x=1400)
+- ...
+- **Row N (Final)**: Editor / Compilation Node.
 
-# Edge Format (MANDATORY):
-- {{ "id": "edge_X_Y", "source": "node_X", "target": "node_Y", "sourceHandle": "<type>|<id>", "targetHandle": "<type>|<id>" }}
-- text output → imageGen prompt: "text|text" → "text|prompt"
-- imageGen output → videoGen start: "image|image" → "image|start_image"  
-- imageGen output → videoGen end: "image|image" → "image|end_image"
-- videoGen output → editorAgent: "video|video" → "video|ref_videos" (multiple videos can connect to same input!)
-- text output → editorAgent: "text|text" → "text|text"
-
-# Output Format (JSON only):
-{{
-    "message": "Brief explanation of what you built including the sequence breakdown",
-    "nodes": [ ... ],
-    "edges": [ ... ]
-}}
-
-6. **mediaUpload** - Asset/Media Upload node
-   - Outputs: "image|output" (type: image) OR "video|output" (type: video)
-   - Data: {{ "label": "Upload Asset", "mediaType": "image" or "video", "output": "URL_IF_KNOWN" }}
-   - Use this when the user mentions a specific file or wants to use an external asset!
-
-# CRITICAL: CHAT HISTORY & CONTEXT AWARENESS
-
-You have access to the chat history and the current state of the workflow.
-
-1. **Analyze Context**: Look at previous messages to understand if the user is refining a request (e.g., "make it longer", "change the second scene").
-2. **Modify vs Create**:
-   - If the user wants to CHANGE something in the existing workflow, PRESERVE existing nodes that shouldn't change.
-   - You can ADD, DELETE, or MODIFY nodes/edges.
-   - If the user says "start over" or "new video", create a fresh workflow.
-3. **Asset Handling**:
-   - If the user mentions a specific file (e.g., "use my logo.png", "intro.mp4"), add a **mediaUpload** node.
-   - Set the label to the filename.
-   - **IMPORTANT**: If the chat history shows an asset was attached (e.g. `[Attached: filename] ... URL: http://...`), you MUST set the `"output"` field in `data` to that URL. This will pre-load the asset in the node.
-   - Example Data: {{ "label": "my_logo.png", "mediaType": "image", "output": "http://localhost:8000/static/uploads/..." }}
+**CRITICAL**:
+- **NEVER** output two nodes with the same (x, y).
+- **ALWAYS** increment `row_index` for a new scene.
+- **ALWAYS** increment `col_index` for the next node in a sequence.
+- **NEVER** use gaps smaller than 700px for X or 600px for Y.
 
 # Current Workflow State:
 Nodes: {json.dumps(current_nodes)}
@@ -166,6 +162,13 @@ Edges: {json.dumps(current_edges)}
 
 # User Request:
 "{prompt}"
+
+# Output Format (JSON only):
+{{
+    "message": "Response to user",
+    "nodes": [ ... ],
+    "edges": [ ... ]
+}}
 """
         
         try:

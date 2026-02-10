@@ -151,51 +151,49 @@
         "id": "text_1",
         "type": "text",
         "position": {
-          "x": 100.0,
-          "y": 100.0
+          "x": 58.0,
+          "y": 96.0
         },
         "data": {
-          "label": "Scene 1 Prompt",
-          "text": "Opening scene: A person hopefully taking a pill, followed by a subtle shift to discomfort or mild unease. Visuals highlight the initial trust in medicine, then hint at underlying issues. Focus on the contrast between advertised relief and potential immediate side effects like drowsiness or slight nausea.",
-          "output": "Opening scene: A person hopefully taking a pill, followed by a subtle shift to discomfort or mild unease. Visuals highlight the initial trust in medicine, then hint at underlying issues. Focus on the contrast between advertised relief and potential immediate side effects like drowsiness or slight nausea."
+          "label": "Scene 1: Morning Commute",
+          "text": "A person's morning routine, seamlessly using Google Assistant for weather updates and Google Maps for navigating their commute. Focus on efficiency and ease."
         }
       },
       {
         "id": "imageGen_1_start",
         "type": "imageGen",
         "position": {
-          "x": 519.1779351504538,
-          "y": 100.0
+          "x": 624.0,
+          "y": 125.75
         },
         "data": {
-          "label": "Start Frame Scene 1",
-          "prompt": "Close up of a person's hand holding a pill with a glass of water, bright and hopeful lighting. Clean, modern medical setting background. Studio light.",
-          "output": "http://localhost:8000/static/images/generated_1770272030_4696.png"
+          "label": "Scene 1 Start Frame",
+          "prompt": "2D animated style, close-up of a person (consistent character) waking up, stretching, sunlight streaming in. Their phone shows a Google Assistant notification with weather and a morning briefing. Clean, bright room."
         }
       },
       {
         "id": "imageGen_1_end",
         "type": "imageGen",
         "position": {
-          "x": 900.0,
-          "y": 100.0
+          "x": 958.0,
+          "y": 125.75
         },
         "data": {
-          "label": "End Frame Scene 1",
-          "prompt": "Person's face showing slight discomfort or confusion after taking medicine, subtle furrowed brow, a slight grimace, blurred medical background, slightly desaturated colors."
+          "label": "Scene 1 End Frame",
+          "prompt": "2D animated style, the same person confidently walking down a city street, looking at their phone displaying Google Maps directions. Busy but fluid urban background. Optimized route highlighted."
         }
       },
       {
         "id": "videoGen_1",
         "type": "videoGen",
         "position": {
-          "x": 1300.0,
-          "y": 100.0
+          "x": 1418.0,
+          "y": 64.0
         },
         "data": {
-          "label": "Video Scene 1 (8s)",
-          "prompt": "A person takes a pill, initially feels a moment of relief, then gradually shows a subtle facial expression of slight discomfort or unease. Smooth transition.",
-          "duration": "8s",
+          "label": "Video Scene 1 (7s)",
+          "prompt": "2D animated sequence: A consistent character wakes up, interacts with Google Assistant on their phone, then smoothly transitions to navigating their morning commute with Google Maps, showing clear directions and real-time traffic updates. Upbeat, efficient movement.",
+          "duration": "7s",
           "ratio": "16:9"
         }
       },
@@ -203,37 +201,49 @@
         "id": "text_2",
         "type": "text",
         "position": {
-          "x": 100.0,
-          "y": 600.0
+          "x": 16.0,
+          "y": 564.0
         },
         "data": {
-          "label": "Scene 2 Prompt",
-          "text": "Focus on common side effects: dizziness, stomach upset, or skin reactions. Show a person experiencing these, perhaps in everyday situations. Emphasize how these disrupt daily life. Visuals of mundane tasks becoming difficult due to medication side effects."
+          "label": "Scene 2: Problem Solving",
+          "text": "The same person at work, facing a challenge. They use Google Search to quickly find a solution, highlighting Google's ability to provide instant, relevant information."
+        }
+      },
+      {
+        "id": "imageGen_2_start",
+        "type": "imageGen",
+        "position": {
+          "x": 416.0,
+          "y": 516.0
+        },
+        "data": {
+          "label": "Scene 2 Start Frame",
+          "prompt": "2D animated style, the same person (consistent character) at a desk, looking puzzled at a complex graph or problem on their computer screen. Busy office background."
         }
       },
       {
         "id": "imageGen_2_end",
         "type": "imageGen",
         "position": {
-          "x": 900.0,
-          "y": 600.0
+          "x": 840.0,
+          "y": 518.0
         },
         "data": {
-          "label": "End Frame Scene 2",
-          "prompt": "Close up of a person's hand clutching their stomach in mild pain, a worried expression on their face, in a slightly dark home setting. Focus on the discomfort."
+          "label": "Scene 2 End Frame",
+          "prompt": "2D animated style, the same person (consistent character) now confidently typing on their computer, with Google Search results prominently displayed, showing the answer to their problem. They look enlightened and productive."
         }
       },
       {
         "id": "videoGen_2",
         "type": "videoGen",
         "position": {
-          "x": 1300.0,
-          "y": 600.0
+          "x": 1446.0,
+          "y": 504.0
         },
         "data": {
-          "label": "Video Scene 2 (8s)",
-          "prompt": "Transition from mild unease to specific, noticeable side effects. Show quick cuts of a person feeling dizzy while walking, then clutching their stomach in discomfort. Visuals emphasize the physical toll.",
-          "duration": "8s",
+          "label": "Video Scene 2 (7s)",
+          "prompt": "2D animated sequence: The consistent character encounters a work challenge, then uses Google Search to quickly find an accurate solution. Visuals show the search query, rapid results, and the character applying the newfound information effectively. Dynamic and informative.",
+          "duration": "7s",
           "ratio": "16:9"
         }
       },
@@ -242,48 +252,48 @@
         "type": "text",
         "position": {
           "x": 100.0,
-          "y": 1100.0
+          "y": 900.0
         },
         "data": {
-          "label": "Scene 3 Prompt",
-          "text": "Address long-term issues: dependency, tolerance, and masking root causes. Show visuals of many different medicine bottles, a person looking weary or trapped by their medication routine. Emphasize the cycle of dependency and the lack of true healing."
+          "label": "Scene 3: Social & Leisure",
+          "text": "The person enjoying leisure time, sharing photos with friends (Google Photos), and using Google Assistant to plan a social outing. Emphasize connection and fun."
         }
       },
       {
         "id": "imageGen_3_start",
         "type": "imageGen",
         "position": {
-          "x": 500.0,
-          "y": 1100.0
+          "x": 416.0,
+          "y": 862.0
         },
         "data": {
-          "label": "Start Frame Scene 3",
-          "prompt": "A collection of various pill bottles and blister packs scattered on a table, partially in shadow, creating a sense of overwhelming medication."
+          "label": "Scene 3 Start Frame",
+          "prompt": "2D animated style, the same person (consistent character) at a cafe with friends, happily showing photos on their phone via Google Photos. Bright, friendly atmosphere."
         }
       },
       {
         "id": "imageGen_3_end",
         "type": "imageGen",
         "position": {
-          "x": 900.0,
-          "y": 1100.0
+          "x": 1546.0,
+          "y": 1216.0
         },
         "data": {
-          "label": "End Frame Scene 3",
-          "prompt": "A person staring blankly at a large pile of prescription bottles, looking tired and resigned. Overcast light, melancholic atmosphere. Emphasis on feeling trapped."
+          "label": "Scene 3 End Frame",
+          "prompt": "2D animated style, the same person (consistent character) and friends discussing plans, with Google Assistant on a phone or smart speaker suggesting activities or routes for their outing. Lively, collaborative scene."
         }
       },
       {
         "id": "videoGen_3",
         "type": "videoGen",
         "position": {
-          "x": 1300.0,
-          "y": 1100.0
+          "x": 774.0,
+          "y": 950.0
         },
         "data": {
-          "label": "Video Scene 3 (8s)",
-          "prompt": "The scene opens with a table full of medicine bottles, a person interacts with them with resignation. Show a person taking multiple pills, then looking exhausted, highlighting the routine and burden of long-term medication use.",
-          "duration": "8s",
+          "label": "Video Scene 3 (7s)",
+          "prompt": "2D animated sequence: The consistent character shares memories with friends using Google Photos, then uses Google Assistant to effortlessly plan a social outing, showing maps, event suggestions, and happy interactions. Engaging and social.",
+          "duration": "7s",
           "ratio": "16:9"
         }
       },
@@ -292,48 +302,48 @@
         "type": "text",
         "position": {
           "x": 100.0,
-          "y": 1600.0
+          "y": 1300.0
         },
         "data": {
-          "label": "Scene 4 Prompt",
-          "text": "Shift to a more hopeful tone. Explore the idea of seeking natural alternatives, lifestyle changes, or holistic approaches. Show visuals of nature, healthy activities, or consultation with a holistic practitioner. Conclude with a balanced perspective on health without over-reliance on medication."
+          "label": "Scene 4: Evening Relaxation",
+          "text": "The person unwinding at home, using Google Assistant to control smart home devices and play music, creating a perfectly relaxed atmosphere. Conclude the day with peace and comfort."
         }
       },
       {
         "id": "imageGen_4_start",
         "type": "imageGen",
         "position": {
-          "x": 500.0,
-          "y": 1600.0
+          "x": 390.0,
+          "y": 1188.0
         },
         "data": {
-          "label": "Start Frame Scene 4",
-          "prompt": "A person walking through a peaceful natural setting, sunlight filtering through trees, a sense of calm and well-being. Focus on greenery and open spaces."
+          "label": "Scene 4 Start Frame",
+          "prompt": "2D animated style, the same person (consistent character) arriving home, looking content, smart home lights subtly turning on automatically. Cozy, modern home interior."
         }
       },
       {
         "id": "imageGen_4_end",
         "type": "imageGen",
         "position": {
-          "x": 900.0,
-          "y": 1600.0
+          "x": 400.0,
+          "y": 1450.0
         },
         "data": {
-          "label": "End Frame Scene 4",
-          "prompt": "A person smiling genuinely while meditating or engaging in a healthy activity outdoors, bright and optimistic lighting. Clear skies, open future. Focus on empowerment and natural health."
+          "label": "Scene 4 End Frame",
+          "prompt": "2D animated style, the same person (consistent character) relaxing on a couch, a smart speaker (Google Home Mini) playing soothing music, lights dimmed. Peaceful, comfortable, and controlled ambiance."
         }
       },
       {
         "id": "videoGen_4",
         "type": "videoGen",
         "position": {
-          "x": 1300.0,
-          "y": 1600.0
+          "x": 920.0,
+          "y": 1474.0
         },
         "data": {
-          "label": "Video Scene 4 (8s)",
-          "prompt": "From the resignation of dependency, transition to scenes of a person engaging in healthy lifestyle choices: eating fresh food, gentle exercise, or spending time in nature. The overall mood shifts to one of empowerment and natural well-being.",
-          "duration": "8s",
+          "label": "Video Scene 4 (7s)",
+          "prompt": "2D animated sequence: The consistent character returns home, effortlessly controlling smart home devices and playing music via Google Assistant, creating a serene and relaxed environment. Smooth, calming transitions.",
+          "duration": "7s",
           "ratio": "16:9"
         }
       },
@@ -342,36 +352,36 @@
         "type": "text",
         "position": {
           "x": 100.0,
-          "y": 2100.0
+          "y": 1700.0
         },
         "data": {
           "label": "Editor Instructions",
-          "text": "Stitch all four video clips in sequence. Use smooth crossfade transitions between clips to maintain flow. Add a solemn background score for the first three clips, transitioning to a hopeful and uplifting score for the final clip. Ensure the overall message emphasizes a thoughtful approach to health, not outright rejection of medicine but careful consideration of its role and alternatives."
+          "text": "Stitch all four video clips in sequence for a total duration of approximately 30 seconds (including transitions). Use smooth, quick crossfade transitions between scenes. Add upbeat, friendly, and modern background music throughout the ad. The overall tone should be positive and highlight Google's AI capabilities as a seamless part of daily life. Maintain the 2D animated style throughout the editing."
         }
       },
       {
         "id": "editorAgent_final",
         "type": "editorAgent",
         "position": {
-          "x": 700.0,
-          "y": 2100.0
+          "x": 1428.0,
+          "y": 888.0
         },
         "data": {
-          "label": "Video Editor",
-          "instruction": "Stitch all video clips in sequence with smooth transitions and appropriate background music as per the instructions provided."
+          "label": "Google AI Ad Editor",
+          "instruction": "Stitch all video clips in sequence with smooth crossfades and an upbeat, modern background score, ensuring the final video highlights Google AI's seamless integration into daily life with a consistent 2D animated style."
         }
       }
     ],
     "edges": [
       {
-        "id": "edge_text1_imageGen1start",
+        "id": "edge_text1_imageGen1start_prompt",
         "source": "text_1",
         "target": "imageGen_1_start",
         "sourceHandle": "text|text",
         "targetHandle": "text|prompt"
       },
       {
-        "id": "edge_text1_imageGen1end",
+        "id": "edge_text1_imageGen1end_prompt",
         "source": "text_1",
         "target": "imageGen_1_end",
         "sourceHandle": "text|text",
@@ -392,22 +402,29 @@
         "targetHandle": "image|end_image"
       },
       {
-        "id": "edge_text1_videoGen1",
+        "id": "edge_text1_videoGen1_prompt",
         "source": "text_1",
         "target": "videoGen_1",
         "sourceHandle": "text|text",
         "targetHandle": "text|text"
       },
       {
-        "id": "edge_text2_imageGen2end",
+        "id": "edge_text2_imageGen2start_prompt",
+        "source": "text_2",
+        "target": "imageGen_2_start",
+        "sourceHandle": "text|text",
+        "targetHandle": "text|prompt"
+      },
+      {
+        "id": "edge_text2_imageGen2end_prompt",
         "source": "text_2",
         "target": "imageGen_2_end",
         "sourceHandle": "text|text",
         "targetHandle": "text|prompt"
       },
       {
-        "id": "edge_imageGen1end_videoGen2_start",
-        "source": "imageGen_1_end",
+        "id": "edge_imageGen2start_videoGen2_start",
+        "source": "imageGen_2_start",
         "target": "videoGen_2",
         "sourceHandle": "image|image",
         "targetHandle": "image|start_image"
@@ -420,21 +437,21 @@
         "targetHandle": "image|end_image"
       },
       {
-        "id": "edge_text2_videoGen2",
+        "id": "edge_text2_videoGen2_prompt",
         "source": "text_2",
         "target": "videoGen_2",
         "sourceHandle": "text|text",
         "targetHandle": "text|text"
       },
       {
-        "id": "edge_text3_imageGen3start",
+        "id": "edge_text3_imageGen3start_prompt",
         "source": "text_3",
         "target": "imageGen_3_start",
         "sourceHandle": "text|text",
         "targetHandle": "text|prompt"
       },
       {
-        "id": "edge_text3_imageGen3end",
+        "id": "edge_text3_imageGen3end_prompt",
         "source": "text_3",
         "target": "imageGen_3_end",
         "sourceHandle": "text|text",
@@ -455,21 +472,21 @@
         "targetHandle": "image|end_image"
       },
       {
-        "id": "edge_text3_videoGen3",
+        "id": "edge_text3_videoGen3_prompt",
         "source": "text_3",
         "target": "videoGen_3",
         "sourceHandle": "text|text",
         "targetHandle": "text|text"
       },
       {
-        "id": "edge_text4_imageGen4start",
+        "id": "edge_text4_imageGen4start_prompt",
         "source": "text_4",
         "target": "imageGen_4_start",
         "sourceHandle": "text|text",
         "targetHandle": "text|prompt"
       },
       {
-        "id": "edge_text4_imageGen4end",
+        "id": "edge_text4_imageGen4end_prompt",
         "source": "text_4",
         "target": "imageGen_4_end",
         "sourceHandle": "text|text",
@@ -490,7 +507,7 @@
         "targetHandle": "image|end_image"
       },
       {
-        "id": "edge_text4_videoGen4",
+        "id": "edge_text4_videoGen4_prompt",
         "source": "text_4",
         "target": "videoGen_4",
         "sourceHandle": "text|text",
@@ -534,11 +551,35 @@
     ],
     "outputs": {
       "text_1": "Opening scene: A person hopefully taking a pill, followed by a subtle shift to discomfort or mild unease. Visuals highlight the initial trust in medicine, then hint at underlying issues. Focus on the contrast between advertised relief and potential immediate side effects like drowsiness or slight nausea.",
-      "imageGen_1_start": "http://localhost:8000/static/images/generated_1770273965_3355.png"
+      "imageGen_1_start": "http://localhost:8000/static/images/generated_1770273965_3355.png",
+      "imageGen_1_end": "http://localhost:8000/static/images/generated_1770650851_6559.png",
+      "videoGen_1": "http://localhost:8000/static/videos/generated_1770650929.mp4"
     },
     "created_at": "2026-02-05T05:23:16.399322+00:00",
-    "updated_at": "2026-02-09T05:12:37.058259+00:00",
-    "_id": "69842944b7c692f833cba915"
+    "updated_at": "2026-02-09T21:01:36.617919+00:00",
+    "_id": "69842944b7c692f833cba915",
+    "chat_history": [
+      {
+        "role": "user",
+        "content": "make a video ad for google",
+        "timestamp": null
+      },
+      {
+        "role": "assistant",
+        "content": "I can create a video ad for Google. How about a 30-second ad showcasing Google's AI capabilities helping a user throughout their day, from morning commute to evening relaxation? Shall I proceed with a script that highlights Google Assistant, Search, and Maps integration, using a 16:9 aspect ratio?",
+        "timestamp": null
+      },
+      {
+        "role": "user",
+        "content": "yeah do that and give it 2D animated feel",
+        "timestamp": null
+      },
+      {
+        "role": "assistant",
+        "content": "Great! Here's a workflow designed for a 30-second Google ad with a 2D animated feel, showcasing AI integration throughout a user's day. The '2D animated style' has been incorporated into the image and video generation prompts.",
+        "timestamp": null
+      }
+    ]
   },
   {
     "name": "testing",
@@ -1161,5 +1202,458 @@
     "created_at": "2026-02-09T05:08:16.226097+00:00",
     "updated_at": "2026-02-09T05:11:00.937321+00:00",
     "_id": "69896bc0386099516d32577b"
+  },
+  {
+    "name": "Untitled Workflow",
+    "nodes": [
+      {
+        "id": "char_ref",
+        "type": "imageGen",
+        "position": {
+          "x": 0.0,
+          "y": 0.0
+        },
+        "data": {
+          "label": "Character Reference",
+          "prompt": "A professional-looking person, late 20s, diverse ethnicity, in a modern, well-lit apartment. Clean, professional style, neutral expression for reference.",
+          "width": 1024,
+          "height": 576,
+          "ratio": "16:9"
+        }
+      },
+      {
+        "id": "family_ref",
+        "type": "imageGen",
+        "position": {
+          "x": 620.0,
+          "y": 14.0
+        },
+        "data": {
+          "label": "Family Reference",
+          "prompt": "A diverse, happy family of four (two adults, two children aged 7-10) on a comfortable couch in a bright living room. Smiling, relaxed, for reference.",
+          "width": 1024,
+          "height": 576,
+          "ratio": "16:9"
+        }
+      },
+      {
+        "id": "s1_text",
+        "type": "text",
+        "position": {
+          "x": 0.0,
+          "y": 500.0
+        },
+        "data": {
+          "label": "Scene 1 Prompt: Morning Rush",
+          "text": "A person, stressed, juggling breakfast and a laptop. Text on screen: 'Need a quick brief on the latest market trends?'. They type a question into a Gemini-like interface. Gemini instantly provides a concise summary."
+        }
+      },
+      {
+        "id": "s1_image",
+        "type": "imageGen",
+        "position": {
+          "x": 406.0,
+          "y": 518.0
+        },
+        "data": {
+          "label": "Start Frame Scene 1",
+          "prompt": "A person, clearly stressed and overwhelmed, with breakfast items and an open laptop on a table. Early morning light fills a modern kitchen.",
+          "width": 1024,
+          "height": 576,
+          "ratio": "16:9"
+        }
+      },
+      {
+        "id": "s1_video",
+        "type": "videoGen",
+        "position": {
+          "x": 1120.0,
+          "y": 494.0
+        },
+        "data": {
+          "label": "Video Scene 1",
+          "prompt": "A busy person quickly typing a complex question into a sleek, minimalist AI interface on a laptop. A concise summary of market trends appears instantly on screen, and the person's stressed expression visibly shifts to relief and understanding. Dynamic camera movement highlighting the speed and efficiency.",
+          "duration": "5s",
+          "ratio": "16:9"
+        }
+      },
+      {
+        "id": "s2_text",
+        "type": "text",
+        "position": {
+          "x": 0.0,
+          "y": 1000.0
+        },
+        "data": {
+          "label": "Scene 2 Prompt: Creative Block",
+          "text": "A student or writer staring at a blank page/screen, looking for inspiration. Text on screen: 'Stuck on a tricky essay or presentation?'. They ask Gemini for creative prompts or help structuring an argument. Gemini offers engaging suggestions."
+        }
+      },
+      {
+        "id": "s2_image",
+        "type": "imageGen",
+        "position": {
+          "x": 494.0,
+          "y": 994.0
+        },
+        "data": {
+          "label": "Start Frame Scene 2",
+          "prompt": "A student or writer, looking pensive and frustrated, staring at a blank document on a laptop screen. Creative tools like pens, notebooks, and a coffee cup are scattered on the desk.",
+          "width": 1024,
+          "height": 576,
+          "ratio": "16:9"
+        }
+      },
+      {
+        "id": "s2_video",
+        "type": "videoGen",
+        "position": {
+          "x": 1158.0,
+          "y": 992.0
+        },
+        "data": {
+          "label": "Video Scene 2",
+          "prompt": "A student or writer, initially looking frustrated, types a query into an AI interface. Creative ideas, engaging prompts, and structural suggestions for an essay or presentation quickly populate the screen, inspiring the person who then starts typing confidently with a newfound spark of creativity. Smooth camera pan following the creative flow.",
+          "duration": "5s",
+          "ratio": "16:9"
+        }
+      },
+      {
+        "id": "s3_text",
+        "type": "text",
+        "position": {
+          "x": 0.0,
+          "y": 1500.0
+        },
+        "data": {
+          "label": "Scene 3 Prompt: Weekend Planning",
+          "text": "A family on a couch, trying to plan a trip or activity. Text on screen: 'Planning the perfect family outing?'. They input their preferences into Gemini, which generates a personalized itinerary or activity list with options."
+        }
+      },
+      {
+        "id": "s3_image",
+        "type": "imageGen",
+        "position": {
+          "x": 404.0,
+          "y": 1500.0
+        },
+        "data": {
+          "label": "Start Frame Scene 3",
+          "prompt": "A happy family on a comfortable couch, one adult holding a tablet, looking a bit puzzled but engaged as they discuss weekend plans. Cozy living room setting with natural light.",
+          "width": 1024,
+          "height": 576,
+          "ratio": "16:9"
+        }
+      },
+      {
+        "id": "s3_video",
+        "type": "videoGen",
+        "position": {
+          "x": 1140.0,
+          "y": 1506.0
+        },
+        "data": {
+          "label": "Video Scene 3",
+          "prompt": "A family laughing and discussing as one parent types their preferences into an AI interface on a tablet. A customized itinerary or activity list with appealing options appears, prompting smiles and agreement from the whole family. Gentle camera movement, warm lighting, showcasing family bonding.",
+          "duration": "5s",
+          "ratio": "16:9",
+          "isRunning": false
+        }
+      },
+      {
+        "id": "editor_instruction_text",
+        "type": "text",
+        "position": {
+          "x": 500.0,
+          "y": 2000.0
+        },
+        "data": {
+          "label": "Editor Instructions",
+          "text": "Stitch Scene 1, Scene 2, and Scene 3 together in sequence. Add a final shot of the Google Gemini logo with the tagline 'Your Everyday AI Assistant.' Ensure smooth transitions and consistent branding across all scenes."
+        }
+      },
+      {
+        "id": "final_editor",
+        "type": "editorAgent",
+        "position": {
+          "x": 1000.0,
+          "y": 2000.0
+        },
+        "data": {
+          "label": "Final Ad Editor",
+          "instruction": "Assemble the videos to create a compelling ad for Google Gemini, following the detailed instructions provided."
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e-char_ref-s1_image",
+        "source": "char_ref",
+        "target": "s1_image",
+        "sourceHandle": "image|image",
+        "targetHandle": "image|image"
+      },
+      {
+        "id": "e-char_ref-s2_image",
+        "source": "char_ref",
+        "target": "s2_image",
+        "sourceHandle": "image|image",
+        "targetHandle": "image|image"
+      },
+      {
+        "id": "e-family_ref-s3_image",
+        "source": "family_ref",
+        "target": "s3_image",
+        "sourceHandle": "image|image",
+        "targetHandle": "image|image"
+      },
+      {
+        "id": "e-s1_text-s1_video",
+        "source": "s1_text",
+        "target": "s1_video",
+        "sourceHandle": "text|text",
+        "targetHandle": "text|text"
+      },
+      {
+        "id": "e-s1_image-s1_video",
+        "source": "s1_image",
+        "target": "s1_video",
+        "sourceHandle": "image|image",
+        "targetHandle": "image|start_image"
+      },
+      {
+        "id": "e-s2_text-s2_video",
+        "source": "s2_text",
+        "target": "s2_video",
+        "sourceHandle": "text|text",
+        "targetHandle": "text|text"
+      },
+      {
+        "id": "e-s2_image-s2_video",
+        "source": "s2_image",
+        "target": "s2_video",
+        "sourceHandle": "image|image",
+        "targetHandle": "image|start_image"
+      },
+      {
+        "id": "e-s3_text-s3_video",
+        "source": "s3_text",
+        "target": "s3_video",
+        "sourceHandle": "text|text",
+        "targetHandle": "text|text"
+      },
+      {
+        "id": "e-s3_image-s3_video",
+        "source": "s3_image",
+        "target": "s3_video",
+        "sourceHandle": "image|image",
+        "targetHandle": "image|start_image"
+      },
+      {
+        "id": "e-s1_video-final_editor",
+        "source": "s1_video",
+        "target": "final_editor",
+        "sourceHandle": "video|video",
+        "targetHandle": "video|ref_videos"
+      },
+      {
+        "id": "e-s2_video-final_editor",
+        "source": "s2_video",
+        "target": "final_editor",
+        "sourceHandle": "video|video",
+        "targetHandle": "video|ref_videos"
+      },
+      {
+        "id": "e-s3_video-final_editor",
+        "source": "s3_video",
+        "target": "final_editor",
+        "sourceHandle": "video|video",
+        "targetHandle": "video|ref_videos"
+      },
+      {
+        "id": "e-editor_instruction_text-final_editor",
+        "source": "editor_instruction_text",
+        "target": "final_editor",
+        "sourceHandle": "text|text",
+        "targetHandle": "text|text"
+      }
+    ],
+    "outputs": {},
+    "chat_history": [
+      {
+        "role": "user",
+        "content": "make a video ad for google",
+        "timestamp": null
+      },
+      {
+        "role": "assistant",
+        "content": "I can help with that! Let's agree on a script first. How about an ad showcasing how Google's AI can simplify everyday tasks, like planning a trip or writing an email? Or do you have a specific scene in mind?",
+        "timestamp": null
+      },
+      {
+        "role": "user",
+        "content": "let's do for google gemini, how it can answer everyday questions, help with tasks etc.",
+        "timestamp": null
+      },
+      {
+        "role": "assistant",
+        "content": "Great idea! Focusing on Google Gemini's everyday utility sounds compelling. How about we build a 3-scene ad that showcases its versatility?\n\n**Scene 1: The Morning Rush**\n*   **Visual**: A person, stressed, juggling breakfast and a laptop. Text on screen: \"Need a quick brief on the latest market trends?\"\n*   **Action**: They type a question into a Gemini-like interface. Gemini instantly provides a concise summary.\n\n**Scene 2: Creative Block**\n*   **Visual**: A student or writer staring at a blank page/screen, looking for inspiration. Text on screen: \"Stuck on a tricky essay or presentation?\"\n*   **Action**: They ask Gemini for creative prompts or help structuring an argument. Gemini offers engaging suggestions.\n\n**Scene 3: Weekend Planning**\n*   **Visual**: A family on a couch, trying to plan a trip or activity. Text on screen: \"Planning the perfect family outing?\"\n*   **Action**: They input their preferences into Gemini, which generates a personalized itinerary or activity list with options.\n\nThen, a final shot of the Google Gemini logo with a tagline like \"Your Everyday AI Assistant.\"\n\nDoes this sound like a good starting point, or do you have different scenarios in mind?",
+        "timestamp": null
+      },
+      {
+        "role": "user",
+        "content": "sure let's do that",
+        "timestamp": null
+      },
+      {
+        "role": "assistant",
+        "content": "Excellent! Here is the workflow for your Google Gemini ad, structured into three scenes and a final edit. We've included reference nodes for the main character and family to ensure consistency across scenes.",
+        "timestamp": null
+      },
+      {
+        "role": "user",
+        "content": "can you please correct the image generator aspect ratio to 16:9",
+        "timestamp": null
+      },
+      {
+        "role": "assistant",
+        "content": "All `imageGen` nodes in the current workflow are already set to the 16:9 aspect ratio with dimensions of `width: 1024` and `height: 576`. No corrections are needed for the image generators.",
+        "timestamp": null
+      },
+      {
+        "role": "user",
+        "content": "the workflow just disappeared can you please remake it again",
+        "timestamp": null
+      },
+      {
+        "role": "assistant",
+        "content": "Here is the recreated workflow for your Google Gemini ad, structured into three scenes and a final edit. We've included reference nodes for the main character and family to ensure consistency across scenes, all set to the 16:9 aspect ratio.",
+        "timestamp": null
+      },
+      {
+        "role": "user",
+        "content": "please make the workflow for the video ad again",
+        "timestamp": null
+      },
+      {
+        "role": "assistant",
+        "content": "Here is the recreated workflow for your Google Gemini ad, structured into three scenes and a final edit. We've included reference nodes for the main character and family to ensure consistency across scenes, all set to the 16:9 aspect ratio.",
+        "timestamp": null
+      }
+    ],
+    "created_at": "2026-02-09T21:01:51.199021+00:00",
+    "updated_at": "2026-02-10T11:20:11.594657+00:00",
+    "_id": "698a4b3f2e3af2bd90ce8c86"
+  },
+  {
+    "name": "lol",
+    "nodes": [
+      {
+        "id": "node_0",
+        "type": "text",
+        "position": {
+          "x": 0.0,
+          "y": 600.0
+        },
+        "data": {
+          "label": "Kureita Viral Script",
+          "text": "Are you tired of complex video workflows? Kureita is the cursor for AI videos. Just type your prompt, and watch your vision come to life. Simple. Fast. Viral. Kureita."
+        }
+      },
+      {
+        "id": "node_1",
+        "type": "imageGen",
+        "position": {
+          "x": 0.0,
+          "y": 0.0
+        },
+        "data": {
+          "label": "Talking Head Reference",
+          "prompt": "Professional young person, looking directly at the camera, neutral expression, clear skin, soft studio lighting, professional attire, plain background. Instagram Reels (9:16).",
+          "width": 576,
+          "height": 1024,
+          "ratio": "9:16"
+        }
+      },
+      {
+        "id": "node_2",
+        "type": "imageGen",
+        "position": {
+          "x": 700.0,
+          "y": 600.0
+        },
+        "data": {
+          "label": "Scene 1 Start Frame",
+          "prompt": "Professional young person, looking directly at the camera, engaging expression, clear skin, soft studio lighting, professional attire, plain background, ready to speak. Instagram Reels (9:16).",
+          "width": 576,
+          "height": 1024,
+          "ratio": "9:16"
+        }
+      },
+      {
+        "id": "node_3",
+        "type": "videoGen",
+        "position": {
+          "x": 1400.0,
+          "y": 600.0
+        },
+        "data": {
+          "label": "Kureita Talking Head Video",
+          "prompt": "@Text #1. A professional young person speaks directly to the camera with confident, engaging gestures. The camera remains static, focusing on the speaker.",
+          "duration": "8s",
+          "ratio": "9:16",
+          "isRunning": false
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "edge_0",
+        "source": "node_1",
+        "target": "node_2",
+        "sourceHandle": "image|image",
+        "targetHandle": "image|image"
+      },
+      {
+        "id": "edge_1",
+        "source": "node_0",
+        "target": "node_3",
+        "sourceHandle": "text|text",
+        "targetHandle": "text|text"
+      },
+      {
+        "id": "edge_2",
+        "source": "node_2",
+        "target": "node_3",
+        "sourceHandle": "image|image",
+        "targetHandle": "image|start_image"
+      }
+    ],
+    "outputs": {},
+    "chat_history": [
+      {
+        "role": "user",
+        "content": "I want you to create a content video for instagram that will go viral, this will be a talking head video for my startup Kureita, aka \"cursor for AI videos\", where you just give the prompt and Kureita will make videos for you using workflows",
+        "timestamp": null
+      },
+      {
+        "role": "assistant",
+        "content": "I can help with that! A talking head video for Instagram sounds great for Kureita. To make it go viral, we should focus on a concise, impactful message. How about a script where the talking head quickly explains the pain point of current video creation and introduces Kureita as the simple AI solution, maybe with a quick visual metaphor? Or do you have a specific scene or script in mind already? We can plan this for a 9:16 aspect ratio for Instagram Reels.",
+        "timestamp": null
+      },
+      {
+        "role": "user",
+        "content": "yes good",
+        "timestamp": null
+      },
+      {
+        "role": "assistant",
+        "content": "Great! Let's get this workflow set up for your Kureita talking head video, optimized for Instagram Reels with a 9:16 aspect ratio. I've included a 'Talking Head Reference' to ensure consistency, a placeholder script, and the main video generation node.",
+        "timestamp": null
+      }
+    ],
+    "created_at": "2026-02-10T11:22:38.894508+00:00",
+    "updated_at": "2026-02-10T11:46:57.723460+00:00",
+    "_id": "698b14fe497302db09858a7e"
   }
 ]

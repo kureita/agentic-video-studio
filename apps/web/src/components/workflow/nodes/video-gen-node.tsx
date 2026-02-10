@@ -53,11 +53,17 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
     const [filterText, setFilterText] = useState("");
     const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-    const textNodes = useMemo(() =>
-        nodes
-            .filter(n => n.type === 'text')
-            .map((n, i) => ({ id: n.id, label: `Text #${i + 1}`, content: (n.data.text as string) || "" })),
+    const edges = useWorkflowStore((state) => state.edges);
+    const connectedTextNodeIds = useMemo(() => new Set(
+        edges.filter(e => e.target === id).map(e => e.source)
+    ), [edges, id]);
+    const allTextNodes = useMemo(() =>
+        nodes.filter(n => n.type === 'text').map((n, i) => ({ id: n.id, label: `Text #${i + 1}`, content: (n.data.text as string) || "" })),
         [nodes]
+    );
+    const textNodes = useMemo(() =>
+        allTextNodes.filter(n => connectedTextNodeIds.has(n.id)),
+        [allTextNodes, connectedTextNodeIds]
     );
 
     const handleTextChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
@@ -255,11 +261,11 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
                         <ChevronDown className="w-2.5 h-2.5 text-white/50 flex-shrink-0" />
                         <select
                             className="absolute inset-0 opacity-0 cursor-pointer"
-                            value={typeof data.model === 'string' ? data.model : "Google Veo"}
+                            value={typeof data.model === 'string' ? data.model : "Veo 3.1"}
                             onChange={(e) => updateData({ model: e.target.value })}
                         >
-                            <option value="Google Veo">Google Veo</option>
-                            <option value="Veo Fast">Veo Fast</option>
+                            <option value="Veo 3.1">Veo 3.1</option>
+                            <option value="Veo 3.1 Fast">Veo 3.1 Fast</option>
                         </select>
                     </div>
 

@@ -36,11 +36,25 @@ export interface Workflow {
     updated_at: string;
 }
 
+export interface WorkflowListItemNode {
+    id: string;
+    type: string;
+    position: { x: number; y: number };
+}
+
+export interface WorkflowListItemEdge {
+    id: string;
+    source: string;
+    target: string;
+}
+
 export interface WorkflowListItem {
     id: string;
     name: string;
     updated_at: string;
     node_count: number;
+    nodes: WorkflowListItemNode[];
+    edges: WorkflowListItemEdge[];
 }
 
 export interface UpdateWorkflowData {
