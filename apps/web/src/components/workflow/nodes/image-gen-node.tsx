@@ -1,7 +1,8 @@
 import React, { memo } from "react";
 import { NodeProps, useReactFlow } from "@xyflow/react";
-import { Image as ImageIcon, Sparkles, Minus, Plus, ChevronDown, Square, Loader2, Download } from "lucide-react";
+import { Image as ImageIcon, Minus, Plus, ChevronDown, Square, Loader2, Download } from "lucide-react";
 import { NodeWrapper } from "@/components/workflow/node-wrapper";
+import { HighlightedTextarea } from "@/components/workflow/nodes/highlighted-textarea";
 
 import { useWorkflowStore } from "@/lib/workflow-store";
 
@@ -242,8 +243,8 @@ export const ImageGenNode = memo(({ id, selected, data }: NodeProps) => {
                         </div>
                     )}
 
-                    <textarea
-                        ref={textareaRef}
+                    <HighlightedTextarea
+                        textareaRef={textareaRef}
                         className="w-full min-h-[80px] bg-transparent border-none px-4 pb-2 pt-4 text-sm font-medium placeholder:text-white/50 focus-visible:outline-none resize-y overflow-y-auto leading-relaxed text-white nodrag nowheel pointer-events-auto drop-shadow-md shadow-black/50"
                         placeholder="Describe the image you want to generate..."
                         value={typeof data.prompt === 'string' ? data.prompt : ''}
@@ -282,16 +283,15 @@ export const ImageGenNode = memo(({ id, selected, data }: NodeProps) => {
 
                     {/* Model Pill */}
                     <div className="relative h-7 flex items-center gap-1.5 bg-black/60 backdrop-blur-md border border-white/10 rounded-full px-2 text-white/90 hover:bg-black/70 transition-colors min-w-0 flex-grow max-w-[110px]">
-                        <span className="text-[10px] font-medium truncate">{typeof data.model === 'string' ? data.model : "Google Imagen"}</span>
+                        <span className="text-[10px] font-medium truncate">{typeof data.model === 'string' ? data.model : "Imagen 4"}</span>
                         <ChevronDown className="w-2.5 h-2.5 text-white/50 flex-shrink-0" />
                         <select
                             className="absolute inset-0 opacity-0 cursor-pointer"
-                            value={typeof data.model === 'string' ? data.model : "Imagen 3"}
+                            value={typeof data.model === 'string' ? data.model : "Imagen 4"}
                             onChange={(e) => updateNodeData(id, { model: e.target.value })}
                         >
-                            <option value="Imagen 3">Imagen 3</option>
-                            <option value="Imagen 3 Fast">Imagen 3 Fast</option>
-                            <option value="Gemini 2.5 Flash">Gemini 2.5 Flash</option>
+                            <option value="Imagen 4">Imagen 4</option>
+                            <option value="Nano Banana Pro">Nano Banana Pro</option>
                         </select>
                     </div>
 

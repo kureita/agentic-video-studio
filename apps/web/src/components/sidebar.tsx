@@ -60,26 +60,6 @@ export function Sidebar({ className }: SidebarProps) {
                         </Link>
                     </div>
                 </div>
-
-                {/* <div className="px-3 py-2">
-                    <h3 className="mb-2 px-4 text-xs font-semibold tracking-tight text-muted-foreground uppercase">
-                        Tools
-                    </h3>
-                    <div className="space-y-1">
-                        <div className="group flex items-center rounded-md px-4 py-2 text-sm font-medium text-muted-foreground cursor-not-allowed opacity-70">
-                            <ImageIcon className="mr-2 h-4 w-4" />
-                            Image Gen
-                        </div>
-                        <div className="group flex items-center rounded-md px-4 py-2 text-sm font-medium text-muted-foreground cursor-not-allowed opacity-70">
-                            <Video className="mr-2 h-4 w-4" />
-                            Video Gen
-                        </div>
-                        <div className="group flex items-center rounded-md px-4 py-2 text-sm font-medium text-muted-foreground cursor-not-allowed opacity-70">
-                            <Bot className="mr-2 h-4 w-4" />
-                            Assistant
-                        </div>
-                    </div>
-                </div> */}
             </div>
         </div>
     );

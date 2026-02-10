@@ -250,7 +250,7 @@ class NodeRunner:
             prompt = "Variation of this image"
         
         # Get generation parameters
-        model = data.get("model", "Imagen 3 Fast")
+        model = data.get("model", "Imagen 4")
         ratio = data.get("ratio", "1:1")
         count = data.get("count", 1)
         

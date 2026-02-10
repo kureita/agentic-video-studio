@@ -14,6 +14,7 @@ const NODE_COLORS: Record<string, string> = {
     editorAgent: "#a855f7", // purple-500
     mediaUpload: "#6366f1", // indigo-500
     upload: "#6366f1",      // indigo-500
+    comment: "#fbbf24",     // amber-400
 };
 
 const NODE_WIDTH = 120;

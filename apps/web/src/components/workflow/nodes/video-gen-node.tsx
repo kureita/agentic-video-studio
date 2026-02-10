@@ -2,6 +2,7 @@ import { memo, useState, useRef, useMemo, ChangeEvent } from "react";
 import { NodeProps, useReactFlow } from "@xyflow/react";
 import { Video, Clock, ChevronDown, Square, Loader2, Download, Monitor } from "lucide-react";
 import { NodeWrapper } from "@/components/workflow/node-wrapper";
+import { HighlightedTextarea } from "@/components/workflow/nodes/highlighted-textarea";
 
 import { useWorkflowStore } from "@/lib/workflow-store";
 
@@ -227,8 +228,8 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
                         </div>
                     )}
 
-                    <textarea
-                        ref={textareaRef}
+                    <HighlightedTextarea
+                        textareaRef={textareaRef}
                         className="w-full min-h-[80px] bg-transparent border-none px-4 pb-2 pt-4 text-sm font-medium placeholder:text-white/50 focus-visible:outline-none resize-y overflow-y-auto leading-relaxed text-white nodrag nowheel pointer-events-auto drop-shadow-md shadow-black/50"
                         placeholder="Describe the video you want to generate..."
                         value={typeof data.prompt === 'string' ? data.prompt : ''}

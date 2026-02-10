@@ -41,11 +41,9 @@ const getHandleIcon = (type?: string) => {
 export const NodeWrapper = memo(({
     children,
     title,
-    icon,
     selected,
     inputs = [],
     outputs = [],
-    color = "bg-primary",
     onDelete,
     onRun,
     onClear,

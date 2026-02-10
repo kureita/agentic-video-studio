@@ -42,22 +42,20 @@ export interface ButtonProps
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant, size, asChild = false, icon, iconPosition = "left", children, ...props }, ref) => {
-    const Comp = asChild ? Slot : "button"
-
     if (asChild) {
       return (
-        <Comp
+        <Slot
           className={cn(buttonVariants({ variant, size, className }))}
           ref={ref}
           {...props}
         >
           {children}
-        </Comp>
+        </Slot>
       )
     }
 
     return (
-      <Comp
+      <button
         className={cn(buttonVariants({ variant, size, className }))}
         ref={ref}
         {...props}
@@ -65,7 +63,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         {icon && iconPosition === "left" && <span className="mr-2 inline-flex">{icon}</span>}
         {children}
         {icon && iconPosition === "right" && <span className="ml-2 inline-flex">{icon}</span>}
-      </Comp>
+      </button>
     )
   }
 )

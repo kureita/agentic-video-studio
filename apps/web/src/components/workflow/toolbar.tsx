@@ -3,7 +3,6 @@
 import { useState } from "react";
 import {
     Plus,
-    Play,
     Hand,
     Scissors,
     MessageSquare,

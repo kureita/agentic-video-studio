@@ -15,7 +15,7 @@ from app.core.config import settings
 
 
 class ImageGenerator:
-    """Generates images using Gemini (Nano Banana) for consistent scene visuals."""
+    """Generates images using Imagen 4 / Nano Banana Pro for consistent scene visuals."""
 
     def __init__(self):
         self.use_mock = settings.use_mock_veo  # Use same mock flag for development
@@ -130,13 +130,17 @@ class ImageGenerator:
         
         target_model = self.model
         if model_name:
-            if "Imagen 3" in model_name:
+            if "Imagen 4" in model_name:
+                target_model = "imagen-4.0-generate-001"
+            elif "Nano Banana" in model_name:
+                target_model = "gemini-2.5-flash-image"
+            elif "Imagen 3" in model_name:
                 if "Fast" in model_name:
                     target_model = "imagen-3.0-fast-generate-001"
                 else:
                     target_model = "imagen-3.0-generate-001"
             elif "Gemini" in model_name:
-                 target_model = "gemini-2.5-flash-image" # Or gemini-2.0-flash-exp if preferred
+                 target_model = "gemini-2.5-flash-image"
             else:
                  target_model = model_name
 

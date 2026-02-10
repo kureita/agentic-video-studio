@@ -145,10 +145,6 @@ export default function WorkflowEditorPage() {
                     {error && (
                         <span className="text-xs text-destructive mr-2">{error}</span>
                     )}
-                    <Button variant="ghost" size="sm">
-                        <Settings2 className="w-4 h-4 mr-2" />
-                        Settings
-                    </Button>
                     {/* Auto-save enabled, manual button removed */}
                     <Button
                         size="sm"

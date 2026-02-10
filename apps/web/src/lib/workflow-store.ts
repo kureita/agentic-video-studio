@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { Node, Edge } from "@xyflow/react";
-import { workflowApi, Workflow, ChatMessage } from "./workflow-api";
+import { workflowApi, Workflow, ChatMessage, WorkflowNode, WorkflowEdge } from "./workflow-api";
 
 // ============================================
 // Types
@@ -81,7 +81,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
         const chatHistory = Array.isArray(workflow.chat_history) ? workflow.chat_history : [];
 
         // Validate and sanitize nodes
-        const validNodes = nodes.map((node: any) => ({
+        const validNodes = nodes.map((node: WorkflowNode) => ({
             id: node.id || String(Math.random()),
             type: node.type || 'default',
             position: node.position || { x: 0, y: 0 },
@@ -89,7 +89,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
         })) as Node[];
 
         // Validate and sanitize edges
-        const validEdges = edges.map((edge: any) => ({
+        const validEdges = edges.map((edge: WorkflowEdge) => ({
             id: edge.id || `${edge.source}-${edge.target}`,
             source: edge.source,
             target: edge.target,
@@ -238,7 +238,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
             const chatHistory = Array.isArray(workflow.chat_history) ? workflow.chat_history : [];
 
             // Validate and sanitize nodes
-            const validNodes = nodes.map((node: any) => ({
+            const validNodes = nodes.map((node: WorkflowNode) => ({
                 id: node.id || String(Math.random()),
                 type: node.type || 'default',
                 position: node.position || { x: 0, y: 0 },
@@ -246,7 +246,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
             })) as Node[];
 
             // Validate and sanitize edges
-            const validEdges = edges.map((edge: any) => ({
+            const validEdges = edges.map((edge: WorkflowEdge) => ({
                 id: edge.id || `${edge.source}-${edge.target}`,
                 source: edge.source,
                 target: edge.target,

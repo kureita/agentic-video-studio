@@ -1,10 +1,10 @@
 import { memo } from "react";
 import { NodeProps, useReactFlow } from "@xyflow/react";
-import { Upload, Image as ImageIcon } from "lucide-react";
+import { Upload } from "lucide-react";
 import { NodeWrapper } from "@/components/workflow/node-wrapper";
 import { useWorkflowStore } from "@/lib/workflow-store";
 
-export const UploadNode = memo(({ id, selected, data }: NodeProps) => {
+export const UploadNode = memo(({ id, selected }: NodeProps) => {
     const { deleteElements } = useReactFlow();
 
     return (

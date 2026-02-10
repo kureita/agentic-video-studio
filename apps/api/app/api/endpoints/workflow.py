@@ -41,10 +41,21 @@ class CreateWorkflowRequest(BaseModel):
     name: Optional[str] = "Untitled Workflow"
 
 
+class ToolCallData(BaseModel):
+    name: str
+    status: str = "completed"  # "running", "completed", "failed"
+    args: Optional[Dict[str, Any]] = None
+    result: Optional[str] = None
+
+
 class ChatMessage(BaseModel):
     role: str  # "user" or "assistant"
     content: str
     timestamp: Optional[str] = None
+    # Rich assistant message metadata
+    thinking: Optional[str] = None
+    thinking_duration_ms: Optional[int] = None
+    tool_calls: Optional[List[ToolCallData]] = None
 
 
 class UpdateWorkflowRequest(BaseModel):

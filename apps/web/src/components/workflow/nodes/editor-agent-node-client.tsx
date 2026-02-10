@@ -2,14 +2,15 @@ import { memo, useState, useRef, useMemo, ChangeEvent, useEffect } from "react";
 import { NodeProps, useReactFlow } from "@xyflow/react";
 import { Clapperboard, Loader2, Download, Play } from "lucide-react";
 import { NodeWrapper } from "@/components/workflow/node-wrapper";
+import { HighlightedTextarea } from "@/components/workflow/nodes/highlighted-textarea";
 import { useWorkflowStore } from "@/lib/workflow-store";
 import { RemotionVideoPlayer } from "@/components/video/RemotionVideoPlayer";
 
 interface VideoClip {
-  url: string;
-  startTime: number;
-  duration: number;
-  transition?: "fade" | "slide" | "cut";
+    url: string;
+    startTime: number;
+    duration: number;
+    transition?: "fade" | "slide" | "cut";
 }
 
 export const EditorAgentNodeClient = memo(({ id, selected, data }: NodeProps) => {
@@ -158,7 +159,7 @@ export const EditorAgentNodeClient = memo(({ id, selected, data }: NodeProps) =>
             isRunning={isRunning}
         >
             <div className="relative bg-muted/30 group/editor transition-all duration-300 ease-in-out overflow-hidden w-[400px]">
-                
+
                 {/* Top Section: Video Player */}
                 <div className="relative h-[225px] flex items-center justify-center bg-black">
                     {showPreview && videoClips.length > 0 ? (
@@ -172,7 +173,7 @@ export const EditorAgentNodeClient = memo(({ id, selected, data }: NodeProps) =>
                                 controls
                                 className="w-full h-full"
                             />
-                            
+
                             {/* Export button */}
                             <button
                                 onClick={handleExport}
@@ -229,8 +230,8 @@ export const EditorAgentNodeClient = memo(({ id, selected, data }: NodeProps) =>
                     )}
 
                     {/* Text Input */}
-                    <textarea
-                        ref={textareaRef}
+                    <HighlightedTextarea
+                        textareaRef={textareaRef}
                         className="w-full min-h-[120px] bg-transparent border-none px-4 py-3 text-sm font-medium placeholder:text-white/50 focus-visible:outline-none resize-none overflow-y-auto leading-relaxed text-white nodrag nowheel"
                         placeholder="Describe the editing task (e.g., stitch videos, add transitions, apply effects)..."
                         value={typeof data.instruction === 'string' ? data.instruction : ''}

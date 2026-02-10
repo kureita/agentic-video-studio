@@ -2,7 +2,6 @@ import { memo } from "react";
 import { NodeProps, useReactFlow } from "@xyflow/react";
 import { Type } from "lucide-react";
 import { NodeWrapper } from "@/components/workflow/node-wrapper";
-import { Input } from "@/components/ui/input";
 import { useWorkflowStore } from "@/lib/workflow-store";
 
 export const TextNode = memo(({ id, selected, data }: NodeProps) => {

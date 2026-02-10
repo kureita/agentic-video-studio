@@ -25,20 +25,11 @@ export function NodeSelector({ onSelect, onClose }: NodeSelectorProps) {
         { id: "videoGen", label: "Video Generator", icon: <Video className="w-4 h-4 text-purple-500" /> },
         { id: "vision", label: "Vision", icon: <Eye className="w-4 h-4 text-indigo-500" /> },
         { id: "editorAgent", label: "Editor Agent", icon: <Clapperboard className="w-4 h-4 text-purple-600" /> },
-        { id: "mediaUpload", label: "Media Upload", icon: <Upload className="w-4 h-4 text-blue-600" /> },
+        { id: "mediaUpload", label: "Asset", icon: <Upload className="w-4 h-4 text-blue-600" /> },
     ];
 
     return (
         <div className="w-64 bg-card border border-border rounded-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-100">
-
-            {/* Header / Search */}
-            <div className="p-3 border-b border-border space-y-3">
-                <div className="relative">
-                    <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input placeholder="Search" className="pl-8 h-9 text-xs" autoFocus />
-                </div>
-            </div>
-
             {/* Nodes List */}
             <div className="py-2">
                 <div className="px-3 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
@@ -57,17 +48,6 @@ export function NodeSelector({ onSelect, onClose }: NodeSelectorProps) {
                             <span>{node.label}</span>
                         </button>
                     ))}
-                </div>
-            </div>
-
-            {/* Utilities List */}
-            <div className="border-t border-border py-2 mt-1">
-                <div className="px-3 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-                    Utilities
-                </div>
-                {/* Placeholder for utilities */}
-                <div className="px-3 py-2 text-xs text-muted-foreground italic">
-                    More tools coming soon...
                 </div>
             </div>
         </div>

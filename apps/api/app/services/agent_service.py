@@ -1,6 +1,7 @@
 
 import json
 import os
+import time
 from typing import Dict, Any, List, Optional
 from pydantic import BaseModel
 from google import genai
@@ -27,6 +28,9 @@ class AgentService:
              return {
                 "success": False,
                 "message": "Google API Key is not configured.",
+                "thinking": None,
+                "thinking_duration_ms": None,
+                "tool_calls": [],
                 "nodes": [],
                 "edges": []
             }
@@ -41,10 +45,10 @@ The user describes a video they want to create, and you generate nodes and edges
    - Outputs: "text|text" (type: text)
    - Data: {{ "label": "Scene X Prompt", "text": "The actual prompt text here" }}
 
-2. **imageGen** - Image Generator (Imagen 3)
+2. **imageGen** - Image Generator (Imagen 4)
    - Inputs: "text|prompt" (type: text), "image|image" (type: image, optional reference)
    - Outputs: "image|image" (type: image)
-   - Data: {{ "label": "Start Frame Scene X", "prompt": "Description", "width": 1024, "height": 576, "ratio": "16:9", "model": "Imagen 3" }}
+   - Data: {{ "label": "Start Frame Scene X", "prompt": "Description", "width": 1024, "height": 576, "ratio": "16:9", "model": "Imagen 4" }}
 
 3. **videoGen** - Video Generator (Veo 3.1)
    - Inputs: "text|text" (type: text), "image|start_image" (type: image), "image|end_image" (type: image, optional)
@@ -163,8 +167,20 @@ Edges: {json.dumps(current_edges)}
 # User Request:
 "{prompt}"
 
+# IMPORTANT: Your response MUST include a "thinking" field that contains your reasoning/plan BEFORE generating the workflow.
+This thinking field should describe:
+1. What the user is asking for
+2. What approach you'll take (brainstorm vs generate)
+3. Key decisions (aspect ratio, scene count, character refs needed, etc.)
+4. Any tools/capabilities you're using
+
 # Output Format (JSON only):
 {{
+    "thinking": "Your reasoning and planning here...",
+    "tool_calls": [
+        {{"name": "analyze_prompt", "args": {{"prompt": "user's prompt"}}, "result": "Analysis summary"}},
+        {{"name": "plan_workflow", "args": {{"scenes": 3}}, "result": "Planned 3-scene workflow with character references"}}
+    ],
     "message": "Response to user",
     "nodes": [ ... ],
     "edges": [ ... ]
@@ -172,6 +188,8 @@ Edges: {json.dumps(current_edges)}
 """
         
         try:
+            start_time = time.time()
+            
             response = self.client.models.generate_content(
                 model='gemini-2.5-flash',
                 contents=start_prompt,
@@ -180,13 +198,33 @@ Edges: {json.dumps(current_edges)}
                 )
             )
             
+            elapsed_ms = int((time.time() - start_time) * 1000)
+            
             if not response.text:
-                return {"success": False, "message": "Empty response from AI"}
+                return {"success": False, "message": "Empty response from AI", "thinking": None, "thinking_duration_ms": None, "tool_calls": []}
 
             result = json.loads(response.text)
+            
+            # Extract thinking and tool_calls from the response
+            thinking = result.get("thinking", None)
+            tool_calls = result.get("tool_calls", [])
+            
+            # Sanitize tool_calls to ensure proper format
+            sanitized_tool_calls = []
+            for tc in tool_calls:
+                sanitized_tool_calls.append({
+                    "name": tc.get("name", "unknown"),
+                    "status": "completed",
+                    "args": tc.get("args", {}),
+                    "result": tc.get("result", None)
+                })
+            
             return {
                 "success": True,
                 "message": result.get("message", "Workflow generated"),
+                "thinking": thinking,
+                "thinking_duration_ms": elapsed_ms,
+                "tool_calls": sanitized_tool_calls,
                 "nodes": result.get("nodes", []),
                 "edges": result.get("edges", [])
             }
@@ -196,6 +234,9 @@ Edges: {json.dumps(current_edges)}
             return {
                 "success": False,
                 "message": f"Error generating workflow: {str(e)}",
+                "thinking": None,
+                "thinking_duration_ms": None,
+                "tool_calls": [],
                 "nodes": [],
                 "edges": []
             }

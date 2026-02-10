@@ -2,6 +2,7 @@ import { memo, useState, useRef, useMemo, ChangeEvent } from "react";
 import { NodeProps, useReactFlow } from "@xyflow/react";
 import { Eye, Sparkles } from "lucide-react";
 import { NodeWrapper } from "@/components/workflow/node-wrapper";
+import { HighlightedTextarea } from "@/components/workflow/nodes/highlighted-textarea";
 import { useWorkflowStore } from "@/lib/workflow-store";
 
 export const VisionNode = memo(({ id, selected, data }: NodeProps) => {
@@ -136,8 +137,8 @@ export const VisionNode = memo(({ id, selected, data }: NodeProps) => {
                         </div>
                     )}
 
-                    <textarea
-                        ref={textareaRef}
+                    <HighlightedTextarea
+                        textareaRef={textareaRef}
                         className="flex-1 w-full rounded-none border-none bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground/50 focus-visible:outline-none resize-none leading-relaxed overflow-y-auto nowheel"
                         placeholder="Enter your instruction..."
                         value={typeof data.instruction === 'string' ? data.instruction : ''}

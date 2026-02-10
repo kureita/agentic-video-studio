@@ -26,7 +26,7 @@ export function parseEditingInstruction(
   audioUrl?: string
 ): VideoCompositionConfig {
   const lowerInstruction = instruction.toLowerCase();
-  
+
   // Default configuration
   const config: VideoCompositionConfig = {
     clips: [],
@@ -73,7 +73,7 @@ export function parseEditingInstruction(
  */
 export function calculateTotalDuration(clips: VideoClip[]): number {
   if (clips.length === 0) return 0;
-  
+
   const lastClip = clips[clips.length - 1];
   return lastClip.startTime + lastClip.duration;
 }
@@ -97,7 +97,7 @@ export function framesToSeconds(frames: number, fps: number = 30): number {
  */
 export function isValidVideoUrl(url: string): boolean {
   if (!url) return false;
-  
+
   // Check if it's a valid URL or path
   try {
     new URL(url);
@@ -120,7 +120,7 @@ export function getVideoMetadata(url: string): Promise<{
   return new Promise((resolve, reject) => {
     const video = document.createElement('video');
     video.preload = 'metadata';
-    
+
     video.onloadedmetadata = () => {
       resolve({
         duration: video.duration,
@@ -129,12 +129,12 @@ export function getVideoMetadata(url: string): Promise<{
       });
       video.remove();
     };
-    
+
     video.onerror = () => {
       reject(new Error(`Failed to load video metadata from ${url}`));
       video.remove();
     };
-    
+
     video.src = url;
   });
 }
@@ -145,7 +145,7 @@ export function getVideoMetadata(url: string): Promise<{
 export async function adjustClipDurations(clips: VideoClip[]): Promise<VideoClip[]> {
   const adjustedClips: VideoClip[] = [];
   let currentTime = 0;
-  
+
   for (const clip of clips) {
     try {
       const metadata = await getVideoMetadata(clip.url);
@@ -155,7 +155,7 @@ export async function adjustClipDurations(clips: VideoClip[]): Promise<VideoClip
         duration: Math.min(clip.duration, metadata.duration),
       });
       currentTime += adjustedClips[adjustedClips.length - 1].duration;
-    } catch (error) {
+    } catch {
       console.warn(`Failed to get metadata for ${clip.url}, using default duration`);
       adjustedClips.push({
         ...clip,
@@ -164,7 +164,7 @@ export async function adjustClipDurations(clips: VideoClip[]): Promise<VideoClip
       currentTime += clip.duration;
     }
   }
-  
+
   return adjustedClips;
 }
 
@@ -190,11 +190,11 @@ export async function exportVideoComposition(
         outputFilename,
       }),
     });
-    
+
     if (!response.ok) {
       throw new Error(`Server responded with ${response.status}`);
     }
-    
+
     const result = await response.json();
     return {
       success: true,

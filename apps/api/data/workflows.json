@@ -136,7 +136,7 @@
       "fx2l36": "http://localhost:8000/static/videos/generated_1770265982.mp4"
     },
     "created_at": "2026-02-04T10:08:09.970964+00:00",
-    "updated_at": "2026-02-05T05:18:49.805175+00:00",
+    "updated_at": "2026-02-10T20:51:59.124360+00:00",
     "_id": "69831a89cbd8df36392940d1",
     "outputs.5f39xm": "http://localhost:8000/static/images/generated_1770236215_3458.png",
     "outputs.b1z4wm": "https://picsum.photos/seed/1770229350/1344/768",
@@ -803,7 +803,7 @@
       }
     ],
     "created_at": "2026-02-07T20:41:30.499630+00:00",
-    "updated_at": "2026-02-09T05:12:20.406549+00:00",
+    "updated_at": "2026-02-10T20:47:49.774635+00:00",
     "_id": "6987a37a56b663cfde47cdc1"
   },
   {
@@ -1550,29 +1550,451 @@
     "nodes": [
       {
         "id": "node_0",
-        "type": "text",
-        "position": {
-          "x": 0.0,
-          "y": 600.0
-        },
-        "data": {
-          "label": "Kureita Viral Script",
-          "text": "Are you tired of complex video workflows? Kureita is the cursor for AI videos. Just type your prompt, and watch your vision come to life. Simple. Fast. Viral. Kureita."
-        }
-      },
-      {
-        "id": "node_1",
         "type": "imageGen",
         "position": {
           "x": 0.0,
           "y": 0.0
         },
         "data": {
-          "label": "Talking Head Reference",
-          "prompt": "Professional young person, looking directly at the camera, neutral expression, clear skin, soft studio lighting, professional attire, plain background. Instagram Reels (9:16).",
-          "width": 576,
-          "height": 1024,
-          "ratio": "9:16"
+          "label": "Coffee Product Reference",
+          "prompt": "High-quality studio shot of a barista-made coffee in an elegant ceramic cup, steamy, rich crema, 16:9 aspect ratio. Focus on the drink.",
+          "width": 1024,
+          "height": 576,
+          "ratio": "16:9",
+          "model": "Imagen 4"
+        }
+      },
+      {
+        "id": "node_1",
+        "type": "imageGen",
+        "position": {
+          "x": 700.0,
+          "y": 0.0
+        },
+        "data": {
+          "label": "Cafe Setting Reference",
+          "prompt": "Cozy, modern coffee shop interior, warm lighting, blurred background, empty wooden table in the foreground, 16:9 aspect ratio. Inviting atmosphere.",
+          "width": 1024,
+          "height": 576,
+          "ratio": "16:9",
+          "model": "Imagen 4"
+        }
+      },
+      {
+        "id": "node_2",
+        "type": "text",
+        "position": {
+          "x": 0.0,
+          "y": 600.0
+        },
+        "data": {
+          "label": "Scene 1 Prompt: Morning Ritual",
+          "text": "A close-up shot of a hand gently holding a warm tea cup, steam rising. Soft morning light streams through a window, illuminating the scene. Emphasize comfort and the start of a new day."
+        }
+      },
+      {
+        "id": "node_3",
+        "type": "imageGen",
+        "position": {
+          "x": 700.0,
+          "y": 600.0
+        },
+        "data": {
+          "label": "Scene 1 Start Frame",
+          "prompt": "@Text #1. Hand gently holding a warm tea cup, steam rising. Soft morning light, a cozy setting.",
+          "width": 1024,
+          "height": 576,
+          "ratio": "16:9",
+          "model": "Imagen 4"
+        }
+      },
+      {
+        "id": "node_4",
+        "type": "videoGen",
+        "position": {
+          "x": 1400.0,
+          "y": 600.0
+        },
+        "data": {
+          "label": "Video Scene 1",
+          "prompt": "@Text #1. The hand slowly brings the cup closer to the viewer, a soft smile on a person's face (out of frame). The steam delicately swirls upwards.",
+          "duration": "6s",
+          "ratio": "16:9",
+          "model": "Veo 3.1 Fast"
+        }
+      },
+      {
+        "id": "node_5",
+        "type": "text",
+        "position": {
+          "x": 0.0,
+          "y": 1200.0
+        },
+        "data": {
+          "label": "Scene 2 Prompt: Mid-day Boost",
+          "text": "A bustling cafe scene, slightly blurred in the background, with a sharp focus on a delicious-looking latte art. The coffee sits on a rustic wooden table next to a laptop or notebook. Emphasize energy and focus."
+        }
+      },
+      {
+        "id": "node_6",
+        "type": "imageGen",
+        "position": {
+          "x": 700.0,
+          "y": 1200.0
+        },
+        "data": {
+          "label": "Scene 2 Start Frame",
+          "prompt": "@Text #2. Delicious latte art on a rustic wooden table in a cafe setting, a laptop nearby. Bright and dynamic.",
+          "width": 1024,
+          "height": 576,
+          "ratio": "16:9",
+          "model": "Imagen 4"
+        }
+      },
+      {
+        "id": "node_7",
+        "type": "videoGen",
+        "position": {
+          "x": 1400.0,
+          "y": 1200.0
+        },
+        "data": {
+          "label": "Video Scene 2",
+          "prompt": "@Text #2. A quick pan over the latte art, then slowly zooms out to reveal the surrounding cafe activity (blurred). Emphasize the vibrant energy.",
+          "duration": "6s",
+          "ratio": "16:9",
+          "model": "Veo 3.1 Fast"
+        }
+      },
+      {
+        "id": "node_8",
+        "type": "text",
+        "position": {
+          "x": 0.0,
+          "y": 1800.0
+        },
+        "data": {
+          "label": "Scene 3 Prompt: Relaxing Evening",
+          "text": "A person relaxing on a sofa, reading a book, with a coffee cup resting on a side table. Soft, ambient lighting from a lamp creates a warm, tranquil mood. Emphasize unwinding and peace."
+        }
+      },
+      {
+        "id": "node_9",
+        "type": "imageGen",
+        "position": {
+          "x": 700.0,
+          "y": 1800.0
+        },
+        "data": {
+          "label": "Scene 3 Start Frame",
+          "prompt": "@Text #3. Person relaxing on a sofa, reading a book, coffee cup on a side table. Soft ambient lighting, tranquil mood.",
+          "width": 1024,
+          "height": 576,
+          "ratio": "16:9",
+          "model": "Imagen 4"
+        }
+      },
+      {
+        "id": "node_10",
+        "type": "videoGen",
+        "position": {
+          "x": 1400.0,
+          "y": 1800.0
+        },
+        "data": {
+          "label": "Video Scene 3",
+          "prompt": "@Text #3. The camera slowly zooms in on the person's peaceful face, then gently pans to the coffee cup, showing the subtle condensation. The room feels calm and quiet.",
+          "duration": "6s",
+          "ratio": "16:9",
+          "model": "Veo 3.1 Fast"
+        }
+      },
+      {
+        "id": "node_11",
+        "type": "text",
+        "position": {
+          "x": 0.0,
+          "y": 2400.0
+        },
+        "data": {
+          "label": "Editor Instructions",
+          "text": "Stitch the three coffee scenes together in chronological order (Scene 1, Scene 2, Scene 3). Ensure smooth transitions, adding a fade-out to black at the very end of the final scene. The overall tone should be warm, inviting, and highlight the versatility of coffee throughout the day. Add a simple text overlay at the end: 'Your Perfect Brew, Any Time. [Brand Name/Logo Placeholder]'"
+        }
+      },
+      {
+        "id": "node_12",
+        "type": "editorAgent",
+        "position": {
+          "x": 700.0,
+          "y": 2400.0
+        },
+        "data": {
+          "label": "Final Coffee Ad Edit",
+          "instruction": "@Text #4"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "edge_0",
+        "source": "node_0",
+        "target": "node_3",
+        "sourceHandle": "image|image",
+        "targetHandle": "image|image"
+      },
+      {
+        "id": "edge_1",
+        "source": "node_0",
+        "target": "node_6",
+        "sourceHandle": "image|image",
+        "targetHandle": "image|image"
+      },
+      {
+        "id": "edge_2",
+        "source": "node_0",
+        "target": "node_9",
+        "sourceHandle": "image|image",
+        "targetHandle": "image|image"
+      },
+      {
+        "id": "edge_3",
+        "source": "node_1",
+        "target": "node_6",
+        "sourceHandle": "image|image",
+        "targetHandle": "image|image"
+      },
+      {
+        "id": "edge_4",
+        "source": "node_1",
+        "target": "node_9",
+        "sourceHandle": "image|image",
+        "targetHandle": "image|image"
+      },
+      {
+        "id": "edge_5",
+        "source": "node_2",
+        "target": "node_3",
+        "sourceHandle": "text|text",
+        "targetHandle": "text|prompt"
+      },
+      {
+        "id": "edge_6",
+        "source": "node_2",
+        "target": "node_4",
+        "sourceHandle": "text|text",
+        "targetHandle": "text|text"
+      },
+      {
+        "id": "edge_7",
+        "source": "node_3",
+        "target": "node_4",
+        "sourceHandle": "image|image",
+        "targetHandle": "image|start_image"
+      },
+      {
+        "id": "edge_8",
+        "source": "node_5",
+        "target": "node_6",
+        "sourceHandle": "text|text",
+        "targetHandle": "text|prompt"
+      },
+      {
+        "id": "edge_9",
+        "source": "node_5",
+        "target": "node_7",
+        "sourceHandle": "text|text",
+        "targetHandle": "text|text"
+      },
+      {
+        "id": "edge_10",
+        "source": "node_6",
+        "target": "node_7",
+        "sourceHandle": "image|image",
+        "targetHandle": "image|start_image"
+      },
+      {
+        "id": "edge_11",
+        "source": "node_8",
+        "target": "node_9",
+        "sourceHandle": "text|text",
+        "targetHandle": "text|prompt"
+      },
+      {
+        "id": "edge_12",
+        "source": "node_8",
+        "target": "node_10",
+        "sourceHandle": "text|text",
+        "targetHandle": "text|text"
+      },
+      {
+        "id": "edge_13",
+        "source": "node_9",
+        "target": "node_10",
+        "sourceHandle": "image|image",
+        "targetHandle": "image|start_image"
+      },
+      {
+        "id": "edge_14",
+        "source": "node_4",
+        "target": "node_12",
+        "sourceHandle": "video|video",
+        "targetHandle": "video|ref_videos"
+      },
+      {
+        "id": "edge_15",
+        "source": "node_7",
+        "target": "node_12",
+        "sourceHandle": "video|video",
+        "targetHandle": "video|ref_videos"
+      },
+      {
+        "id": "edge_16",
+        "source": "node_10",
+        "target": "node_12",
+        "sourceHandle": "video|video",
+        "targetHandle": "video|ref_videos"
+      },
+      {
+        "id": "edge_17",
+        "source": "node_11",
+        "target": "node_12",
+        "sourceHandle": "text|text",
+        "targetHandle": "text|text"
+      }
+    ],
+    "outputs": {
+      "0fqtn": "My name is Anthony ",
+      "jp1jmq": "http://localhost:8000/static/audio/speech_1770740365_8009.mp3"
+    },
+    "chat_history": [
+      {
+        "role": "user",
+        "content": "I want you to create a content video for instagram that will go viral, this will be a talking head video for my startup Kureita, aka \"cursor for AI videos\", where you just give the prompt and Kureita will make videos for you using workflows",
+        "timestamp": null,
+        "thinking": null,
+        "thinking_duration_ms": null,
+        "tool_calls": null
+      },
+      {
+        "role": "assistant",
+        "content": "I can help with that! A talking head video for Instagram sounds great for Kureita. To make it go viral, we should focus on a concise, impactful message. How about a script where the talking head quickly explains the pain point of current video creation and introduces Kureita as the simple AI solution, maybe with a quick visual metaphor? Or do you have a specific scene or script in mind already? We can plan this for a 9:16 aspect ratio for Instagram Reels.",
+        "timestamp": null,
+        "thinking": null,
+        "thinking_duration_ms": null,
+        "tool_calls": null
+      },
+      {
+        "role": "user",
+        "content": "yes good",
+        "timestamp": null,
+        "thinking": null,
+        "thinking_duration_ms": null,
+        "tool_calls": null
+      },
+      {
+        "role": "assistant",
+        "content": "Great! Let's get this workflow set up for your Kureita talking head video, optimized for Instagram Reels with a 9:16 aspect ratio. I've included a 'Talking Head Reference' to ensure consistency, a placeholder script, and the main video generation node.",
+        "timestamp": null,
+        "thinking": null,
+        "thinking_duration_ms": null,
+        "tool_calls": null
+      },
+      {
+        "role": "user",
+        "content": "Create a new workflow for a social media ad.",
+        "timestamp": null,
+        "thinking": null,
+        "thinking_duration_ms": null,
+        "tool_calls": null
+      },
+      {
+        "role": "assistant",
+        "content": "I can help with that! A social media ad is a great goal. To get started, let's agree on the main message or a rough script. For example, are we highlighting a product, a service, or a call to action? Do you have a specific scene or idea in mind for the ad's content?",
+        "timestamp": null,
+        "thinking": null,
+        "thinking_duration_ms": null,
+        "tool_calls": null
+      },
+      {
+        "role": "user",
+        "content": "Make a 3-scene coffee ad video in 16:9",
+        "timestamp": null,
+        "thinking": null,
+        "thinking_duration_ms": null,
+        "tool_calls": null
+      },
+      {
+        "role": "assistant",
+        "content": "Excellent! Here is a workflow for your 3-scene, 16:9 coffee ad, complete with reference images for consistency and an editor to stitch the final video. Each scene is designed for a 6-second duration.",
+        "timestamp": null,
+        "thinking": null,
+        "thinking_duration_ms": null,
+        "tool_calls": null
+      },
+      {
+        "role": "user",
+        "content": "change the text in Text #1 to about a tea cup instead of coffee cup",
+        "timestamp": null,
+        "thinking": null,
+        "thinking_duration_ms": null,
+        "tool_calls": null
+      },
+      {
+        "role": "assistant",
+        "content": "I've updated the text for 'Text #1' (Scene 1 Prompt: Morning Ritual) to be about a tea cup. The associated image and video generation prompts (via `@Text #1`) will now reflect this change.",
+        "timestamp": null,
+        "thinking": null,
+        "thinking_duration_ms": null,
+        "tool_calls": null
+      },
+      {
+        "role": "user",
+        "content": "nice",
+        "timestamp": null,
+        "thinking": null,
+        "thinking_duration_ms": null,
+        "tool_calls": null
+      },
+      {
+        "role": "assistant",
+        "content": "Glad to hear that! Is there anything else I can help you with regarding this coffee ad workflow, or would you like to review the current setup?",
+        "timestamp": null,
+        "thinking": "1. The user's prompt 'nice' indicates satisfaction with the previous workflow update. It is not a new request for workflow generation or modification. 2. According to the 'BRAINSTORM FIRST (Decision Gate)' rule, if the request is not a specific instruction for workflow generation, I should not generate nodes or edges. 3. My approach is to acknowledge the user's positive feedback and prompt for the next action, such as reviewing the current workflow or making further changes.",
+        "thinking_duration_ms": 3638,
+        "tool_calls": []
+      }
+    ],
+    "created_at": "2026-02-10T11:22:38.894508+00:00",
+    "updated_at": "2026-02-10T20:50:30.571072+00:00",
+    "_id": "698b14fe497302db09858a7e"
+  },
+  {
+    "name": "Untitled Workflow",
+    "nodes": [
+      {
+        "id": "node_0",
+        "type": "mediaUpload",
+        "position": {
+          "x": 0.0,
+          "y": 0.0
+        },
+        "data": {
+          "label": "ComfyUI Logo",
+          "mediaType": "image",
+          "output": "http://localhost:8000/static/uploads/a287dc21-a6e1-482c-a530-4c3fcdd953c2.avif",
+          "aspectRatio": 3
+        }
+      },
+      {
+        "id": "node_1",
+        "type": "text",
+        "position": {
+          "x": 0.0,
+          "y": 600.0
+        },
+        "data": {
+          "label": "Start Image Prompt",
+          "text": "The ComfyUI logo, clean and sharp, centered on a vibrant, deep blue background, professional studio lighting."
         }
       },
       {
@@ -1583,77 +2005,136 @@
           "y": 600.0
         },
         "data": {
-          "label": "Scene 1 Start Frame",
-          "prompt": "Professional young person, looking directly at the camera, engaging expression, clear skin, soft studio lighting, professional attire, plain background, ready to speak. Instagram Reels (9:16).",
-          "width": 576,
-          "height": 1024,
-          "ratio": "9:16"
+          "label": "Start Frame Logo on Blue",
+          "prompt": "@Text #1 ",
+          "width": 1024,
+          "height": 576,
+          "ratio": "16:9",
+          "model": "Imagen 4",
+          "isRunning": false
         }
       },
       {
         "id": "node_3",
-        "type": "videoGen",
+        "type": "text",
         "position": {
-          "x": 1400.0,
-          "y": 600.0
+          "x": 0.0,
+          "y": 1200.0
         },
         "data": {
-          "label": "Kureita Talking Head Video",
-          "prompt": "@Text #1. A professional young person speaks directly to the camera with confident, engaging gestures. The camera remains static, focusing on the speaker.",
-          "duration": "8s",
-          "ratio": "9:16",
-          "isRunning": false
+          "label": "End Image Prompt",
+          "text": "A futuristic 3D animated art piece forming the ComfyUI logo. It is composed of dynamic, glowing blue and purple lines and shimmering spherical elements, abstract and complex, against a dark, ethereal background. High-tech, digital art style."
+        }
+      },
+      {
+        "id": "node_4",
+        "type": "imageGen",
+        "position": {
+          "x": 700.0,
+          "y": 1200.0
+        },
+        "data": {
+          "label": "End Frame 3D Art Logo",
+          "prompt": "@Text #2",
+          "width": 1024,
+          "height": 576,
+          "ratio": "16:9",
+          "model": "Imagen 4"
+        }
+      },
+      {
+        "id": "node_5",
+        "type": "text",
+        "position": {
+          "x": 0.0,
+          "y": 1800.0
+        },
+        "data": {
+          "label": "Video Motion Prompt",
+          "text": "The sleek ComfyUI logo, initially on a serene blue background, subtly begins to ripple and dissolve. Its edges soften and glow, as the blue background morphs into swirling energy. Gradually, lines and spheres emerge from the logo's form, expanding and shifting to create a new, intricate 3D animated art version of the logo, with glowing intricate details and a sense of magical transformation. The transition is fluid, dynamic, and captivating."
+        }
+      },
+      {
+        "id": "node_6",
+        "type": "videoGen",
+        "position": {
+          "x": 700.0,
+          "y": 1800.0
+        },
+        "data": {
+          "label": "Logo Transformation Video",
+          "prompt": "@Text #3",
+          "duration": "6s",
+          "ratio": "16:9",
+          "model": "Veo 3.1 Fast"
         }
       }
     ],
     "edges": [
       {
-        "id": "edge_0",
-        "source": "node_1",
+        "id": "edge_0_to_2",
+        "source": "node_0",
         "target": "node_2",
-        "sourceHandle": "image|image",
+        "sourceHandle": "image|output",
         "targetHandle": "image|image"
       },
       {
-        "id": "edge_1",
-        "source": "node_0",
-        "target": "node_3",
+        "id": "edge_1_to_2",
+        "source": "node_1",
+        "target": "node_2",
         "sourceHandle": "text|text",
-        "targetHandle": "text|text"
+        "targetHandle": "text|prompt"
       },
       {
-        "id": "edge_2",
+        "id": "edge_3_to_4",
+        "source": "node_3",
+        "target": "node_4",
+        "sourceHandle": "text|text",
+        "targetHandle": "text|prompt"
+      },
+      {
+        "id": "edge_2_to_6",
         "source": "node_2",
-        "target": "node_3",
+        "target": "node_6",
         "sourceHandle": "image|image",
         "targetHandle": "image|start_image"
+      },
+      {
+        "id": "edge_4_to_6",
+        "source": "node_4",
+        "target": "node_6",
+        "sourceHandle": "image|image",
+        "targetHandle": "image|end_image"
+      },
+      {
+        "id": "edge_5_to_6",
+        "source": "node_5",
+        "target": "node_6",
+        "sourceHandle": "text|text",
+        "targetHandle": "text|text"
       }
     ],
     "outputs": {},
     "chat_history": [
       {
         "role": "user",
-        "content": "I want you to create a content video for instagram that will go viral, this will be a talking head video for my startup Kureita, aka \"cursor for AI videos\", where you just give the prompt and Kureita will make videos for you using workflows",
-        "timestamp": null
+        "content": "I want to make a video of this logo coming from blue background and forming into this logo with lines and balls 3D animated art\n[Attached: comfyui-logo.avif] (image/avif) - URL: http://localhost:8000/static/uploads/a287dc21-a6e1-482c-a530-4c3fcdd953c2.avif",
+        "timestamp": null,
+        "thinking": null,
+        "thinking_duration_ms": null,
+        "tool_calls": null
       },
       {
         "role": "assistant",
-        "content": "I can help with that! A talking head video for Instagram sounds great for Kureita. To make it go viral, we should focus on a concise, impactful message. How about a script where the talking head quickly explains the pain point of current video creation and introduces Kureita as the simple AI solution, maybe with a quick visual metaphor? Or do you have a specific scene or script in mind already? We can plan this for a 9:16 aspect ratio for Instagram Reels.",
-        "timestamp": null
-      },
-      {
-        "role": "user",
-        "content": "yes good",
-        "timestamp": null
-      },
-      {
-        "role": "assistant",
-        "content": "Great! Let's get this workflow set up for your Kureita talking head video, optimized for Instagram Reels with a 9:16 aspect ratio. I've included a 'Talking Head Reference' to ensure consistency, a placeholder script, and the main video generation node.",
-        "timestamp": null
+        "content": "I can help you create a video of your logo transforming! Here's a workflow to achieve that, starting with your provided logo.",
+        "timestamp": null,
+        "thinking": "The user wants a video depicting a logo transforming from a simple state on a blue background to a more complex 3D animated art piece. This is a specific request that allows for direct workflow generation.\n\n**Approach:** I will create a workflow to generate this video, focusing on defining the start image, the end image, and the transition.\n\n**Key Decisions:**\n1.  **Aspect Ratio:** The user did not specify, so I will default to `16:9` (1024x576) for all image and video generation nodes.\n2.  **Scene Count:** This can be handled as a single `videoGen` node with a defined start image and an end image to guide the transformation.\n3.  **Character/Asset References:** The user provided an image `comfyui-logo.avif`. This will be uploaded as a `mediaUpload` node and used as a reference for the starting image generation.\n4.  **Workflow Steps:**\n    *   Upload the provided logo (`mediaUpload`).\n    *   Generate a clear 'start image' (logo on a blue background) using an `imageGen` node, referencing the uploaded logo and a `text` prompt for the background.\n    *   Generate a clear 'end image' (3D animated logo with lines and balls) using another `imageGen` node and a `text` prompt.\n    *   Generate the final video using a `videoGen` node, taking the generated 'start image' and 'end image' as inputs, along with a `text` prompt describing the motion and transformation.\n5.  **Text Node Referencing:** I will ensure all generator nodes that take a prompt or instruction use the `@Text #N` syntax to reference the appropriate `text` node.\n6.  **Layout Grid:** Nodes will be placed using the `row_index * 600` and `col_index * 700` system to ensure proper spacing and prevent overlap.",
+        "thinking_duration_ms": 15091,
+        "tool_calls": []
       }
     ],
-    "created_at": "2026-02-10T11:22:38.894508+00:00",
-    "updated_at": "2026-02-10T11:46:57.723460+00:00",
-    "_id": "698b14fe497302db09858a7e"
+    "created_at": "2026-02-10T20:28:31.741461+00:00",
+    "updated_at": "2026-02-10T20:52:11.786175+00:00",
+    "_id": "698b94ef8367c557f4575e03"
   }
 ]

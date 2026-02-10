@@ -19,10 +19,21 @@ export interface WorkflowEdge {
     targetHandle?: string;
 }
 
+export interface ToolCall {
+    name: string;
+    status: "running" | "completed" | "failed";
+    args?: Record<string, unknown>;
+    result?: string;
+}
+
 export interface ChatMessage {
     role: "user" | "assistant";
     content: string;
     timestamp?: string;
+    // Rich assistant message metadata
+    thinking?: string;
+    thinking_duration_ms?: number;
+    tool_calls?: ToolCall[];
 }
 
 export interface Workflow {
