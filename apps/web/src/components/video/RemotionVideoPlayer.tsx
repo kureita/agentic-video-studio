@@ -1,7 +1,8 @@
 "use client";
 
 import { Player } from "@remotion/player";
-import { AbsoluteFill, Sequence, OffthreadVideo, Audio, interpolate, useCurrentFrame } from "remotion";
+import { AbsoluteFill, Sequence, interpolate, useCurrentFrame } from "remotion";
+import { Video, Audio } from "@remotion/media";
 import { useMemo } from "react";
 
 interface VideoClip {
@@ -41,7 +42,7 @@ const VideoComposition: React.FC<{
         // Calculate opacity for transitions
         const transitionFrames = fps * 0.5; // 0.5 second transition
         const localFrame = frame - fromFrame;
-        
+
         let opacity = 1;
         if (transition === "fade") {
           // Fade in at start
@@ -65,7 +66,7 @@ const VideoComposition: React.FC<{
             durationInFrames={durationInFrames}
           >
             <AbsoluteFill style={{ opacity }}>
-              <OffthreadVideo
+              <Video
                 src={clip.url}
                 style={{
                   width: "100%",
@@ -98,7 +99,7 @@ export const RemotionVideoPlayer: React.FC<RemotionVideoPlayerProps> = ({
   // Calculate total duration
   const durationInFrames = useMemo(() => {
     if (clips.length === 0) return fps * 5; // Default 5 seconds
-    
+
     const lastClip = clips[clips.length - 1];
     return Math.round((lastClip.startTime + lastClip.duration) * fps);
   }, [clips, fps]);

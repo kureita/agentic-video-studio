@@ -2134,7 +2134,415 @@
       }
     ],
     "created_at": "2026-02-10T20:28:31.741461+00:00",
-    "updated_at": "2026-02-10T20:52:11.786175+00:00",
+    "updated_at": "2026-02-11T16:12:21.961817+00:00",
     "_id": "698b94ef8367c557f4575e03"
+  },
+  {
+    "name": "Untitled Workflow",
+    "nodes": [
+      {
+        "id": "node_0",
+        "type": "text",
+        "position": {
+          "x": 0.0,
+          "y": 0.0
+        },
+        "data": {
+          "label": "User Character Prompt",
+          "text": "A professional, creative person, mid-30s, diverse ethnicity, working at a modern desk with a computer. Dressed in smart casual attire. Neutral expression, ready for various emotions."
+        }
+      },
+      {
+        "id": "node_1",
+        "type": "imageGen",
+        "position": {
+          "x": 700.0,
+          "y": 0.0
+        },
+        "data": {
+          "label": "Character Reference",
+          "prompt": "@Text #1",
+          "width": 1024,
+          "height": 576,
+          "ratio": "1:1",
+          "model": "Imagen 4",
+          "output": "http://localhost:8000/static/images/generated_1770452969_8953.png",
+          "isRunning": false
+        }
+      },
+      {
+        "id": "node_2",
+        "type": "text",
+        "position": {
+          "x": 0.0,
+          "y": 600.0
+        },
+        "data": {
+          "label": "Scene 1 Prompt - The Idea",
+          "text": "A person, looking thoughtful and slightly frustrated, staring at a blank screen, contemplating an idea for a video. dimly lit creative workspace, nighttime, shallow depth of field, cinematic, high detail."
+        }
+      },
+      {
+        "id": "node_3",
+        "type": "imageGen",
+        "position": {
+          "x": 700.0,
+          "y": 600.0
+        },
+        "data": {
+          "label": "Start Frame Scene 1",
+          "prompt": "@Text #2",
+          "width": 1024,
+          "height": 576,
+          "ratio": "1:1",
+          "model": "Imagen 4",
+          "output": "http://localhost:8000/static/images/generated_1770480250_1692.png",
+          "isRunning": false
+        }
+      },
+      {
+        "id": "node_4",
+        "type": "videoGen",
+        "position": {
+          "x": 1400.0,
+          "y": 600.0
+        },
+        "data": {
+          "label": "Video Scene 1 - Contemplation",
+          "prompt": "@Text #2, subtle shifts in expression, thinking, slight frustration at blank screen, zoom in on face then pan out to screen.",
+          "duration": "8s",
+          "ratio": "16:9",
+          "model": "Veo 3.1 Fast"
+        }
+      },
+      {
+        "id": "node_5",
+        "type": "text",
+        "position": {
+          "x": 0.0,
+          "y": 1200.0
+        },
+        "data": {
+          "label": "Scene 2 Prompt - Kureita in Action",
+          "text": "The same person, now with a determined and focused expression, actively using a sleek, futuristic AI video editing interface. A glowing 'Kureita' cursor hovers and intelligently manipulates elements on screen. Bright, clean, modern workspace, daytime, cinematic, high detail."
+        }
+      },
+      {
+        "id": "node_6",
+        "type": "imageGen",
+        "position": {
+          "x": 700.0,
+          "y": 1200.0
+        },
+        "data": {
+          "label": "Start Frame Scene 2",
+          "prompt": "@Text #3",
+          "width": 1024,
+          "height": 576,
+          "ratio": "1:1",
+          "model": "Imagen 4",
+          "output": "http://localhost:8000/static/images/generated_1770238043_3983.png",
+          "isRunning": false
+        }
+      },
+      {
+        "id": "node_7",
+        "type": "videoGen",
+        "position": {
+          "x": 1400.0,
+          "y": 1200.0
+        },
+        "data": {
+          "label": "Video Scene 2 - AI Cursor Magic",
+          "prompt": "@Text #3, focused interaction with screen, glowing AI cursor moving fluidly, elements on screen transforming smoothly, subtle camera movement to highlight screen activity.",
+          "duration": "8s",
+          "ratio": "16:9",
+          "model": "Veo 3.1 Fast"
+        }
+      },
+      {
+        "id": "node_8",
+        "type": "text",
+        "position": {
+          "x": 0.0,
+          "y": 1800.0
+        },
+        "data": {
+          "label": "Scene 3 Prompt - Polished Result",
+          "text": "The same person, smiling confidently, proudly watching a high-quality, polished video on their screen. The video on screen shows a seamless transition and professional-grade visuals. Bright and positive atmosphere, successful completion, cinematic, high detail."
+        }
+      },
+      {
+        "id": "node_9",
+        "type": "imageGen",
+        "position": {
+          "x": 700.0,
+          "y": 1800.0
+        },
+        "data": {
+          "label": "Start Frame Scene 3",
+          "prompt": "@Text #4",
+          "width": 1024,
+          "height": 576,
+          "ratio": "1:1",
+          "model": "Imagen 4",
+          "output": "http://localhost:8000/static/images/generated_1770480832_7041.png",
+          "isRunning": false
+        }
+      },
+      {
+        "id": "node_10",
+        "type": "videoGen",
+        "position": {
+          "x": 1400.0,
+          "y": 1800.0
+        },
+        "data": {
+          "label": "Video Scene 3 - Satisfaction",
+          "prompt": "@Text #4, confident smile, head nodding slightly, focus on the polished video playing on screen, subtle glowing light from the screen.",
+          "duration": "8s",
+          "ratio": "16:9",
+          "model": "Veo 3.1 Fast"
+        }
+      },
+      {
+        "id": "node_11",
+        "type": "text",
+        "position": {
+          "x": 22.422378278402704,
+          "y": 2292.3725842636672
+        },
+        "data": {
+          "label": "Editor Instructions",
+          "text": "Let's do one thing, merge the first video in slow motion like decrease speed to 0.5x, then reverse the second video and increase the speed of the third video by 2x, total video length will be 28 seconds",
+          "output": "Stitch these three video segments together to form a cohesive 24-second ad. The first scene sets up the problem (idea contemplation), the second shows Kureita providing the solution (AI cursor ease of use), and the third shows the successful, polished outcome (user satisfaction). Ensure smooth transitions between scenes. End with a clear call to action: 'Kureita: Your Cursor for AI Videos. Create effortlessly.' Include a placeholder for a logo reveal at the very end.",
+          "isRunning": false
+        }
+      },
+      {
+        "id": "node_12",
+        "type": "editorAgent",
+        "position": {
+          "x": 2361.8018295782495,
+          "y": 1057.30270399715
+        },
+        "data": {
+          "label": "Final 24s Ad Editor",
+          "instruction": "@Text #5",
+          "output": "import React from 'react';\nimport { AbsoluteFill, Sequence, useCurrentFrame, useVideoConfig, interpolate } from 'remotion';\nimport { Video } from '@remotion/media';\n\nexport const fps = 30;\nexport const width = 1920;\nexport const height = 1080;\nexport const durationInFrames = 28 * fps;\n\nexport default function MyComposition() {\n  const frame = useCurrentFrame();\n  const { fps } = useVideoConfig();\n\n  const video1Url = \"http://localhost:8000/static/videos/generated_1770826548.mp4\";\n  const video2Url = \"http://localhost:8000/static/videos/generated_1770826553.mp4\";\n  const video3Url = \"http://localhost:8000/static/videos/generated_1770826567.mp4\";\n\n  const video1Duration = 5 * fps;\n  const video2Duration = 5 * fps;\n  const video3Duration = 5 * fps;\n\n  const video1PlaybackRate = 0.5;\n  const video3PlaybackRate = 2;\n\n  const video1EffectiveDuration = video1Duration / video1PlaybackRate;\n  const video3EffectiveDuration = video3Duration / video3PlaybackRate;\n\n  const totalVideoDuration = video1EffectiveDuration + video2Duration + video3EffectiveDuration;\n  const logoRevealDuration = 2 * fps;\n  const callToActionDuration = 4 * fps;\n\n  const totalDuration = video1EffectiveDuration + video2Duration + video3EffectiveDuration + logoRevealDuration + callToActionDuration;\n\n  return (\n    <AbsoluteFill style={{ backgroundColor: 'black' }}>\n      <Sequence from={0} durationInFrames={video1EffectiveDuration}>\n        <AbsoluteFill>\n          <Video\n            src={video1Url}\n            playbackRate={video1PlaybackRate}\n            style={{ width: '100%', height: '100%', objectFit: 'cover' }}\n          />\n        </AbsoluteFill>\n      </Sequence>\n\n      <Sequence from={video1EffectiveDuration} durationInFrames={video2Duration}>\n        <AbsoluteFill>\n          <Video\n            src={video2Url}\n            style={{ width: '100%', height: '100%', objectFit: 'cover', transform: 'scaleX(-1)' }}\n            playbackRate={1}\n          />\n        </AbsoluteFill>\n      </Sequence>\n\n      <Sequence from={video1EffectiveDuration + video2Duration} durationInFrames={video3EffectiveDuration}>\n        <AbsoluteFill>\n          <Video\n            src={video3Url}\n            playbackRate={video3PlaybackRate}\n            style={{ width: '100%', height: '100%', objectFit: 'cover' }}\n          />\n        </AbsoluteFill>\n      </Sequence>\n\n      <Sequence from={video1EffectiveDuration + video2Duration + video3EffectiveDuration} durationInFrames={callToActionDuration}>\n        <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center' }}>\n          <div style={{ color: 'white', fontSize: 60, fontWeight: 'bold', fontFamily: 'sans-serif', textAlign: 'center' }}>\n            Kureita: Your Cursor for AI Videos.\n            <br />\n            Create effortlessly.\n          </div>\n        </AbsoluteFill>\n      </Sequence>\n\n      <Sequence from={video1EffectiveDuration + video2Duration + video3EffectiveDuration + callToActionDuration} durationInFrames={logoRevealDuration}>\n        <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center' }}>\n          <div style={{ color: 'white', fontSize: 40, fontWeight: 'bold', fontFamily: 'sans-serif' }}>\n            [Logo Reveal Placeholder]\n          </div>\n        </AbsoluteFill>\n      </Sequence>\n    </AbsoluteFill>\n  );\n}"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "edge_0",
+        "source": "node_0",
+        "target": "node_1",
+        "sourceHandle": "text|text",
+        "targetHandle": "text|prompt"
+      },
+      {
+        "id": "edge_1",
+        "source": "node_1",
+        "target": "node_3",
+        "sourceHandle": "image|image",
+        "targetHandle": "image|image"
+      },
+      {
+        "id": "edge_2",
+        "source": "node_2",
+        "target": "node_3",
+        "sourceHandle": "text|text",
+        "targetHandle": "text|prompt"
+      },
+      {
+        "id": "edge_3",
+        "source": "node_3",
+        "target": "node_4",
+        "sourceHandle": "image|image",
+        "targetHandle": "image|start_image"
+      },
+      {
+        "id": "edge_4",
+        "source": "node_2",
+        "target": "node_4",
+        "sourceHandle": "text|text",
+        "targetHandle": "text|text"
+      },
+      {
+        "id": "edge_5",
+        "source": "node_1",
+        "target": "node_6",
+        "sourceHandle": "image|image",
+        "targetHandle": "image|image"
+      },
+      {
+        "id": "edge_6",
+        "source": "node_5",
+        "target": "node_6",
+        "sourceHandle": "text|text",
+        "targetHandle": "text|prompt"
+      },
+      {
+        "id": "edge_7",
+        "source": "node_6",
+        "target": "node_7",
+        "sourceHandle": "image|image",
+        "targetHandle": "image|start_image"
+      },
+      {
+        "id": "edge_8",
+        "source": "node_5",
+        "target": "node_7",
+        "sourceHandle": "text|text",
+        "targetHandle": "text|text"
+      },
+      {
+        "id": "edge_9",
+        "source": "node_1",
+        "target": "node_9",
+        "sourceHandle": "image|image",
+        "targetHandle": "image|image"
+      },
+      {
+        "id": "edge_10",
+        "source": "node_8",
+        "target": "node_9",
+        "sourceHandle": "text|text",
+        "targetHandle": "text|prompt"
+      },
+      {
+        "id": "edge_11",
+        "source": "node_9",
+        "target": "node_10",
+        "sourceHandle": "image|image",
+        "targetHandle": "image|start_image"
+      },
+      {
+        "id": "edge_12",
+        "source": "node_8",
+        "target": "node_10",
+        "sourceHandle": "text|text",
+        "targetHandle": "text|text"
+      },
+      {
+        "id": "edge_13",
+        "source": "node_4",
+        "target": "node_12",
+        "sourceHandle": "video|video",
+        "targetHandle": "video|ref_videos"
+      },
+      {
+        "id": "edge_14",
+        "source": "node_7",
+        "target": "node_12",
+        "sourceHandle": "video|video",
+        "targetHandle": "video|ref_videos"
+      },
+      {
+        "id": "edge_15",
+        "source": "node_10",
+        "target": "node_12",
+        "sourceHandle": "video|video",
+        "targetHandle": "video|ref_videos"
+      },
+      {
+        "id": "edge_16",
+        "source": "node_11",
+        "target": "node_12",
+        "sourceHandle": "text|text",
+        "targetHandle": "text|text"
+      }
+    ],
+    "outputs": {
+      "node_0": "A professional, creative person, mid-30s, diverse ethnicity, working at a modern desk with a computer. Dressed in smart casual attire. Neutral expression, ready for various emotions.",
+      "node_2": "A person, looking thoughtful and slightly frustrated, staring at a blank screen, contemplating an idea for a video. dimly lit creative workspace, nighttime, shallow depth of field, cinematic, high detail.",
+      "node_5": "The same person, now with a determined and focused expression, actively using a sleek, futuristic AI video editing interface. A glowing 'Kureita' cursor hovers and intelligently manipulates elements on screen. Bright, clean, modern workspace, daytime, cinematic, high detail.",
+      "node_8": "The same person, smiling confidently, proudly watching a high-quality, polished video on their screen. The video on screen shows a seamless transition and professional-grade visuals. Bright and positive atmosphere, successful completion, cinematic, high detail.",
+      "node_11": "Stitch these three video segments together to form a cohesive 24-second ad. The first scene sets up the problem (idea contemplation), the second shows Kureita providing the solution (AI cursor ease of use), and the third shows the successful, polished outcome (user satisfaction). Ensure smooth transitions between scenes. End with a clear call to action: 'Kureita: Your Cursor for AI Videos. Create effortlessly.' Include a placeholder for a logo reveal at the very end.",
+      "node_1": "http://localhost:8000/static/images/generated_1770452969_8953.png",
+      "node_3": "http://localhost:8000/static/images/generated_1770480250_1692.png",
+      "node_6": "http://localhost:8000/static/images/generated_1770238043_3983.png",
+      "node_9": "http://localhost:8000/static/images/generated_1770480832_7041.png",
+      "node_4": "http://localhost:8000/static/videos/generated_1770826548.mp4",
+      "node_7": "http://localhost:8000/static/videos/generated_1770826553.mp4",
+      "node_10": "http://localhost:8000/static/videos/generated_1770826567.mp4",
+      "node_12": "import React from 'react';\nimport { AbsoluteFill, Sequence, useCurrentFrame, useVideoConfig, interpolate } from 'remotion';\nimport { Video } from '@remotion/media';\n\nexport const fps = 30;\nexport const width = 1920;\nexport const height = 1080;\nexport const durationInFrames = 28 * fps;\n\nexport default function MyComposition() {\n  const frame = useCurrentFrame();\n  const { fps } = useVideoConfig();\n\n  const video1Url = \"http://localhost:8000/static/videos/generated_1770826548.mp4\";\n  const video2Url = \"http://localhost:8000/static/videos/generated_1770826553.mp4\";\n  const video3Url = \"http://localhost:8000/static/videos/generated_1770826567.mp4\";\n\n  const video1Duration = 5 * fps;\n  const video2Duration = 5 * fps;\n  const video3Duration = 5 * fps;\n\n  const video1PlaybackRate = 0.5;\n  const video3PlaybackRate = 2;\n\n  const video1EffectiveDuration = video1Duration / video1PlaybackRate;\n  const video3EffectiveDuration = video3Duration / video3PlaybackRate;\n\n  const totalVideoDuration = video1EffectiveDuration + video2Duration + video3EffectiveDuration;\n  const logoRevealDuration = 2 * fps;\n  const callToActionDuration = 4 * fps;\n\n  const totalDuration = video1EffectiveDuration + video2Duration + video3EffectiveDuration + logoRevealDuration + callToActionDuration;\n\n  return (\n    <AbsoluteFill style={{ backgroundColor: 'black' }}>\n      <Sequence from={0} durationInFrames={video1EffectiveDuration}>\n        <AbsoluteFill>\n          <Video\n            src={video1Url}\n            playbackRate={video1PlaybackRate}\n            style={{ width: '100%', height: '100%', objectFit: 'cover' }}\n          />\n        </AbsoluteFill>\n      </Sequence>\n\n      <Sequence from={video1EffectiveDuration} durationInFrames={video2Duration}>\n        <AbsoluteFill>\n          <Video\n            src={video2Url}\n            style={{ width: '100%', height: '100%', objectFit: 'cover', transform: 'scaleX(-1)' }}\n            playbackRate={1}\n          />\n        </AbsoluteFill>\n      </Sequence>\n\n      <Sequence from={video1EffectiveDuration + video2Duration} durationInFrames={video3EffectiveDuration}>\n        <AbsoluteFill>\n          <Video\n            src={video3Url}\n            playbackRate={video3PlaybackRate}\n            style={{ width: '100%', height: '100%', objectFit: 'cover' }}\n          />\n        </AbsoluteFill>\n      </Sequence>\n\n      <Sequence from={video1EffectiveDuration + video2Duration + video3EffectiveDuration} durationInFrames={callToActionDuration}>\n        <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center' }}>\n          <div style={{ color: 'white', fontSize: 60, fontWeight: 'bold', fontFamily: 'sans-serif', textAlign: 'center' }}>\n            Kureita: Your Cursor for AI Videos.\n            <br />\n            Create effortlessly.\n          </div>\n        </AbsoluteFill>\n      </Sequence>\n\n      <Sequence from={video1EffectiveDuration + video2Duration + video3EffectiveDuration + callToActionDuration} durationInFrames={logoRevealDuration}>\n        <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center' }}>\n          <div style={{ color: 'white', fontSize: 40, fontWeight: 'bold', fontFamily: 'sans-serif' }}>\n            [Logo Reveal Placeholder]\n          </div>\n        </AbsoluteFill>\n      </Sequence>\n    </AbsoluteFill>\n  );\n}"
+    },
+    "chat_history": [
+      {
+        "role": "user",
+        "content": "Create a workflow for creating 24 second video ad on Kureita, aka cursor for AI videos",
+        "timestamp": null,
+        "thinking": null,
+        "thinking_duration_ms": null,
+        "tool_calls": null
+      },
+      {
+        "role": "assistant",
+        "content": "I can help with that! A 24-second ad for 'Kureita, cursor for AI videos' sounds interesting. Let's agree on a script first. How about we showcase Kureita transforming a simple idea into a polished video, highlighting its ease of use and AI capabilities? Or do you have a specific scene or script in mind?",
+        "timestamp": null,
+        "thinking": "The user is asking for a 24-second video ad workflow for a product named 'Kureita, aka cursor for AI videos'. This is a high-level request, focusing on a concept rather than specific scenes or scripts. According to Core Rule 1 (BRAINSTORM FIRST), if the request is a high-level concept, I should return an empty workflow and prompt the user for more details or a script. I will suggest a brief idea to get started.",
+        "thinking_duration_ms": 4390,
+        "tool_calls": [
+          {
+            "name": "analyze_prompt",
+            "status": "completed",
+            "args": {
+              "prompt": "Create a workflow for creating 24 second video ad on Kureita, aka cursor for AI videos"
+            },
+            "result": "User wants a 24-second video ad workflow for a product. This is a high-level concept, requiring brainstorming first."
+          },
+          {
+            "name": "plan_workflow",
+            "status": "completed",
+            "args": {
+              "scenes": "undefined"
+            },
+            "result": "Workflow generation halted. User needs to provide a script or specific scene details first as per 'Brainstorm First' rule."
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "content": "sure do that",
+        "timestamp": null,
+        "thinking": null,
+        "thinking_duration_ms": null,
+        "tool_calls": null
+      },
+      {
+        "role": "assistant",
+        "content": "Great! Here is a workflow to create your 24-second ad for Kureita, showcasing its power from idea to polished video. It includes a consistent character reference and stitches three 8-second scenes together for the final ad.",
+        "timestamp": null,
+        "thinking": "The user previously requested a 24-second video ad for 'Kureita, aka cursor for AI videos'. My last response offered a high-level concept: 'showcase Kureita transforming a simple idea into a polished video, highlighting its ease of use and AI capabilities.' The user's current response 'sure do that' confirms they want to proceed with this concept.\n\n**Approach:** I will now generate a workflow based on the confirmed concept, following all core rules for node generation, linking, and layout.\n\n**Key Decisions:**\n1.  **Aspect Ratio:** As it's a 'video ad', the default and appropriate aspect ratio will be 16:9. All imageGen and videoGen nodes will be configured for 16:9 (1024x576 for images).\n2.  **Duration:** The ad needs to be 24 seconds. I will achieve this by creating three main scenes, each generating an 8-second video, for a total of 24 seconds. These will then be stitched by an editorAgent.\n3.  **Character/Asset Reference:** The ad will feature a 'user' interacting with Kureita. To maintain consistency, I will create an initial 'Character Reference' imageGen node at the start (Row 0) to define this user, and then reference it in subsequent scene imageGen nodes.\n4.  **Scene Breakdown:**\n    *   **Scene 1 (Row 1):** Introduces a user with a video idea, looking thoughtful/frustrated. (8s video)\n    *   **Scene 2 (Row 2):** Shows the user actively using Kureita's AI cursor, highlighting its ease of use. (8s video)\n    *   **Scene 3 (Row 3):** Displays the user's satisfaction with the polished, final video created using Kureita. (8s video)\n    *   **Final Edit (Row 4):** An editorAgent will combine the three 8-second videos, add transitions, and a call to action.\n5.  **Text Node Referencing:** I will ensure all generator nodes (imageGen, videoGen, editorAgent) that use text prompts/instructions reference a connected text node using the `@Text #N` syntax.\n6.  **Layout Grid:** I will strictly adhere to the `x = col_index * 700`, `y = row_index * 600` grid system to prevent node overlap and ensure a clear, structured workflow.",
+        "thinking_duration_ms": 24819,
+        "tool_calls": [
+          {
+            "name": "analyze_prompt",
+            "status": "completed",
+            "args": {
+              "prompt": "sure do that"
+            },
+            "result": "User confirms the previously suggested concept for a 24-second Kureita ad. Proceed with workflow generation."
+          },
+          {
+            "name": "plan_workflow",
+            "status": "completed",
+            "args": {
+              "scenes": 3,
+              "total_duration": "24s",
+              "aspect_ratio": "16:9",
+              "character_references": true,
+              "final_editor": true
+            },
+            "result": "Planned a 3-scene workflow, each 8s, for 24s total. Includes character reference, image and video generation for each scene, and a final editor agent. All nodes set to 16:9 ratio."
+          }
+        ]
+      }
+    ],
+    "created_at": "2026-02-11T16:12:26.327463+00:00",
+    "updated_at": "2026-02-11T17:25:29.387528+00:00",
+    "_id": "698caa6a8f35e698c504ca58"
   }
 ]

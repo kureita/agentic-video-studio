@@ -1,32 +1,46 @@
-import { memo, useState, useRef, useMemo, ChangeEvent } from "react";
+import { memo, useState, useRef, useMemo, useCallback, useEffect, ChangeEvent } from "react";
 import { NodeProps, useReactFlow } from "@xyflow/react";
-import { Clapperboard, Loader2, Download } from "lucide-react";
+import { Clapperboard, Loader2, Download, Play, Code2, AlertTriangle, X } from "lucide-react";
 import { NodeWrapper } from "@/components/workflow/node-wrapper";
 import { HighlightedTextarea } from "@/components/workflow/nodes/highlighted-textarea";
 import { useWorkflowStore } from "@/lib/workflow-store";
+import { useClientRender } from "@/lib/remotion/useClientRender";
 
 export const EditorAgentNode = memo(({ id, selected, data }: NodeProps) => {
     const { deleteElements, updateNodeData } = useReactFlow();
     const { runNode, clearNodeOutput, outputs, runningNodeId } = useWorkflowStore();
 
     const isRunning = runningNodeId === id;
-    const output = (outputs[id] as string | undefined) || (data.output as string | undefined);
 
-    const handleDownload = () => {
-        if (output) {
-            const link = document.createElement('a');
-            link.href = output;
-            link.download = `edited-video-${Date.now()}.mp4`;
-            link.target = '_blank';
-            link.click();
+    // The output from the backend is the TSX composition code (string)
+    const compositionCode = (outputs[id] as string | undefined) || (data.output as string | undefined) || null;
+
+    // Client-side render hook
+    const { state: renderState, renderFromCode, cancel, download, clear: clearRender } = useClientRender();
+
+    // Auto-render when new code arrives
+    const lastRenderedCodeRef = useRef<string | null>(null);
+    useEffect(() => {
+        if (compositionCode && compositionCode !== lastRenderedCodeRef.current && !renderState.isRendering) {
+            lastRenderedCodeRef.current = compositionCode;
+            renderFromCode(compositionCode);
         }
-    };
+    }, [compositionCode, renderState.isRendering, renderFromCode]);
 
+    // Manual re-render
+    const handleReRender = useCallback(async () => {
+        if (!compositionCode) return;
+        await renderFromCode(compositionCode);
+    }, [compositionCode, renderFromCode]);
+
+    // Show/hide generated code
+    const [showCode, setShowCode] = useState(false);
+
+    // Text input / suggestions
     const [showSuggestions, setShowSuggestions] = useState(false);
     const [filterText, setFilterText] = useState("");
     const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-    // Get only connected text nodes for suggestions
     const nodes = useWorkflowStore((state) => state.nodes);
     const edges = useWorkflowStore((state) => state.edges);
     const connectedTextNodeIds = useMemo(() => new Set(
@@ -47,7 +61,6 @@ export const EditorAgentNode = memo(({ id, selected, data }: NodeProps) => {
 
         updateNodeData(id, { instruction: val });
 
-        // Check for trigger character @
         const textBeforeCursor = val.slice(0, cursor);
         const lastAt = textBeforeCursor.lastIndexOf('@');
 
@@ -84,6 +97,12 @@ export const EditorAgentNode = memo(({ id, selected, data }: NodeProps) => {
         }
     };
 
+    // Determine what to show in the video area
+    const hasVideo = !!renderState.blobUrl;
+    const isCompiling = renderState.phase === "compiling";
+    const isRendering = renderState.phase === "rendering";
+    const hasError = renderState.phase === "error";
+
     return (
         <NodeWrapper
             title={`Editor Agent #${useWorkflowStore((state) =>
@@ -104,44 +123,136 @@ export const EditorAgentNode = memo(({ id, selected, data }: NodeProps) => {
             contentClassName="relative bg-black"
             onDelete={() => deleteElements({ nodes: [{ id }] })}
             onRun={() => runNode(id)}
-            onClear={output ? () => clearNodeOutput(id) : undefined}
+            onClear={compositionCode ? () => {
+                clearNodeOutput(id);
+                clearRender();
+                lastRenderedCodeRef.current = null;
+            } : undefined}
             isRunning={isRunning}
         >
             <div className="relative bg-muted/30 group/editor transition-all duration-300 ease-in-out overflow-hidden w-[400px]">
 
-                {/* Top Section: Video Player */}
-                <div className="relative h-[225px] flex items-center justify-center">
-                    {output && !isRunning ? (
-                        <>
+                {/* Top Section: Rendered Video */}
+                <div className="relative h-[225px] flex items-center justify-center bg-black">
+                    {hasVideo ? (
+                        <div className="relative w-full h-full">
                             <video
-                                src={output}
-                                className="absolute inset-0 w-full h-full object-cover"
+                                src={renderState.blobUrl!}
                                 controls
-                                playsInline
+                                className="w-full h-full object-cover"
+                                autoPlay
+                                loop
                             />
 
-                            {/* Download button */}
-                            <button
-                                onClick={handleDownload}
-                                className="absolute top-3 right-3 w-8 h-8 bg-black/60 backdrop-blur-md border border-white/10 rounded-full flex items-center justify-center text-white/90 hover:bg-black/80 hover:text-white transition-all z-30"
-                            >
-                                <Download className="w-4 h-4" />
-                            </button>
-                        </>
+                            {/* Action buttons overlay */}
+                            <div className="absolute top-3 right-3 flex gap-1.5 z-30">
+                                {/* Show code button */}
+                                <button
+                                    onClick={() => setShowCode(!showCode)}
+                                    className={`w-7 h-7 backdrop-blur-md border border-white/10 rounded-full flex items-center justify-center text-white/80 hover:text-white transition-all ${showCode ? 'bg-purple-600/80' : 'bg-black/60 hover:bg-black/80'}`}
+                                    title="View generated code"
+                                >
+                                    <Code2 className="w-3.5 h-3.5" />
+                                </button>
+
+                                {/* Re-render button */}
+                                <button
+                                    onClick={handleReRender}
+                                    className="w-7 h-7 bg-black/60 backdrop-blur-md border border-white/10 rounded-full flex items-center justify-center text-white/80 hover:bg-black/80 hover:text-white transition-all"
+                                    title="Re-render"
+                                >
+                                    <Play className="w-3.5 h-3.5" />
+                                </button>
+
+                                {/* Download button */}
+                                <button
+                                    onClick={() => download()}
+                                    className="w-7 h-7 bg-green-600/80 backdrop-blur-md border border-white/10 rounded-full flex items-center justify-center text-white hover:bg-green-600 transition-all"
+                                    title="Download MP4"
+                                >
+                                    <Download className="w-3.5 h-3.5" />
+                                </button>
+                            </div>
+                        </div>
+                    ) : (isCompiling || isRendering) ? (
+                        <div className="flex flex-col items-center justify-center text-center">
+                            <div className="w-12 h-12 rounded-full bg-purple-500/10 flex items-center justify-center mb-3 text-purple-500">
+                                <Loader2 className="w-6 h-6 animate-spin" />
+                            </div>
+                            <p className="text-xs font-medium text-muted-foreground">
+                                {isCompiling ? "Compiling composition..." : `Rendering... ${renderState.progress}%`}
+                            </p>
+                            {isRendering && (
+                                <>
+                                    <div className="w-48 h-1.5 bg-white/10 rounded-full mt-2 overflow-hidden">
+                                        <div
+                                            className="h-full bg-purple-500 rounded-full transition-all duration-300"
+                                            style={{ width: `${renderState.progress}%` }}
+                                        />
+                                    </div>
+                                    <button
+                                        onClick={cancel}
+                                        className="mt-2 text-[10px] text-red-400 hover:text-red-300 transition-colors"
+                                    >
+                                        Cancel
+                                    </button>
+                                </>
+                            )}
+                        </div>
                     ) : isRunning ? (
                         <div className="flex flex-col items-center justify-center text-center">
                             <div className="w-12 h-12 rounded-full bg-purple-500/10 flex items-center justify-center mb-3 text-purple-500">
                                 <Loader2 className="w-6 h-6 animate-spin" />
                             </div>
-                            <p className="text-xs font-medium text-muted-foreground">Editing video...</p>
+                            <p className="text-xs font-medium text-muted-foreground">AI is writing composition code...</p>
+                        </div>
+                    ) : hasError ? (
+                        <div className="flex flex-col items-center justify-center text-center px-4">
+                            <AlertTriangle className="w-8 h-8 text-red-400 mb-2" />
+                            <p className="text-xs text-red-400 font-medium">Render Error</p>
+                            <p className="text-[10px] text-red-400/70 mt-1 max-w-[300px] break-words">
+                                {renderState.error}
+                            </p>
+                            {compositionCode && (
+                                <button
+                                    onClick={handleReRender}
+                                    className="mt-3 px-3 py-1 text-[10px] bg-white/10 rounded-full text-white/80 hover:bg-white/20 transition-colors"
+                                >
+                                    Retry
+                                </button>
+                            )}
                         </div>
                     ) : (
                         <div className="flex flex-col items-center justify-center text-center text-muted-foreground/50">
                             <Clapperboard className="w-12 h-12 mb-2" />
-                            <p className="text-xs">Edited video will appear here</p>
+                            <p className="text-xs">Rendered video will appear here</p>
+                            <p className="text-[10px] mt-1 opacity-70">AI writes Remotion code → client-side render</p>
+                        </div>
+                    )}
+
+                    {/* Render warning */}
+                    {isRendering && (
+                        <div className="absolute bottom-0 left-0 right-0 bg-amber-500/90 text-black px-3 py-1.5 text-[10px] font-medium flex items-center gap-1.5">
+                            <AlertTriangle className="w-3 h-3" />
+                            Keep this tab focused while rendering
                         </div>
                     )}
                 </div>
+
+                {/* Code viewer (collapsible) */}
+                {showCode && compositionCode && (
+                    <div className="relative bg-zinc-900 border-t border-white/10">
+                        <div className="flex items-center justify-between px-3 py-1.5 bg-zinc-800/80">
+                            <span className="text-[10px] text-white/50 font-mono">Generated Remotion TSX</span>
+                            <button onClick={() => setShowCode(false)} className="text-white/40 hover:text-white/70">
+                                <X className="w-3 h-3" />
+                            </button>
+                        </div>
+                        <pre className="text-[10px] text-green-300/80 font-mono px-3 py-2 overflow-auto max-h-[160px] leading-relaxed nodrag nowheel">
+                            {compositionCode}
+                        </pre>
+                    </div>
+                )}
 
                 {/* Divider Line */}
                 <div className="h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />

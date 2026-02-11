@@ -72,7 +72,7 @@ class NodeRunner:
                 return await self._run_vision_node(node_data, inputs, nodes)
             
             elif node_type == "editorAgent":
-                return await self._run_editor_agent_node(node_data, inputs, nodes)
+                return await self._run_editor_agent_node(node_data, inputs, nodes, node_id=node_id)
             
             elif node_type == "mediaUpload":
                 return await self._run_media_upload_node(node_data, inputs)
@@ -596,8 +596,9 @@ class NodeRunner:
         data: Dict[str, Any],
         inputs: Dict[str, Any],
         nodes: List[Dict[str, Any]],
+        node_id: str = "unknown",
     ) -> Dict[str, Any]:
-        """Editor Agent node - uses Remotion to stitch videos and perform editing tasks."""
+        """Editor Agent node - generates Remotion TSX composition code for client-side rendering."""
         # Get instruction from node data
         raw_instruction = data.get("instruction", "")
         
@@ -638,6 +639,7 @@ class NodeRunner:
         try:
             result = await self.editor_agent.edit_video(
                 instruction=instruction,
+                node_id=node_id,
                 ref_videos=ref_videos,
                 audio=audio,
                 text_input=text_input,
@@ -645,14 +647,16 @@ class NodeRunner:
             )
             
             if result.get("success"):
+                # Return the TSX composition code as the output string
+                # The frontend will compile + render it client-side
                 return {
                     "success": True,
-                    "output": result.get("video_url"),
+                    "output": result.get("code", ""),
                 }
             else:
                 return {
                     "success": False,
-                    "error": result.get("error", "Video editing failed"),
+                    "error": result.get("error", "Code generation failed"),
                 }
         except Exception as e:
             print(f"[NodeRunner] Editor Agent error: {e}")

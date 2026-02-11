@@ -1,10 +1,7 @@
-"""Editor Agent Service - Uses Gemini + Remotion for video editing."""
+"""Editor Agent Service - Uses Gemini to write Remotion composition code dynamically."""
 
-import asyncio
 import os
-import random
-import time
-import httpx
+import json
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 
@@ -14,91 +11,235 @@ from google.genai import types
 from app.core.config import settings
 
 
+# ── Remotion Skills / Knowledge ──────────────────────────────────────────────
+# This is injected into the AI prompt so it knows how to write
+# valid Remotion compositions for client-side web rendering.
+
+REMOTION_SKILLS = """
+## Remotion Composition Rules
+
+You are writing a Remotion composition that will be rendered **client-side** using `@remotion/web-renderer`.
+Follow these rules EXACTLY:
+
+### Module Structure
+Your code MUST:
+1. Import from 'react', 'remotion', and '@remotion/media' ONLY.
+2. Export metadata constants: `fps`, `width`, `height`, `durationInFrames`
+3. Export a default function component as the composition.
+
+```tsx
+import React from 'react';
+import { AbsoluteFill, Sequence, useCurrentFrame, useVideoConfig, interpolate, spring, Easing } from 'remotion';
+import { Video, Audio } from '@remotion/media';
+
+export const fps = 30;
+export const width = 1920;
+export const height = 1080;
+export const durationInFrames = 300; // 10 seconds at 30fps
+
+export default function MyComposition() {
+  const frame = useCurrentFrame();
+  const { fps, width, height } = useVideoConfig();
+
+  return (
+    <AbsoluteFill style={{ backgroundColor: 'black' }}>
+      {/* Your composition here */}
+    </AbsoluteFill>
+  );
+}
+```
+
+### Available Remotion APIs
+From 'remotion':
+- `AbsoluteFill` - Full-size container (position: absolute, inset: 0)
+- `Sequence` - Time-based container. Props: `from` (frame), `durationInFrames`, `name`
+- `useCurrentFrame()` - Returns current frame number
+- `useVideoConfig()` - Returns { fps, width, height, durationInFrames }
+- `interpolate(frame, inputRange, outputRange, options)` - Map frame to value
+  - options: { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }
+- `spring({ frame, fps, config })` - Spring animation (0 to 1)
+  - config: { damping, mass, stiffness, overshootClamping }
+- `Easing` - Easing functions (Easing.bezier, Easing.ease, etc.)
+
+From '@remotion/media':
+- `<Video>` - Video element. Props:
+  - `src` (string, required) - video URL
+  - `trimBefore` (number, frames) - trim start of video
+  - `trimAfter` (number, frames) - trim end of video
+  - `playbackRate` (number) - speed: 1=normal, 0.5=slow, 2=fast. MUST be > 0. DO NOT use negative values for reverse.
+  - `volume` (number 0-1, or function (frame) => number)
+  - `style` (CSSProperties)
+  - `muted` (boolean)
+- `<Audio>` - Audio element. Props:
+  - `src` (string, required)
+  - `volume` (number 0-1, or function)
+  - `trimBefore` (number, frames)
+
+### Web Renderer Limitations (CRITICAL)
+The following CSS properties are NOT supported in web rendering:
+- ❌ `filter` (blur, brightness, contrast, etc.)
+- ❌ `backdrop-filter`
+- ❌ `clip-path`
+- ❌ `mix-blend-mode`
+- ❌ `z-index` (use DOM order instead - later elements render on top)
+- ❌ `inset` shadows / spread radius on box-shadow
+
+The following ARE supported:
+- ✅ `opacity`
+- ✅ `transform` (translate, scale, rotate)
+- ✅ `backgroundColor`, `background` (solid, gradients)
+- ✅ `border`, `borderRadius`
+- ✅ Basic `box-shadow` (no inset, no spread)
+- ✅ All text styling (font, color, size, weight, etc.)
+- ✅ `position`, `top`, `left`, `right`, `bottom`
+- ✅ Flexbox layout
+- ✅ SVG elements
+
+### Common Patterns
+
+#### Stitching videos sequentially
+```tsx
+const clips = [
+  { src: "url1", duration: 150 },  // 5 sec at 30fps
+  { src: "url2", duration: 120 },  // 4 sec
+];
+let offset = 0;
+return (
+  <AbsoluteFill>
+    {clips.map((clip, i) => {
+      const from = offset;
+      offset += clip.duration;
+      return (
+        <Sequence key={i} from={from} durationInFrames={clip.duration}>
+          <AbsoluteFill>
+            <Video src={clip.src} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          </AbsoluteFill>
+        </Sequence>
+      );
+    })}
+  </AbsoluteFill>
+);
+```
+
+#### Slow motion
+```tsx
+<Video src={url} playbackRate={0.5} style={...} />
+// At 0.5x, a 5sec clip plays for 10sec. Set durationInFrames accordingly.
+```
+
+#### Fast forward
+```tsx
+<Video src={url} playbackRate={2} style={...} />
+// At 2x, a 5sec clip plays in 2.5sec. Set durationInFrames accordingly.
+```
+
+#### Fade transition between clips
+```tsx
+// Overlap two sequences and fade opacity
+<Sequence from={0} durationInFrames={160}>
+  <AbsoluteFill style={{ opacity: interpolate(frame - 0, [130, 150], [1, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }) }}>
+    <Video src={url1} ... />
+  </AbsoluteFill>
+</Sequence>
+<Sequence from={140} durationInFrames={160}>
+  <AbsoluteFill style={{ opacity: interpolate(frame - 140, [0, 20], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }) }}>
+    <Video src={url2} ... />
+  </AbsoluteFill>
+</Sequence>
+```
+
+#### Text overlay / caption
+```tsx
+<Sequence from={0} durationInFrames={90}>
+  <AbsoluteFill style={{ justifyContent: 'flex-end', alignItems: 'center', paddingBottom: 80 }}>
+    <div style={{
+      color: 'white',
+      fontSize: 48,
+      fontWeight: 700,
+      fontFamily: 'Inter, sans-serif',
+      backgroundColor: 'rgba(0,0,0,0.6)',
+      padding: '8px 24px',
+      borderRadius: 8,
+    }}>
+      Hello World
+    </div>
+  </AbsoluteFill>
+</Sequence>
+```
+
+#### Picture-in-Picture
+```tsx
+<AbsoluteFill>
+  <Video src={mainUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+  <div style={{ position: 'absolute', bottom: 20, right: 20, width: 320, height: 180, borderRadius: 8, overflow: 'hidden', border: '2px solid white' }}>
+    <Video src={pipUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+  </div>
+</AbsoluteFill>
+```
+
+#### Zooming / Ken Burns effect
+```tsx
+const scale = interpolate(frame, [0, durationInFrames], [1, 1.3], { extrapolateRight: 'clamp' });
+<AbsoluteFill style={{ transform: `scale(${scale})` }}>
+  <Video src={url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+</AbsoluteFill>
+```
+"""
+
+
 class EditorAgent:
-    """AI-powered video editor using Gemini and Remotion."""
+    """AI-powered video editor. Generates Remotion TSX composition code
+    that the frontend compiles and renders client-side."""
 
     def __init__(self):
-        self.output_dir = Path("static/videos")
-        self.output_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Initialize Gemini client
         self.client = genai.Client(api_key=settings.gemini_api_key)
-        
-        # Remotion server URL
-        self.remotion_url = settings.remotion_url
-        
-        print(f"[EditorAgent] Initialized with Remotion URL: {self.remotion_url}")
+        self.compositions_dir = Path("static/compositions")
+        self.compositions_dir.mkdir(parents=True, exist_ok=True)
+        print("[EditorAgent] Initialized (code-generation mode)")
 
     async def edit_video(
         self,
         instruction: str,
+        node_id: str = "unknown",
         ref_videos: Optional[List[str]] = None,
         audio: Optional[str] = None,
         text_input: Optional[str] = None,
         ref_images: Optional[List[str]] = None,
     ) -> dict:
         """
-        Edit video based on natural language instruction.
-        
-        Args:
-            instruction: Natural language editing instruction
-            ref_videos: List of video URLs to edit/stitch
-            audio: Audio URL to add to video
-            text_input: Additional text context
-            ref_images: Reference images for overlays/backgrounds
-            
+        Generate a Remotion composition TSX file based on the editing instruction.
+
         Returns:
-            Dictionary with video URL and metadata
+            { success: True, code: "<TSX source code>" }
         """
         try:
-            print(f"[EditorAgent] Starting edit with instruction: {instruction[:100]}...")
-            
-            # Normalize inputs
+            print(f"[EditorAgent] Generating code for: {instruction[:100]}...")
+
             ref_videos = ref_videos or []
             ref_images = ref_images or []
             if isinstance(ref_videos, str):
                 ref_videos = [ref_videos]
             if isinstance(ref_images, str):
                 ref_images = [ref_images]
-            
-            # Step 1: Analyze the instruction using Gemini
-            editing_plan = await self._analyze_instruction(
+
+            code = await self._generate_composition_code(
                 instruction=instruction,
-                num_videos=len(ref_videos),
-                has_audio=bool(audio),
-                has_images=len(ref_images) > 0,
-                text_context=text_input,
-            )
-            
-            print(f"[EditorAgent] Editing plan: {editing_plan}")
-            
-            # Step 2: Generate Remotion composition code
-            remotion_code = await self._generate_remotion_code(
-                editing_plan=editing_plan,
                 ref_videos=ref_videos,
                 audio=audio,
+                text_input=text_input,
                 ref_images=ref_images,
             )
-            
-            print(f"[EditorAgent] Generated Remotion code ({len(remotion_code)} chars)")
-            
-            # Step 3: Render video using Remotion
-            video_url = await self._render_with_remotion(
-                remotion_code=remotion_code,
-                ref_videos=ref_videos,
-                audio=audio,
-                ref_images=ref_images,
-            )
-            
-            print(f"[EditorAgent] Video rendered: {video_url}")
-            
+
+            # Save to file for persistence / debugging
+            file_path = self.compositions_dir / f"{node_id}.tsx"
+            file_path.write_text(code, encoding="utf-8")
+            print(f"[EditorAgent] Saved composition to {file_path}")
+
             return {
                 "success": True,
-                "video_url": video_url,
-                "instruction": instruction,
-                "editing_plan": editing_plan,
+                "code": code,
             }
-            
+
         except Exception as e:
             print(f"[EditorAgent] Error: {e}")
             import traceback
@@ -108,241 +249,85 @@ class EditorAgent:
                 "error": str(e),
             }
 
-    async def _analyze_instruction(
+    async def _generate_composition_code(
         self,
         instruction: str,
-        num_videos: int,
-        has_audio: bool,
-        has_images: bool,
-        text_context: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """Use Gemini to analyze the editing instruction and create a plan."""
-        
-        prompt = f"""You are a video editing AI assistant. Analyze this editing instruction and create a structured editing plan.
-
-Instruction: {instruction}
-
-Available inputs:
-- Number of videos: {num_videos}
-- Has audio: {has_audio}
-- Has images: {has_images}
-- Text context: {text_context or "None"}
-
-Create a single JSON object (not an array) with these fields:
-1. "task_type": One of ["stitch", "transition", "overlay", "effects", "composite"]
-2. "duration": Total video duration in seconds (estimate based on inputs)
-3. "fps": Frame rate (default 30)
-4. "transitions": List of transition types between clips (e.g., "fade", "slide", "cut")
-5. "effects": List of effects to apply (e.g., "reverse", "color_grade", "zoom", "pan")
-6. "text_overlays": List of text overlays with timing and content
-7. "audio_handling": How to handle audio ("add", "replace", "mix", "none")
-8. "layout": For multi-video composites ("grid", "pip", "split", "sequence")
-
-Return ONLY a single JSON object, no markdown or explanation."""
-
-        try:
-            response = self.client.models.generate_content(
-                model="gemini-2.0-flash",
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    temperature=0.3,
-                    response_mime_type="application/json",
-                ),
-            )
-            
-            import json
-            plan = json.loads(response.text)
-            
-            # Handle case where Gemini returns a list instead of object
-            if isinstance(plan, list):
-                print(f"[EditorAgent] Warning: Gemini returned list, using first item")
-                plan = plan[0] if plan else {}
-            
-            # Ensure it's a dict
-            if not isinstance(plan, dict):
-                print(f"[EditorAgent] Warning: Invalid plan type, using default")
-                plan = {}
-            
-            # Validate required fields and set defaults
-            plan.setdefault("task_type", "stitch")
-            plan.setdefault("duration", num_videos * 4)
-            plan.setdefault("fps", 30)
-            plan.setdefault("transitions", ["fade"] * max(0, num_videos - 1))
-            plan.setdefault("effects", [])
-            plan.setdefault("text_overlays", [])
-            plan.setdefault("audio_handling", "add" if has_audio else "none")
-            plan.setdefault("layout", "sequence")
-            
-            return plan
-            
-        except Exception as e:
-            print(f"[EditorAgent] Error analyzing instruction: {e}")
-            # Return default plan
-            return {
-                "task_type": "stitch",
-                "duration": num_videos * 4,
-                "fps": 30,
-                "transitions": ["fade"] * max(0, num_videos - 1),
-                "effects": [],
-                "text_overlays": [],
-                "audio_handling": "add" if has_audio else "none",
-                "layout": "sequence",
-            }
-
-    async def _generate_remotion_code(
-        self,
-        editing_plan: Dict[str, Any],
         ref_videos: List[str],
         audio: Optional[str],
+        text_input: Optional[str],
         ref_images: List[str],
     ) -> str:
-        """Generate Remotion composition code based on the editing plan."""
-        
-        # For now, create a simple composition that stitches videos
-        # In the future, this could use Gemini to generate more complex code
-        
-        task_type = editing_plan.get("task_type", "stitch")
-        duration = editing_plan.get("duration", 10)
-        fps = editing_plan.get("fps", 30)
-        transitions = editing_plan.get("transitions", [])
-        
-        # Simple template for video stitching
-        code = f"""
-import {{ AbsoluteFill, Sequence, OffthreadVideo, Audio, interpolate, useCurrentFrame }} from "remotion";
+        """Use Gemini to write Remotion composition TSX code."""
 
-export const EditorComposition = () => {{
-  const frame = useCurrentFrame();
-  
-  return (
-    <AbsoluteFill style={{{{ backgroundColor: "black" }}}}>
+        # Build input descriptions
+        video_list = ""
+        for i, url in enumerate(ref_videos):
+            video_list += f"  Video {i + 1}: \"{url}\" (assume ~5 seconds, 30fps)\n"
+
+        image_list = ""
+        for i, url in enumerate(ref_images):
+            image_list += f"  Image {i + 1}: \"{url}\"\n"
+
+        prompt = f"""{REMOTION_SKILLS}
+
+---
+
+## Your Task
+
+Write a complete Remotion composition in TSX that fulfills the user's editing instruction.
+
+### User Instruction
+"{instruction}"
+
+### Available Inputs
+Videos ({len(ref_videos)} total):
+{video_list if video_list else "  (none)"}
+Images ({len(ref_images)} total):
+{image_list if image_list else "  (none)"}
+Audio: {"Yes - " + audio if audio else "None"}
+Additional context: {text_input if text_input else "None"}
+
+### Output Requirements
+1. Write COMPLETE, VALID TSX code. No placeholders, no TODOs.
+2. Use EXACT video/image URLs from the inputs above. Do NOT invent URLs.
+3. Export: `fps`, `width`, `height`, `durationInFrames`, and `default` component.
+4. Calculate `durationInFrames` accurately based on the editing operations.
+5. Apply the user's instruction precisely - if they say slow motion, use playbackRate < 1, etc.
+6. Use ONLY supported CSS properties (no filter, clip-path, z-index, etc.).
+7. Use `<Video>` from '@remotion/media', NOT from 'remotion'.
+8. For trimming, use `trimBefore` and `trimAfter` props (in frames, not seconds).
+
+Return ONLY the TSX code. No markdown fences, no explanations. Do NOT use negative playbackRate even if asked to reverse.
 """
-        
-        # Add video sequences
-        current_time = 0
-        for i, video_url in enumerate(ref_videos):
-            clip_duration = duration / len(ref_videos) if ref_videos else duration
-            from_frame = int(current_time * fps)
-            duration_frames = int(clip_duration * fps)
-            
-            # Add transition effect
-            transition = transitions[i] if i < len(transitions) else "fade"
-            
-            code += f"""
-      <Sequence from={{{from_frame}}} durationInFrames={{{duration_frames}}}>
-        <AbsoluteFill>
-          <OffthreadVideo
-            src="{video_url}"
-            style={{{{
-              width: "100%",
-              height: "100%",
-              objectFit: "cover",
-            }}}}
-          />
-        </AbsoluteFill>
-      </Sequence>
-"""
-            current_time += clip_duration
-        
-        # Add audio if provided
-        if audio:
-            code += f"""
-      <Audio src="{audio}" />
-"""
-        
-        code += """
-    </AbsoluteFill>
-  );
-};
-"""
-        
+
+        response = self.client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                temperature=0.4,
+            ),
+        )
+
+        code = response.text.strip()
+
+        # Strip markdown fences if present
+        if code.startswith("```"):
+            lines = code.split("\n")
+            # Remove first line (```tsx or ```)
+            lines = lines[1:]
+            # Remove last line if it's ```)
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+            code = "\n".join(lines)
+
+        # Safety check: Remove negative playbackRate (causes crash)
+        # We replace playbackRate={-0.5} with playbackRate={0.5}
+        import re
+        code = re.sub(r'playbackRate={-(\d+(\.\d+)?)}', r'playbackRate={\1}', code)
+        code = re.sub(r'playbackRate={-\s*(\d+(\.\d+)?)}', r'playbackRate={\1}', code)
+
+        # Basic validation
+        if "export default" not in code and "export function" not in code:
+            raise ValueError("Generated code does not contain a default export. The AI may have produced invalid output.")
+
         return code
-
-    async def _render_with_remotion(
-        self,
-        remotion_code: str,
-        ref_videos: List[str],
-        audio: Optional[str],
-        ref_images: List[str],
-    ) -> str:
-        """Render video using Remotion server."""
-        
-        # For now, use a simplified approach:
-        # Create scenes from the videos and call the existing Remotion server
-        
-        scenes = []
-        current_time = 0.0
-        clip_duration = 4.0  # Default 4 seconds per clip
-        
-        for i, video_url in enumerate(ref_videos):
-            scenes.append({
-                "id": i + 1,
-                "start_time": current_time,
-                "end_time": current_time + clip_duration,
-                "description": f"Video clip {i + 1}",
-                "visual_prompt": f"Clip {i + 1}",
-                "voiceover_text": None,
-                "on_screen_text": None,
-                "asset_url": video_url,
-            })
-            current_time += clip_duration
-        
-        # If no videos, create a placeholder
-        if not scenes:
-            scenes.append({
-                "id": 1,
-                "start_time": 0.0,
-                "end_time": 4.0,
-                "description": "Placeholder",
-                "visual_prompt": "Placeholder",
-                "voiceover_text": None,
-                "on_screen_text": "No video input provided",
-                "asset_url": None,
-            })
-        
-        # Prepare render request
-        filename = f"edited_{int(time.time())}_{random.randint(1000, 9999)}.mp4"
-        
-        render_request = {
-            "project_id": f"editor_{int(time.time())}",
-            "scenes": scenes,
-            "brand": {
-                "name": "Editor Agent",
-                "tagline": None,
-                "primary_colors": [],
-                "logo_url": None,
-                "tone": "professional",
-            },
-            "story": {
-                "title": "Edited Video",
-                "call_to_action": "",
-            },
-            "output_filename": filename,
-        }
-        
-        # Call Remotion server
-        try:
-            async with httpx.AsyncClient(timeout=300.0) as client:
-                print(f"[EditorAgent] Calling Remotion server at {self.remotion_url}/render")
-                response = await client.post(
-                    f"{self.remotion_url}/render",
-                    json=render_request,
-                )
-                
-                if response.status_code == 200:
-                    result = response.json()
-                    if result.get("success"):
-                        # Return the URL to the rendered video
-                        video_url = f"{settings.api_base_url}/static/videos/{filename}"
-                        return video_url
-                    else:
-                        raise Exception(f"Remotion render failed: {result.get('error')}")
-                else:
-                    raise Exception(f"Remotion server error: {response.status_code} - {response.text}")
-                    
-        except httpx.ConnectError:
-            print(f"[EditorAgent] Cannot connect to Remotion server at {self.remotion_url}")
-            print("[EditorAgent] Make sure Remotion server is running: cd apps/remotion && npm run server")
-            raise Exception("Remotion server not available. Please start it with: cd apps/remotion && npm run server")
-        except Exception as e:
-            print(f"[EditorAgent] Remotion render error: {e}")
-            raise
