@@ -123,7 +123,7 @@ export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
     const nodeHandles = [{
         id: "output",
         label: mediaType === 'video' ? 'Video' : mediaType === 'audio' ? 'Audio' : mediaType === 'image' ? 'Image' : 'Media',
-        type: (mediaType || 'any') as any
+        type: (mediaType || 'any') as "video" | "audio" | "image" | "any" | "text"
     }];
 
     return (

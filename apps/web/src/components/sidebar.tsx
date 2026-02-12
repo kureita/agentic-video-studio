@@ -14,7 +14,7 @@ import {
     Bot
 } from "lucide-react";
 
-interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> { }
+type SidebarProps = React.HTMLAttributes<HTMLDivElement>;
 
 export function Sidebar({ className }: SidebarProps) {
     const pathname = usePathname();

@@ -22,6 +22,19 @@ Globals:
         # ELEVENLABS_API_KEY: ""
         # OPENAI_API_KEY: ""
 
+Parameters:
+  DomainName:
+    Type: String
+    Description: Custom domain for API (e.g. app-api.kureita.com)
+    Default: ""
+  CertificateArn:
+    Type: String
+    Description: ACM Certificate ARN for the domain (in us-east-1 for Edge, or region for Regional)
+    Default: ""
+
+Conditions:
+  HasCustomDomain: !Not [!Equals [!Ref DomainName, ""]]
+
 Resources:
   KureitaApiFunction:
     Type: AWS::Serverless::Function
@@ -32,7 +45,7 @@ Resources:
     Properties:
       PackageType: Image
       Architectures:
-        - x86_64
+        - arm64
       Events:
         HttpApi:
           Type: HttpApi
@@ -63,23 +76,8 @@ Resources:
               - DELETE
               - HEAD
             AllowedOrigins:
-              - "*"
-
-Parameters:
-  DomainName:
-    Type: String
-    Description: Custom domain for API (e.g. app-api.kureita.com)
-    Default: ""
-  CertificateArn:
-    Type: String
-    Description: ACM Certificate ARN for the domain (in us-east-1 for Edge, or region for Regional)
-    Default: ""
-
-Conditions:
-  HasCustomDomain: !Not [!Equals [!Ref DomainName, ""]]
-
-Resources:
-  # ... (Existing KureitaApiFunction) ...
+              - "https://app.kureita.com"
+              - "https://app-api.kureita.com"
 
   ApiDomainName:
     Type: AWS::ApiGatewayV2::DomainName
@@ -93,15 +91,22 @@ Resources:
   ApiMapping:
     Type: AWS::ApiGatewayV2::ApiMapping
     Condition: HasCustomDomain
+    DependsOn:
+      - ApiDomainName
+      - ServerlessHttpApiApiGatewayDefaultStage
     Properties:
       ApiId: !Ref ServerlessHttpApi
       DomainName: !Ref ApiDomainName
-      Stage: !Ref ServerlessHttpApi.Prod
+      Stage: !Ref ServerlessHttpApiApiGatewayDefaultStage
 
 Outputs:
-  # ... (Existing outputs) ...
+  ApiUrl:
+    Description: "API Gateway URL"
+    Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com/"
+  AssetsBucketName:
+    Description: "S3 Assets Bucket Name"
+    Value: !Ref KureitaAssetsBucket
   CustomDomainUrl:
     Condition: HasCustomDomain
     Description: "Custom Domain URL"
     Value: !Sub "https://${DomainName}/"
-

@@ -52,3 +52,10 @@ select = ["E", "F", "I", "N", "W"]
 [tool.mypy]
 python_version = "3.11"
 strict = true
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"

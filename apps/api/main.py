@@ -31,8 +31,8 @@ app = FastAPI(
     title="Kureita API",
     description="AI-powered video production platform",
     version="0.1.0",
-    docs_url="/docs",
-    redoc_url="/redoc",
+    docs_url="/docs" if settings.debug else None,
+    redoc_url="/redoc" if settings.debug else None,
     lifespan=lifespan,
 )
 

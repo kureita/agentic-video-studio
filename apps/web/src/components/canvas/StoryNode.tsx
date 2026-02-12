@@ -1,20 +1,20 @@
 "use client";
 
 import { memo, useState } from "react";
-import { NodeProps } from "@xyflow/react";
+import { NodeProps, Node } from "@xyflow/react";
 import { BookOpen, Sparkles, Loader2, Pencil, Check, X, Wand2 } from "lucide-react";
-import { 
-  BaseNode, 
-  BaseNodeHeader, 
-  BaseNodeContent, 
+import {
+  BaseNode,
+  BaseNodeHeader,
+  BaseNodeContent,
   BaseNodeFooter,
-  BaseNodeError 
+  BaseNodeError
 } from "./BaseNode";
 import { Button, Textarea } from "@/components/ui";
-import { 
-  useCanvasStore, 
-  visualStyleOptions, 
-  themeOptions, 
+import {
+  useCanvasStore,
+  visualStyleOptions,
+  themeOptions,
   directionOptions,
   durationOptions,
   storyTemplates,
@@ -26,7 +26,7 @@ type StoryNodeData = {
   onProceed?: () => void;
 };
 
-export const StoryNode = memo(function StoryNode({ data }: NodeProps<StoryNodeData>) {
+export const StoryNode = memo(function StoryNode({ data }: NodeProps<Node<StoryNodeData>>) {
   const {
     projectId,
     brandData,
@@ -78,7 +78,7 @@ export const StoryNode = memo(function StoryNode({ data }: NodeProps<StoryNodeDa
       setStoryData(story);
       setScenes(newScenes);
       setNodeStatus("story", "success");
-      
+
       if (data?.onProceed) {
         data.onProceed();
       }
@@ -109,12 +109,12 @@ export const StoryNode = memo(function StoryNode({ data }: NodeProps<StoryNodeDa
 
   const handleImproveWithAI = async () => {
     if (!projectId) return;
-    
+
     setIsImproving(true);
-    
+
     try {
       // Build script text from edited scenes
-      const scriptText = editedScenes.map(s => 
+      const scriptText = editedScenes.map(s =>
         `Scene ${s.id}: ${s.description}\nVisual: ${s.visual_prompt}`
       ).join("\n\n");
 
@@ -124,7 +124,7 @@ export const StoryNode = memo(function StoryNode({ data }: NodeProps<StoryNodeDa
       });
 
       const { story, scenes: improvedScenes } = response.data;
-      
+
       // Update the edit fields with improved content
       setEditedSynopsis(story.synopsis || editedSynopsis);
       setEditedScenes(improvedScenes.map((s: SceneData) => ({
@@ -132,7 +132,7 @@ export const StoryNode = memo(function StoryNode({ data }: NodeProps<StoryNodeDa
         description: s.description,
         visual_prompt: s.visual_prompt,
       })));
-      
+
     } catch (err) {
       console.error("Failed to improve with AI:", err);
     } finally {
@@ -142,13 +142,13 @@ export const StoryNode = memo(function StoryNode({ data }: NodeProps<StoryNodeDa
 
   const handleSaveEdit = () => {
     if (!storyData) return;
-    
+
     // Update story data
     setStoryData({
       ...storyData,
       synopsis: editedSynopsis,
     });
-    
+
     // Update scenes
     const updatedScenes = scenes.map(scene => {
       const edited = editedScenes.find(e => e.id === scene.id);
@@ -162,12 +162,12 @@ export const StoryNode = memo(function StoryNode({ data }: NodeProps<StoryNodeDa
       return scene;
     });
     setScenes(updatedScenes);
-    
+
     setIsEditing(false);
   };
 
   const handleUpdateSceneField = (id: number, field: "description" | "visual_prompt", value: string) => {
-    setEditedScenes(prev => prev.map(s => 
+    setEditedScenes(prev => prev.map(s =>
       s.id === id ? { ...s, [field]: value } : s
     ));
   };
@@ -238,11 +238,10 @@ export const StoryNode = memo(function StoryNode({ data }: NodeProps<StoryNodeDa
                       <button
                         key={opt.id}
                         onClick={() => setStoryOptions({ visualStyle: opt.id })}
-                        className={`p-2 rounded-lg border text-left transition-colors nodrag ${
-                          storyOptions.visualStyle === opt.id
-                            ? "border-foreground bg-background-secondary"
-                            : "border-border hover:border-foreground-subtle"
-                        }`}
+                        className={`p-2 rounded-lg border text-left transition-colors nodrag ${storyOptions.visualStyle === opt.id
+                          ? "border-foreground bg-background-secondary"
+                          : "border-border hover:border-foreground-subtle"
+                          }`}
                       >
                         <p className="text-xs font-medium text-foreground">{opt.label}</p>
                       </button>
@@ -258,11 +257,10 @@ export const StoryNode = memo(function StoryNode({ data }: NodeProps<StoryNodeDa
                       <button
                         key={opt.value}
                         onClick={() => setStoryOptions({ duration: opt.value })}
-                        className={`flex-1 p-2 rounded-lg border text-center transition-colors nodrag ${
-                          storyOptions.duration === opt.value
-                            ? "border-foreground bg-background-secondary"
-                            : "border-border hover:border-foreground-subtle"
-                        }`}
+                        className={`flex-1 p-2 rounded-lg border text-center transition-colors nodrag ${storyOptions.duration === opt.value
+                          ? "border-foreground bg-background-secondary"
+                          : "border-border hover:border-foreground-subtle"
+                          }`}
                       >
                         <p className="font-medium text-foreground">{opt.label}</p>
                       </button>
@@ -340,7 +338,7 @@ export const StoryNode = memo(function StoryNode({ data }: NodeProps<StoryNodeDa
                         Scene {idx + 1}
                       </span>
                     </div>
-                    
+
                     <div>
                       <label className="block text-xs text-foreground-muted mb-1">Description</label>
                       <Textarea
@@ -350,7 +348,7 @@ export const StoryNode = memo(function StoryNode({ data }: NodeProps<StoryNodeDa
                         className="text-xs nodrag nowheel"
                       />
                     </div>
-                    
+
                     <div>
                       <label className="block text-xs text-foreground-muted mb-1">Visual Prompt</label>
                       <Textarea

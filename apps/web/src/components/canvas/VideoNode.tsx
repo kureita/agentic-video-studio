@@ -1,14 +1,14 @@
 "use client";
 
 import { memo, useState, useRef, useEffect, useCallback } from "react";
-import { NodeProps } from "@xyflow/react";
+import { NodeProps, Node } from "@xyflow/react";
 import { Film, Sparkles, Loader2, RotateCcw, Check, Play, Pause, Volume2, VolumeX, Maximize } from "lucide-react";
-import { 
-  BaseNode, 
-  BaseNodeHeader, 
-  BaseNodeContent, 
+import {
+  BaseNode,
+  BaseNodeHeader,
+  BaseNodeContent,
   BaseNodeFooter,
-  BaseNodeError 
+  BaseNodeError
 } from "./BaseNode";
 import { Button } from "@/components/ui";
 import { useCanvasStore, SceneData } from "@/lib/canvas-store";
@@ -18,7 +18,7 @@ type VideoNodeData = {
   onProceed?: () => void;
 };
 
-export const VideoNode = memo(function VideoNode({ data }: NodeProps<VideoNodeData>) {
+export const VideoNode = memo(function VideoNode({ data }: NodeProps<Node<VideoNodeData>>) {
   const {
     projectId,
     scenes,
@@ -33,7 +33,7 @@ export const VideoNode = memo(function VideoNode({ data }: NodeProps<VideoNodeDa
   const [activeVideoId, setActiveVideoId] = useState<number | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
-  
+
   const videoRefs = useRef<Map<number, HTMLVideoElement>>(new Map());
 
   const isLoading = nodeStatuses.videos === "loading";
@@ -60,7 +60,7 @@ export const VideoNode = memo(function VideoNode({ data }: NodeProps<VideoNodeDa
     } else {
       // Stop all other videos first
       stopAllVideos();
-      
+
       // Play this video
       setActiveVideoId(sceneId);
       video.muted = isMuted;
@@ -73,7 +73,7 @@ export const VideoNode = memo(function VideoNode({ data }: NodeProps<VideoNodeDa
   const handleMuteToggle = useCallback(() => {
     const newMuted = !isMuted;
     setIsMuted(newMuted);
-    
+
     // Update the active video's mute state
     if (activeVideoId) {
       const video = videoRefs.current.get(activeVideoId);
@@ -97,12 +97,12 @@ export const VideoNode = memo(function VideoNode({ data }: NodeProps<VideoNodeDa
 
     if (video.requestFullscreen) {
       video.requestFullscreen();
-    } else if ((video as any).webkitRequestFullscreen) {
-      (video as any).webkitRequestFullscreen();
-    } else if ((video as any).msRequestFullscreen) {
-      (video as any).msRequestFullscreen();
+    } else if ((video as HTMLVideoElement & { webkitRequestFullscreen?: () => void }).webkitRequestFullscreen) {
+      (video as HTMLVideoElement & { webkitRequestFullscreen?: () => void }).webkitRequestFullscreen!();
+    } else if ((video as HTMLVideoElement & { msRequestFullscreen?: () => void }).msRequestFullscreen) {
+      (video as HTMLVideoElement & { msRequestFullscreen?: () => void }).msRequestFullscreen!();
     }
-    
+
     // Auto-play in fullscreen if not already playing
     if (!isPlaying || activeVideoId !== sceneId) {
       stopAllVideos();
@@ -138,7 +138,7 @@ export const VideoNode = memo(function VideoNode({ data }: NodeProps<VideoNodeDa
     try {
       const response = await canvasApi.generateVideos(projectId);
       const { scenes: updatedScenes } = response.data;
-      
+
       updatedScenes.forEach((scene: SceneData) => {
         updateScene(scene.id, { video_url: scene.video_url });
       });
@@ -156,14 +156,14 @@ export const VideoNode = memo(function VideoNode({ data }: NodeProps<VideoNodeDa
 
   const handleRegenerateSingleVideo = async (sceneId: number) => {
     if (!projectId) return;
-    
+
     // Stop playing if regenerating active video
     if (activeVideoId === sceneId) {
       stopAllVideos();
       setActiveVideoId(null);
       setIsPlaying(false);
     }
-    
+
     setGeneratingScene(sceneId);
     try {
       const response = await canvasApi.regenerateVideo(projectId, sceneId);
@@ -205,7 +205,7 @@ export const VideoNode = memo(function VideoNode({ data }: NodeProps<VideoNodeDa
           {scenes.map((scene) => {
             const isActive = activeVideoId === scene.id;
             const isThisPlaying = isActive && isPlaying;
-            
+
             return (
               <div key={scene.id} className="p-3 rounded-lg border border-border">
                 <div className="flex items-center justify-between mb-2">
@@ -240,24 +240,23 @@ export const VideoNode = memo(function VideoNode({ data }: NodeProps<VideoNodeDa
                         playsInline
                         preload="metadata"
                       />
-                      
+
                       {/* Poster overlay when not playing */}
                       {!isThisPlaying && scene.image_url && (
                         <div className="absolute inset-0">
-                          <img 
-                            src={scene.image_url} 
-                            alt="" 
-                            className="w-full h-full object-cover" 
+                          <img
+                            src={scene.image_url}
+                            alt=""
+                            className="w-full h-full object-cover"
                           />
                         </div>
                       )}
-                      
+
                       {/* Controls overlay */}
-                      <div className={`absolute inset-0 flex items-center justify-center transition-opacity ${
-                        isThisPlaying ? "opacity-0 hover:opacity-100" : "opacity-100"
-                      }`}>
+                      <div className={`absolute inset-0 flex items-center justify-center transition-opacity ${isThisPlaying ? "opacity-0 hover:opacity-100" : "opacity-100"
+                        }`}>
                         <div className="absolute inset-0 bg-black/30" />
-                        
+
                         {/* Play/Pause button */}
                         <button
                           onClick={() => handlePlayPause(scene.id)}
@@ -269,13 +268,13 @@ export const VideoNode = memo(function VideoNode({ data }: NodeProps<VideoNodeDa
                             <Play className="w-5 h-5 text-gray-900 ml-0.5" />
                           )}
                         </button>
-                        
+
                         {/* Bottom controls */}
                         <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between">
                           <span className="px-2 py-1 rounded bg-black/70 text-xs text-white">
                             {isThisPlaying ? "Playing" : "Video Ready"}
                           </span>
-                          
+
                           {/* Right side controls */}
                           {scene.video_url && (
                             <div className="flex items-center gap-1">
@@ -291,7 +290,7 @@ export const VideoNode = memo(function VideoNode({ data }: NodeProps<VideoNodeDa
                                   <Volume2 className="w-4 h-4 text-white" />
                                 )}
                               </button>
-                              
+
                               {/* Fullscreen */}
                               <button
                                 onClick={() => handleFullscreen(scene.id)}

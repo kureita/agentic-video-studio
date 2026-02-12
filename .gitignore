@@ -40,11 +40,15 @@ npm-debug.log*
 .remotion/
 
 apps/api/.env
+apps/api/.env.local
+apps/api/.env.prod
 *.env
 apps/remotion/.env
 apps/web/.env
+apps/web/.env.local
+apps/web/.env.prod
 apps/remotion/node_modules
 apps/remotion/output
 apps/api/static/images/*
 apps/api/static/videos/*
-apps/api/static/audios/*
+apps/api/static/audios/*.aws-sam/

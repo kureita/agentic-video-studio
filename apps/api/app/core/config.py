@@ -1,13 +1,19 @@
+import os
 from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Determine which env file to load based on APP_ENV
+# "local" (default) -> .env.local, "prod" -> .env.prod
+_app_env = os.getenv("APP_ENV", "local")
+_env_file = f".env.{_app_env}"
 
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=_env_file,
         env_file_encoding="utf-8",
         extra="ignore",
     )

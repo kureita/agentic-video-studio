@@ -1,14 +1,14 @@
 "use client";
 
 import { memo, useState } from "react";
-import { NodeProps } from "@xyflow/react";
+import { NodeProps, Node } from "@xyflow/react";
 import { Layers, Sparkles, Loader2, Check, Settings2 } from "lucide-react";
-import { 
-  BaseNode, 
-  BaseNodeHeader, 
-  BaseNodeContent, 
+import {
+  BaseNode,
+  BaseNodeHeader,
+  BaseNodeContent,
   BaseNodeFooter,
-  BaseNodeError 
+  BaseNodeError
 } from "./BaseNode";
 import { Button } from "@/components/ui";
 import { useCanvasStore } from "@/lib/canvas-store";
@@ -24,7 +24,7 @@ const transitionOptions = [
   { id: "dissolve", label: "Dissolve" },
 ];
 
-export const CompositionNode = memo(function CompositionNode({ data }: NodeProps<CompositionNodeData>) {
+export const CompositionNode = memo(function CompositionNode({ data }: NodeProps<Node<CompositionNodeData>>) {
   const {
     projectId,
     scenes,
@@ -106,9 +106,8 @@ export const CompositionNode = memo(function CompositionNode({ data }: NodeProps
             </div>
             <button
               onClick={() => setShowSettings(!showSettings)}
-              className={`p-2 rounded-lg transition-colors nodrag ${
-                showSettings ? "bg-background" : "hover:bg-background"
-              }`}
+              className={`p-2 rounded-lg transition-colors nodrag ${showSettings ? "bg-background" : "hover:bg-background"
+                }`}
             >
               <Settings2 className="w-4 h-4 text-foreground-subtle" />
             </button>
@@ -124,18 +123,17 @@ export const CompositionNode = memo(function CompositionNode({ data }: NodeProps
                   <button
                     key={opt.id}
                     onClick={() => setTransition(opt.id)}
-                    className={`flex-1 p-2 rounded-lg border text-xs transition-colors nodrag ${
-                      transition === opt.id
+                    className={`flex-1 p-2 rounded-lg border text-xs transition-colors nodrag ${transition === opt.id
                         ? "border-foreground bg-background-secondary"
                         : "border-border"
-                    }`}
+                      }`}
                   >
                     {opt.label}
                   </button>
                 ))}
               </div>
             </div>
-            
+
             <div className="space-y-2">
               <label className="flex items-center gap-2 text-xs nodrag cursor-pointer">
                 <input

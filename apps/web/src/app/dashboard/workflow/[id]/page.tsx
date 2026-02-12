@@ -66,18 +66,6 @@ export default function WorkflowEditorPage() {
         await runWorkflow();
     }, [runWorkflow]);
 
-    // Show loading state while creating new workflow
-    if (id === "new") {
-        return (
-            <div className="h-[calc(100vh-2rem)] flex flex-col items-center justify-center rounded-xl border border-border bg-background shadow-2xl">
-                <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
-                <p className="text-muted-foreground mt-4">
-                    Creating workflow...
-                </p>
-            </div>
-        );
-    }
-
     // Auto-save effect
     useEffect(() => {
         let timeout: NodeJS.Timeout;
@@ -90,6 +78,18 @@ export default function WorkflowEditorPage() {
 
         return () => clearTimeout(timeout);
     }, [isDirty, isSaving, isLoading, saveWorkflow, name]); // name included so rename triggers it too
+
+    // Show loading state while creating new workflow
+    if (id === "new") {
+        return (
+            <div className="h-[calc(100vh-2rem)] flex flex-col items-center justify-center rounded-xl border border-border bg-background shadow-2xl">
+                <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+                <p className="text-muted-foreground mt-4">
+                    Creating workflow...
+                </p>
+            </div>
+        );
+    }
 
     return (
         <div className="h-[calc(100vh-2rem)] flex flex-col overflow-hidden rounded-xl border border-border bg-background shadow-2xl">
