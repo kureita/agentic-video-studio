@@ -1,25 +1,19 @@
 version: 1
 applications:
-  - appRoot: .
+  - appRoot: apps/web
     frontend:
       phases:
         preBuild:
           commands:
-            - npm ci
+            - cd ../.. && npm ci
         build:
           commands:
-            - npx turbo run build --filter=web
-            # Flatten monorepo structure for Amplify SSR detection
-            - rm -rf .next public next.config.ts package.json
-            - mv apps/web/.next .next
-            - mv apps/web/public public
-            - mv apps/web/next.config.ts next.config.ts
-            - mv apps/web/package.json package.json
+            - npm run build
       artifacts:
         baseDirectory: .next
         files:
           - '**/*'
       cache:
         paths:
-          - node_modules/**/*
+          - ../../node_modules/**/*
           - .next/cache/**/*
