@@ -1,0 +1,21 @@
+version: 1
+applications:
+  - appRoot: apps/web
+    frontend:
+      phases:
+        preBuild:
+          commands:
+            # Install dependencies at the root level (where package-lock.json is)
+            - cd ../.. && npm ci
+        build:
+          commands:
+            # Build the Next.js app (Amplify sets CWD to appRoot, so this runs in apps/web)
+            - npm run build
+      artifacts:
+        baseDirectory: .next
+        files:
+          - '**/*'
+      cache:
+        paths:
+          - ../../node_modules/**/*
+          - .next/cache/**/*
