@@ -41,7 +41,7 @@ export default function DashboardPage() {
         try {
             const response = await workflowApi.create("Untitled Workflow");
             const newWorkflow = response.data;
-            router.push(`/dashboard/workflow/${newWorkflow.id}`);
+            router.push(`/dashboard/workflow?id=${newWorkflow.id}`);
         } catch (err) {
             console.error("Failed to create workflow:", err);
             setError("Failed to create workflow");
@@ -127,7 +127,7 @@ export default function DashboardPage() {
                     {workflows.map((workflow) => (
                         <div key={workflow.id} className="group relative">
                             <Link
-                                href={`/dashboard/workflow/${workflow.id}`}
+                                href={{ pathname: '/dashboard/workflow', query: { id: workflow.id } }}
                                 className="block"
                             >
                                 <div className="relative aspect-video rounded-lg border border-border bg-card overflow-hidden transition-all hover:border-accent hover:shadow-md">

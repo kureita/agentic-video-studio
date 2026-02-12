@@ -6,7 +6,8 @@ import { AgentSidebar } from "@/components/workflow/agent-sidebar";
 
 export function SidebarSwitcher() {
     const pathname = usePathname();
-    const isWorkflowPage = pathname.includes("/dashboard/workflow/") && !pathname.endsWith("/dashboard/workflow");
+    // Check for exact match or trailing slash
+    const isWorkflowPage = pathname === "/dashboard/workflow" || pathname === "/dashboard/workflow/";
 
     if (isWorkflowPage) {
         return <AgentSidebar />;
