@@ -136,7 +136,7 @@ def serialize_workflow(workflow: dict) -> dict:
         chat_history = []
     
     return {
-        "id": str(workflow["_id"]),
+        "id": str(workflow.get("_id")) if "_id" in workflow else workflow.get("id"),
         "name": workflow.get("name", "Untitled Workflow"),
         "nodes": nodes,
         "edges": edges,

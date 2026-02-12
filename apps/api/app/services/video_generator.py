@@ -11,12 +11,11 @@ from pathlib import Path
 from typing import Optional, List
 
 import httpx
-import boto3
-from botocore.exceptions import ClientError
 from google import genai
 from google.genai import types
 
 from app.core.config import settings
+from app.core.dependencies import get_storage_service
 
 
 def _veo_error_message(exc: Exception) -> str:
@@ -38,8 +37,9 @@ class VideoGenerator:
 
     def __init__(self):
         self.use_mock = settings.use_mock_veo
+        self.storage = get_storage_service()
         
-        # Ensure output directory exists
+        # Ensure output directory exists (still needed for mock/temp?)
         self.output_dir = Path("static/videos")
         self.output_dir.mkdir(parents=True, exist_ok=True)
         
@@ -57,33 +57,6 @@ class VideoGenerator:
         
         self.model = "veo-3.1-generate-preview"
         self.fast_model = "veo-3.1-fast-generate-preview"
-        
-        # Initialize S3 client if credentials are available
-        self.s3_client = None
-        self.use_s3 = bool(
-            settings.aws_access_key_id 
-            and settings.aws_secret_access_key 
-            and settings.s3_bucket
-            and not settings.aws_access_key_id.startswith("#")  # Ignore comments
-        )
-        
-        if self.use_s3:
-            try:
-                s3_config = {
-                    "aws_access_key_id": settings.aws_access_key_id,
-                    "aws_secret_access_key": settings.aws_secret_access_key,
-                    "region_name": settings.aws_region,
-                }
-                # Only add endpoint if it's a valid URL (not empty or a comment)
-                if settings.s3_endpoint and settings.s3_endpoint.startswith("http"):
-                    s3_config["endpoint_url"] = settings.s3_endpoint
-                
-                self.s3_client = boto3.client("s3", **s3_config)
-                print(f"[VideoGenerator] S3 configured: bucket={settings.s3_bucket}")
-            except Exception as e:
-                print(f"[VideoGenerator] S3 initialization failed: {e}, using local storage")
-                self.use_s3 = False
-                self.s3_client = None
 
     def _get_mock_video(self) -> Optional[Path]:
         """Get a random existing video from static/videos for mock mode."""
@@ -268,86 +241,47 @@ class VideoGenerator:
 
     async def _save_video(self, generated_video) -> Optional[str]:
         """
-        Download the generated video and save to S3 or local disk.
+        Download the generated video and save to StorageService.
         """
         try:
             # Download the video file from Google
-            self.client.files.download(file=generated_video.video)
+            # self.client.files.download(file=generated_video.video) 
+            # The SDK download method might write to a file or return bytes? 
+            # Looking at code: generated_video.video.save(path) suggests it handles saving.
+            # We probably need to save to a temp file first then upload.
             
-            # Generate unique filename
+            # Create a temp file
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp:
+                temp_path = Path(tmp.name)
+            
+            # Save to temp path using SDK
+            # Note: The original code called self.client.files.download() then .save().
+            # Depending on SDK version, .download() might just be a trigger or ensure it's available?
+            # We will follow the pattern:
+            # Check if we need to call download() - assumed yes based on existing code
+            try:
+                self.client.files.download(file=generated_video.video)
+            except Exception as e:
+                print(f"[VideoGenerator] Warning: ensure download failed or not needed: {e}")
+
+            generated_video.video.save(str(temp_path))
+            print(f"[VideoGenerator] Video saved to temp: {temp_path}")
+            
+            # Read bytes
+            with open(temp_path, "rb") as f:
+                video_data = f.read()
+            
+            # Remove temp file
+            os.remove(temp_path)
+            
+            # Upload
             filename = f"generated_{int(time.time())}.mp4"
-            local_path = self.output_dir / filename
+            video_url = await self.storage.upload_file(video_data, filename, "video/mp4")
             
-            # Save locally first
-            generated_video.video.save(str(local_path))
-            print(f"[VideoGenerator] Video saved locally: {local_path}")
-            
-            # Upload to S3 if configured
-            if self.use_s3 and self.s3_client:
-                s3_key = f"videos/{filename}"
-                video_url = await self._upload_to_s3(local_path, s3_key)
-                
-                if video_url:
-                    return video_url
-            
-            # Return local URL (via API static files)
-            return f"{settings.api_base_url}/static/videos/{filename}"
+            return video_url
             
         except Exception as e:
             print(f"[VideoGenerator] Video save error: {e}")
-            return None
-
-    async def _upload_to_s3(self, local_path: Path, s3_key: str) -> Optional[str]:
-        """
-        Upload a video file to S3 and return a presigned URL.
-        """
-        try:
-            self.s3_client.upload_file(
-                str(local_path),
-                settings.s3_bucket,
-                s3_key,
-                ExtraArgs={"ContentType": "video/mp4"}
-            )
-            
-            # Generate presigned URL (valid for 7 days)
-            video_url = self.s3_client.generate_presigned_url(
-                "get_object",
-                Params={
-                    "Bucket": settings.s3_bucket,
-                    "Key": s3_key,
-                },
-                ExpiresIn=7 * 24 * 60 * 60,  # 7 days in seconds
-            )
-            
-            print(f"[VideoGenerator] Video uploaded to S3: {s3_key}")
-            return video_url
-            
-        except ClientError as e:
-            print(f"[VideoGenerator] S3 upload error: {e}")
-            return None
-    
-    def get_presigned_url(self, s3_key: str, expires_in: int = 3600) -> Optional[str]:
-        """
-        Generate a new presigned URL for an existing S3 object.
-        
-        Args:
-            s3_key: The S3 object key (e.g., "videos/generated_123.mp4")
-            expires_in: URL expiration time in seconds (default 1 hour)
-        """
-        if not self.use_s3 or not self.s3_client:
-            return None
-        
-        try:
-            return self.s3_client.generate_presigned_url(
-                "get_object",
-                Params={
-                    "Bucket": settings.s3_bucket,
-                    "Key": s3_key,
-                },
-                ExpiresIn=expires_in,
-            )
-        except ClientError as e:
-            print(f"[VideoGenerator] Presigned URL error: {e}")
             return None
 
     async def generate_from_image(

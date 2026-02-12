@@ -14,15 +14,14 @@ from google.genai import types
 from app.core.config import settings
 
 
+from app.core.dependencies import get_storage_service
+
 class ImageGenerator:
     """Generates images using Imagen 4 / Nano Banana Pro for consistent scene visuals."""
 
     def __init__(self):
         self.use_mock = settings.use_mock_veo  # Use same mock flag for development
-        
-        # Ensure output directory exists
-        self.output_dir = Path("static/images")
-        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.storage = get_storage_service()
         
         if self.use_mock:
             print("[ImageGenerator] Running in MOCK mode - no API calls will be made")
@@ -40,9 +39,17 @@ class ImageGenerator:
 
     def _get_mock_image(self) -> Optional[Path]:
         """Get a random existing image from static/images for mock mode."""
-        images = list(self.output_dir.glob("*.png")) + list(self.output_dir.glob("*.jpg"))
-        if images:
-            return random.choice(images)
+        # This relies on local files existing. If using S3 only, this might fail.
+        # But mock mode implies local dev usually.
+        # We'll assume if mock mode is on, we might still have local static files or should use a placeholder URL.
+        try:
+            output_dir = Path("static/images")
+            if output_dir.exists():
+                images = list(output_dir.glob("*.png")) + list(output_dir.glob("*.jpg"))
+                if images:
+                    return random.choice(images)
+        except Exception:
+            pass
         return None
 
     async def _mock_generate(self, prompt: str) -> dict:
@@ -57,10 +64,24 @@ class ImageGenerator:
         mock_source = self._get_mock_image()
         
         if mock_source:
-            filename = f"generated_{int(time.time())}_{random.randint(1000, 9999)}.png"
-            # For mock, just return a placeholder URL pointing to a sample image
-            image_url = f"{settings.api_base_url}/static/images/{mock_source.name}"
-            print(f"[ImageGenerator] MOCK: Generated (using {mock_source.name}): {image_url}")
+             # If we want to simulate a "new" file on S3/Local, we should re-upload it?
+             # Or just return the local URL if we are in local mode?
+             # To be consistent with StorageService, let's try to "upload" a dummy file if we want a fresh URL.
+             # But for simplicity in mock, just returning a static URL is fine if it works.
+             # However, if using S3, localhost URL won't work if frontend is elsewhere (though MVP implies all local).
+             
+             # Let's just return the static URL for now similar to before, assuming local dev.
+             # Or better, upload it so it works with S3Storage too!
+             
+             try:
+                 with open(mock_source, "rb") as f:
+                     content = f.read()
+                 filename = f"generated_{int(time.time())}_{random.randint(1000, 9999)}.png"
+                 image_url = await self.storage.upload_file(content, filename, "image/png")
+                 print(f"[ImageGenerator] MOCK: Generated (uploaded mock): {image_url}")
+             except Exception as e:
+                 print(f"[ImageGenerator] Mock upload failed: {e}")
+                 image_url = f"{settings.api_base_url}/static/images/{mock_source.name}"
         else:
             # Use a placeholder image service for mock
             image_url = f"https://picsum.photos/seed/{int(time.time())}/1344/768"
@@ -217,15 +238,15 @@ class ImageGenerator:
             # Extract image from response
             for part in response.candidates[0].content.parts:
                 if hasattr(part, 'inline_data') and part.inline_data:
-                    # Save the image
+                    # Save the image using StorageService
                     filename = f"generated_{int(time.time())}_{random.randint(1000, 9999)}.png"
-                    image_path = self.output_dir / filename
                     
-                    # Save image data
-                    with open(image_path, "wb") as f:
-                        f.write(part.inline_data.data)
+                    image_url = await self.storage.upload_file(
+                        part.inline_data.data, 
+                        filename, 
+                        "image/png"
+                    )
                     
-                    image_url = f"{settings.api_base_url}/static/images/{filename}"
                     print(f"[ImageGenerator] Image saved: {image_url}")
                     
                     return {

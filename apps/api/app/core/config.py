@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     api_base_url: str = "http://localhost:8000"  # Public URL of the API
 
     # CORS (comma-separated string, use cors_origins_list property for list)
-    cors_origins: str = "http://localhost:3000"
+    cors_origins: str = "http://localhost:3000,https://app.kureita.com"
 
     @property
     def cors_origins_list(self) -> list[str]:
@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     elevenlabs_voice_id: str = "21m00Tcm4TlvDq8ikWAM"
 
     # AWS (S3, SES, and other AWS services)
+    storage_type: str = "local"  # "local" or "s3"
     aws_access_key_id: str = ""
     aws_secret_access_key: str = ""
     aws_region: str = "us-east-1"

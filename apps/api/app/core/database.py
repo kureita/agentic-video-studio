@@ -1,22 +1,54 @@
-from app.core.json_store import json_db
+from motor.motor_asyncio import AsyncIOMotorClient
+from app.core.config import settings
 
-# Mocking the async connection functions to keep main.py happy (or we can remove them)
+# Global MongoDB client
+db_client: AsyncIOMotorClient = None
+
 async def connect_to_mongo():
-    print("✓ Using local JSON file storage (data/*.json)")
+    """Connect to MongoDB."""
+    global db_client
+    try:
+        if settings.mongodb_url:
+            db_client = AsyncIOMotorClient(settings.mongodb_url)
+            # Verify connection
+            await db_client.admin.command('ping')
+            print("✓ Connected to MongoDB")
+        else:
+            print("⚠ MongoDB URL not found in settings")
+    except Exception as e:
+        print(f"✗ Failed to connect to MongoDB: {e}")
+        raise e
 
 async def close_mongo_connection():
-    pass
+    """Close MongoDB connection."""
+    global db_client
+    if db_client:
+        db_client.close()
+        print("✓ Closed MongoDB connection")
 
 def get_database():
-    return json_db
+    """Get the database instance."""
+    if db_client is None:
+        # Fallback for when connect_to_mongo hasn't been called (e.g. tests/scripts)
+        # In a real app, this should probably raise an error or auto-connect
+        return None
+        
+    return db_client[settings.mongodb_database]
 
 def get_projects_collection():
-    return json_db.projects
+    """Get the projects collection."""
+    db = get_database()
+    return db.projects
 
 def get_workflows_collection():
-    return json_db.workflows
+    """Get the workflows collection."""
+    db = get_database()
+    return db.workflows
 
 def get_generations_collection():
-    return json_db.generations
+    """Get the generations collection."""
+    db = get_database()
+    return db.generations
+
 
 

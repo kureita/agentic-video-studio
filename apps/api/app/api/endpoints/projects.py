@@ -21,7 +21,8 @@ router = APIRouter()
 
 def project_helper(project: dict) -> dict:
     """Convert MongoDB document to API response format."""
-    project["id"] = str(project.pop("_id"))
+    if "_id" in project:
+        project["id"] = str(project.pop("_id"))
     return project
 
 

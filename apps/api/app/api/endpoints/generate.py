@@ -9,7 +9,8 @@ from fastapi import APIRouter, HTTPException, BackgroundTasks
 
 from app.core.database import get_projects_collection
 from app.agents import BrandAnalyzer, Storyteller, ScriptWriter
-from app.services import WebScraper, VideoGenerator
+from app.services.scraper import WebScraper
+from app.services.video_generator import VideoGenerator
 from app.models.project import (
     ProjectStatus,
     VideoStyle,
@@ -200,7 +201,7 @@ async def generate_audio(request: GenerateAudioRequest):
             detail="ElevenLabs not configured. Veo 3.1 generates native audio."
         )
     
-    from app.services import AudioGenerator
+    from app.services.audio_generator import AudioGenerator
     generator = AudioGenerator()
     
     result = await generator.generate_voiceover(
@@ -222,7 +223,7 @@ async def list_voices():
     if not settings.elevenlabs_api_key:
         return {"voices": [], "message": "ElevenLabs not configured"}
     
-    from app.services import AudioGenerator
+    from app.services.audio_generator import AudioGenerator
     generator = AudioGenerator()
     voices = await generator.list_voices()
     return {"voices": voices}

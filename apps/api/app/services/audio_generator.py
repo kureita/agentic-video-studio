@@ -13,6 +13,9 @@ import httpx
 from app.core.config import settings
 
 
+from io import BytesIO
+from app.core.dependencies import get_storage_service
+
 class AudioGenerator:
     """Generates audio using ElevenLabs text-to-speech API."""
 
@@ -20,10 +23,7 @@ class AudioGenerator:
         # Check for dedicated audio mock flag first, fall back to general mock flag
         use_mock_audio = os.getenv("USE_MOCK_AUDIO", "").lower() == "true"
         self.use_mock = use_mock_audio or settings.use_mock_veo
-        
-        # Ensure output directory exists
-        self.output_dir = Path("static/audio")
-        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.storage = get_storage_service()
         
         if self.use_mock:
             print("[AudioGenerator] Running in MOCK mode - using gTTS for free text-to-speech")
@@ -57,9 +57,15 @@ class AudioGenerator:
 
     def _get_mock_audio(self) -> Optional[Path]:
         """Get a random existing audio from static/audio for mock mode."""
-        audios = list(self.output_dir.glob("*.mp3")) + list(self.output_dir.glob("*.wav"))
-        if audios:
-            return random.choice(audios)
+        # Check local static header
+        try:
+             output_dir = Path("static/audio")
+             if output_dir.exists():
+                 audios = list(output_dir.glob("*.mp3")) + list(output_dir.glob("*.wav"))
+                 if audios:
+                     return random.choice(audios)
+        except Exception:
+             pass
         return None
 
     async def _mock_generate(self, text: str, voice: str) -> dict:
@@ -70,17 +76,33 @@ class AudioGenerator:
         # Check if we have existing mock audio files to reuse
         mock_source = self._get_mock_audio()
         
-        # Only reuse if it's not a mock file (to avoid reusing old mock files)
+        # Only reuse if it's not a mock file (to avoid reusing old mock files) -- logic kept from orig
         if mock_source and not mock_source.name.startswith("mock_"):
-            audio_url = f"{settings.api_base_url}/static/audio/{mock_source.name}"
-            print(f"[AudioGenerator] MOCK: Reusing existing audio: {mock_source.name}")
-            return {
-                "success": True,
-                "audio_url": audio_url,
-                "text": text,
-                "voice": voice,
-                "mock": True,
-            }
+            # Upload existing mock file to storage service if needed?
+            # For simplicity, if we found a local file, try to upload it if using S3, or return its URL.
+            try:
+                with open(mock_source, "rb") as f:
+                     content = f.read()
+                filename = f"mock_reuse_{int(time.time())}.{mock_source.suffix.lstrip('.')}"
+                audio_url = await self.storage.upload_file(content, filename, "audio/mpeg")
+                print(f"[AudioGenerator] MOCK: Reusing existing audio (uploaded): {audio_url}")
+                return {
+                    "success": True,
+                    "audio_url": audio_url,
+                    "text": text,
+                    "voice": voice,
+                    "mock": True,
+                }
+            except Exception as e:
+                print(f"[AudioGenerator] Mock reuse upload failed: {e}")
+                audio_url = f"{settings.api_base_url}/static/audio/{mock_source.name}"
+                return {
+                    "success": True,
+                    "audio_url": audio_url,
+                    "text": text,
+                    "voice": voice,
+                    "mock": True,
+                }
         
         # Try to use gTTS for actual speech in mock mode (free, no API key needed)
         try:
@@ -88,7 +110,6 @@ class AudioGenerator:
             import asyncio
             
             filename = f"mock_speech_{int(time.time())}_{random.randint(1000, 9999)}.mp3"
-            audio_path = self.output_dir / filename
             
             print(f"[AudioGenerator] MOCK: Generating speech with gTTS...")
             
@@ -96,19 +117,21 @@ class AudioGenerator:
             def generate_gtts():
                 try:
                     tts = gTTS(text=text, lang='en', slow=False)
-                    tts.save(str(audio_path))
-                    return True
+                    fp = BytesIO()
+                    tts.write_to_fp(fp)
+                    fp.seek(0)
+                    return fp.read()
                 except Exception as e:
                     print(f"[AudioGenerator] MOCK: gTTS generation error: {e}")
-                    return False
+                    return None
             
             # Run in executor to avoid blocking the event loop
             loop = asyncio.get_event_loop()
-            success = await loop.run_in_executor(None, generate_gtts)
+            audio_bytes = await loop.run_in_executor(None, generate_gtts)
             
-            if success and audio_path.exists() and audio_path.stat().st_size > 0:
-                audio_url = f"{settings.api_base_url}/static/audio/{filename}"
-                print(f"[AudioGenerator] MOCK: Successfully created speech using gTTS ({audio_path.stat().st_size} bytes)")
+            if audio_bytes:
+                audio_url = await self.storage.upload_file(audio_bytes, filename, "audio/mpeg")
+                print(f"[AudioGenerator] MOCK: Successfully created speech using gTTS")
                 
                 return {
                     "success": True,
@@ -118,26 +141,25 @@ class AudioGenerator:
                     "mock": True,
                 }
             else:
-                print(f"[AudioGenerator] MOCK: gTTS file creation failed or empty")
-                raise Exception("gTTS file creation failed")
+                print(f"[AudioGenerator] MOCK: gTTS generation returned None")
+                raise Exception("gTTS generation failed")
                 
         except ImportError:
             print("[AudioGenerator] MOCK: gTTS not installed, falling back to silent audio")
-            print("[AudioGenerator] MOCK: Install gTTS with: pip install gtts")
         except Exception as e:
             print(f"[AudioGenerator] MOCK: Error with gTTS: {e}")
         
         # Fallback: create silent WAV file
         print("[AudioGenerator] MOCK: Creating silent WAV file as fallback")
         filename = f"mock_speech_{int(time.time())}_{random.randint(1000, 9999)}.wav"
-        audio_path = self.output_dir / filename
         
         # Generate a 2-second silent WAV file
         sample_rate = 44100  # 44.1 kHz
         duration = 2  # seconds
         num_samples = sample_rate * duration
         
-        with wave.open(str(audio_path), 'w') as wav_file:
+        wav_buffer = BytesIO()
+        with wave.open(wav_buffer, 'w') as wav_file:
             wav_file.setnchannels(1)
             wav_file.setsampwidth(2)
             wav_file.setframerate(sample_rate)
@@ -146,7 +168,8 @@ class AudioGenerator:
             for _ in range(num_samples):
                 wav_file.writeframes(struct.pack('<h', 0))
         
-        audio_url = f"{settings.api_base_url}/static/audio/{filename}"
+        wav_buffer.seek(0)
+        audio_url = await self.storage.upload_file(wav_buffer.read(), filename, "audio/wav")
         print(f"[AudioGenerator] MOCK: Created silent WAV file: {filename}")
         
         return {
@@ -213,15 +236,15 @@ class AudioGenerator:
                 response = await client.post(url, json=payload, headers=headers)
                 
                 if response.status_code == 200:
-                    # Save the audio
+                    # Save the audio using StorageService
                     filename = f"speech_{int(time.time())}_{random.randint(1000, 9999)}.mp3"
-                    audio_path = self.output_dir / filename
                     
-                    # Save audio data
-                    with open(audio_path, "wb") as f:
-                        f.write(response.content)
+                    audio_url = await self.storage.upload_file(
+                        response.content, 
+                        filename, 
+                        "audio/mpeg"
+                    )
                     
-                    audio_url = f"{settings.api_base_url}/static/audio/{filename}"
                     print(f"[AudioGenerator] Audio saved: {audio_url}")
                     
                     return {

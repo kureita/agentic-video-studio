@@ -1,0 +1,107 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  kureita-api
+  
+  Serverless FastAPI application using AWS Lambda Web Adapter.
+
+Globals:
+  Function:
+    Timeout: 600
+    MemorySize: 2048
+    Environment:
+      Variables:
+        # App Config
+        API_V1_STR: "api"
+        PROJECT_NAME: "Kureita API"
+        STORAGE_TYPE: "s3"
+        # Secrets (Set these in Lambda console or via parameters)
+        # MONGODB_URL: ""
+        # MONGODB_DATABASE: "kureita_mvp"
+        # GOOGLE_AI_KEY: ""
+        # ELEVENLABS_API_KEY: ""
+        # OPENAI_API_KEY: ""
+
+Resources:
+  KureitaApiFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      DockerTag: python3.11-v1
+      DockerContext: .
+      Dockerfile: Dockerfile
+    Properties:
+      PackageType: Image
+      Architectures:
+        - x86_64
+      Events:
+        HttpApi:
+          Type: HttpApi
+          Properties:
+            Path: /{proxy+}
+            Method: ANY
+      Environment:
+        Variables:
+          # Link to S3 Bucket
+          S3_BUCKET: !Ref KureitaAssetsBucket
+          AWS_ACCOUNT_ID: !Sub ${AWS::AccountId}
+      Policies:
+        - S3CrudPolicy:
+            BucketName: !Ref KureitaAssetsBucket
+
+  KureitaAssetsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub kureita-assets-${AWS::AccountId}-${AWS::Region}
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders:
+              - "*"
+            AllowedMethods:
+              - GET
+              - PUT
+              - POST
+              - DELETE
+              - HEAD
+            AllowedOrigins:
+              - "*"
+
+Parameters:
+  DomainName:
+    Type: String
+    Description: Custom domain for API (e.g. app-api.kureita.com)
+    Default: ""
+  CertificateArn:
+    Type: String
+    Description: ACM Certificate ARN for the domain (in us-east-1 for Edge, or region for Regional)
+    Default: ""
+
+Conditions:
+  HasCustomDomain: !Not [!Equals [!Ref DomainName, ""]]
+
+Resources:
+  # ... (Existing KureitaApiFunction) ...
+
+  ApiDomainName:
+    Type: AWS::ApiGatewayV2::DomainName
+    Condition: HasCustomDomain
+    Properties:
+      DomainName: !Ref DomainName
+      DomainNameConfigurations:
+        - CertificateArn: !Ref CertificateArn
+          EndpointType: REGIONAL
+
+  ApiMapping:
+    Type: AWS::ApiGatewayV2::ApiMapping
+    Condition: HasCustomDomain
+    Properties:
+      ApiId: !Ref ServerlessHttpApi
+      DomainName: !Ref ApiDomainName
+      Stage: !Ref ServerlessHttpApi.Prod
+
+Outputs:
+  # ... (Existing outputs) ...
+  CustomDomainUrl:
+    Condition: HasCustomDomain
+    Description: "Custom Domain URL"
+    Value: !Sub "https://${DomainName}/"
+
