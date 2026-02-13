@@ -90,7 +90,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
                     <div className="space-y-2">
                         <h2 className="text-xl font-semibold">Verify your email</h2>
                         <p className="text-sm text-muted-foreground">
-                            We've sent a verification link to{" "}
+                            We&apos;ve sent a verification link to{" "}
                             <span className="font-medium text-foreground">
                                 {user.email}
                             </span>
@@ -103,7 +103,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
                             onClick={() => loginWithRedirect()}
                             className="w-full px-4 py-2.5 text-sm font-medium rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors shadow-sm"
                         >
-                            I've Verified My Email
+                            I&apos;ve Verified My Email
                         </button>
                         <button
                             onClick={() =>
