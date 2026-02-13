@@ -50,5 +50,10 @@ def get_generations_collection():
     db = get_database()
     return db.generations
 
+def get_users_collection():
+    """Get the users collection."""
+    db = get_database()
+    return db.users
+
 
 

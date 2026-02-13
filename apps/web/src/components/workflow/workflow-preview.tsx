@@ -17,9 +17,9 @@ const NODE_COLORS: Record<string, string> = {
     comment: "#fbbf24",     // amber-400
 };
 
-const NODE_WIDTH = 120;
-const NODE_HEIGHT = 40;
-const PADDING = 30;
+const NODE_WIDTH = 100;
+const NODE_HEIGHT = 32;
+const PADDING = 24;
 
 interface WorkflowPreviewProps {
     nodes: WorkflowListItemNode[];
@@ -76,7 +76,7 @@ export function WorkflowPreview({ nodes, edges }: WorkflowPreviewProps) {
     if (nodes.length === 0) {
         return (
             <div className="absolute inset-0 flex items-center justify-center">
-                <p className="text-[11px] text-muted-foreground/60 font-medium">Empty workflow</p>
+                <p className="text-[10px] text-muted-foreground/40 font-medium tracking-wide">Empty</p>
             </div>
         );
     }
@@ -160,38 +160,38 @@ export function WorkflowPreview({ nodes, edges }: WorkflowPreviewProps) {
                             y={y}
                             width={NODE_WIDTH}
                             height={NODE_HEIGHT}
-                            rx={8}
+                            rx={6}
                             fill="rgba(30,30,40,0.85)"
                             stroke={color}
-                            strokeWidth="1.5"
-                            strokeOpacity="0.6"
+                            strokeWidth="1"
+                            strokeOpacity="0.5"
                         />
                         {/* Color accent bar */}
                         <rect
                             x={x}
                             y={y}
                             width={NODE_WIDTH}
-                            height={10}
-                            rx={8}
+                            height={7}
+                            rx={6}
                             fill={color}
-                            opacity={0.8}
+                            opacity={0.7}
                         />
                         {/* Bottom clip to make accent bar flat at bottom */}
                         <rect
                             x={x}
-                            y={y + 5}
+                            y={y + 4}
                             width={NODE_WIDTH}
-                            height={5}
+                            height={3}
                             fill={color}
-                            opacity={0.8}
+                            opacity={0.7}
                         />
                         {/* Type label */}
                         <text
                             x={x + NODE_WIDTH / 2}
-                            y={y + NODE_HEIGHT / 2 + 7}
+                            y={y + NODE_HEIGHT / 2 + 5}
                             textAnchor="middle"
-                            fill="rgba(255,255,255,0.7)"
-                            fontSize="10"
+                            fill="rgba(255,255,255,0.6)"
+                            fontSize="8"
                             fontFamily="Inter, system-ui, sans-serif"
                             fontWeight="500"
                         >
@@ -205,8 +205,8 @@ export function WorkflowPreview({ nodes, edges }: WorkflowPreviewProps) {
                                                         node.type}
                         </text>
                         {/* Connection dots */}
-                        <circle cx={x} cy={y + NODE_HEIGHT / 2} r={3} fill={color} opacity={0.7} />
-                        <circle cx={x + NODE_WIDTH} cy={y + NODE_HEIGHT / 2} r={3} fill={color} opacity={0.7} />
+                        <circle cx={x} cy={y + NODE_HEIGHT / 2} r={2.5} fill={color} opacity={0.6} />
+                        <circle cx={x + NODE_WIDTH} cy={y + NODE_HEIGHT / 2} r={2.5} fill={color} opacity={0.6} />
                     </g>
                 );
             })}

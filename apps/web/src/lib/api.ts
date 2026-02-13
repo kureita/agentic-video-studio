@@ -9,13 +9,30 @@ export const api = axios.create({
   },
 });
 
-// Request interceptor for auth tokens
+// ============================================
+// Auth0 Token Integration
+// ============================================
+
+// The AuthProvider sets this after mounting
+let authTokenGetter: (() => Promise<string>) | null = null;
+
+export function setAuthTokenGetter(getter: () => Promise<string>) {
+  authTokenGetter = getter;
+}
+
+// Request interceptor — attach Auth0 access token
 api.interceptors.request.use(
-  (config) => {
-    // Add auth token if available
-    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+  async (config) => {
+    if (authTokenGetter) {
+      try {
+        const token = await authTokenGetter();
+        if (token) {
+          config.headers.Authorization = `Bearer ${token}`;
+        }
+      } catch (err) {
+        // Token fetch failed — request will go through without auth
+        console.warn("Failed to get auth token:", err);
+      }
     }
     return config;
   },
@@ -26,13 +43,9 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    // Handle common errors
     if (error.response?.status === 401) {
-      // Handle unauthorized
-      if (typeof window !== "undefined") {
-        localStorage.removeItem("token");
-        window.location.href = "/login";
-      }
+      // Auth0 will handle re-authentication via the AuthGuard
+      console.warn("Unauthorized API request — user may need to re-authenticate");
     }
     return Promise.reject(error);
   }
@@ -114,22 +127,22 @@ export interface ProjectWithStages extends Project {
 }
 
 export const projectsApi = {
-  list: (status?: string) => 
+  list: (status?: string) =>
     api.get<Project[]>("/api/projects", { params: { status } }),
-  
-  get: (id: string) => 
+
+  get: (id: string) =>
     api.get<ProjectWithStages>(`/api/projects/${id}`),
-  
-  create: (data: CreateProjectData) => 
+
+  create: (data: CreateProjectData) =>
     api.post<Project>("/api/projects", data),
-  
-  update: (id: string, data: Partial<CreateProjectData>) => 
+
+  update: (id: string, data: Partial<CreateProjectData>) =>
     api.patch<Project>(`/api/projects/${id}`, data),
-  
-  delete: (id: string) => 
+
+  delete: (id: string) =>
     api.delete(`/api/projects/${id}`),
-  
-  start: (id: string) => 
+
+  start: (id: string) =>
     api.post(`/api/projects/${id}/start`),
 };
 
@@ -149,7 +162,7 @@ export interface ScrapeResponse {
 export const scrapeApi = {
   scrape: (url: string, brand_name?: string) =>
     api.post<ScrapeResponse>("/api/scrape", { url, brand_name }),
-  
+
   analyze: (url: string, brand_name?: string) =>
     api.post("/api/scrape/analyze", { url, brand_name }),
 };
@@ -161,20 +174,20 @@ export const scrapeApi = {
 export const generateApi = {
   story: (projectId: string) =>
     api.post("/api/generate/story", { project_id: projectId }),
-  
+
   video: (prompt: string, duration?: number, useFastModel?: boolean) =>
-    api.post("/api/generate/video", { 
-      prompt, 
+    api.post("/api/generate/video", {
+      prompt,
       duration: duration || 8,
       use_fast_model: useFastModel || false,
     }),
-  
+
   audio: (text: string, voiceId?: string) =>
     api.post("/api/generate/audio", { text, voice_id: voiceId }),
-  
+
   voices: () =>
     api.get("/api/generate/voices"),
-  
+
   assets: (projectId: string) =>
     api.post(`/api/generate/${projectId}/assets`),
 };

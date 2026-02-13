@@ -1,6 +1,5 @@
-"use client";
-
 import { memo, useState, useEffect } from "react";
+import Image from "next/image";
 import { NodeProps, Node } from "@xyflow/react";
 import { Image as ImageIcon, Sparkles, Loader2, RotateCcw, Check, Pencil, X, Wand2 } from "lucide-react";
 import {
@@ -13,6 +12,7 @@ import {
 import { Button, Textarea } from "@/components/ui";
 import { useCanvasStore, SceneData } from "@/lib/canvas-store";
 import { canvasApi } from "@/lib/api";
+import { toast } from "sonner";
 
 type ImageNodeData = {
   onProceed?: () => void;
@@ -108,6 +108,7 @@ export const ImageNode = memo(function ImageNode({ data }: NodeProps<Node<ImageN
       })));
     } catch (err) {
       console.error("Failed to improve prompts:", err);
+      toast.error("Failed to improve prompts with AI");
     } finally {
       setIsImproving(false);
     }
@@ -133,6 +134,7 @@ export const ImageNode = memo(function ImageNode({ data }: NodeProps<Node<ImageN
       });
 
       setNodeStatus("images", "success");
+      toast.success(`${scenes.length} images generated`);
       if (data?.onProceed) {
         data.onProceed();
       }
@@ -140,6 +142,7 @@ export const ImageNode = memo(function ImageNode({ data }: NodeProps<Node<ImageN
       console.error("Failed to generate images:", err);
       setNodeStatus("images", "error");
       setError("images", err instanceof Error ? err.message : "Failed to generate images");
+      toast.error("Failed to generate images");
     }
   };
 
@@ -160,6 +163,7 @@ export const ImageNode = memo(function ImageNode({ data }: NodeProps<Node<ImageN
       });
     } catch (err) {
       console.error("Failed to regenerate image:", err);
+      toast.error("Failed to regenerate image");
     } finally {
       setGeneratingScene(null);
     }
@@ -267,10 +271,12 @@ export const ImageNode = memo(function ImageNode({ data }: NodeProps<Node<ImageN
 
                   <div className="aspect-video rounded-lg overflow-hidden bg-background-secondary mb-2">
                     {scene.image_url ? (
-                      <img
+                      <Image
                         src={scene.image_url}
                         alt={`Scene ${scene.id}`}
-                        className="w-full h-full object-cover"
+                        fill
+                        className="object-cover"
+                        unoptimized
                       />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center">

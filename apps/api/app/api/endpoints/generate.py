@@ -5,9 +5,10 @@ from typing import Optional
 
 from bson import ObjectId
 from pydantic import BaseModel
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
 
 from app.core.database import get_projects_collection
+from app.core.auth import get_current_user
 from app.agents import BrandAnalyzer, Storyteller, ScriptWriter
 from app.services.scraper import WebScraper
 from app.services.video_generator import VideoGenerator
@@ -37,7 +38,11 @@ class GenerateAudioRequest(BaseModel):
 
 
 @router.post("/story")
-async def generate_story(request: GenerateStoryRequest, background_tasks: BackgroundTasks):
+async def generate_story(
+    request: GenerateStoryRequest, 
+    background_tasks: BackgroundTasks,
+    current_user: dict = Depends(get_current_user)
+):
     """
     Generate story and script for a project.
     
@@ -54,7 +59,11 @@ async def generate_story(request: GenerateStoryRequest, background_tasks: Backgr
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid project ID")
     
-    project = await collection.find_one({"_id": oid})
+    user_id = current_user.get("_id")
+    project = await collection.find_one({
+        "_id": oid,
+        "$or": [{"user_id": user_id}, {"user_id": {"$exists": False}}]
+    })
     
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -230,7 +239,11 @@ async def list_voices():
 
 
 @router.post("/{project_id}/assets")
-async def generate_project_assets(project_id: str, background_tasks: BackgroundTasks):
+async def generate_project_assets(
+    project_id: str, 
+    background_tasks: BackgroundTasks,
+    current_user: dict = Depends(get_current_user)
+):
     """
     Generate all video and audio assets for a project.
     
@@ -243,7 +256,11 @@ async def generate_project_assets(project_id: str, background_tasks: BackgroundT
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid project ID")
     
-    project = await collection.find_one({"_id": oid})
+    user_id = current_user.get("_id")
+    project = await collection.find_one({
+        "_id": oid,
+        "$or": [{"user_id": user_id}, {"user_id": {"$exists": False}}]
+    })
     
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")

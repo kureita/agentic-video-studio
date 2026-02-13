@@ -1,6 +1,7 @@
 "use client";
 
 import { memo, useState, useRef, useEffect, useCallback } from "react";
+import Image from "next/image";
 import { NodeProps, Node } from "@xyflow/react";
 import { Film, Sparkles, Loader2, RotateCcw, Check, Play, Pause, Volume2, VolumeX, Maximize } from "lucide-react";
 import {
@@ -13,6 +14,7 @@ import {
 import { Button } from "@/components/ui";
 import { useCanvasStore, SceneData } from "@/lib/canvas-store";
 import { canvasApi } from "@/lib/api";
+import { toast } from "sonner";
 
 type VideoNodeData = {
   onProceed?: () => void;
@@ -144,6 +146,7 @@ export const VideoNode = memo(function VideoNode({ data }: NodeProps<Node<VideoN
       });
 
       setNodeStatus("videos", "success");
+      toast.success(`${scenes.length} video clips generated`);
       if (data?.onProceed) {
         data.onProceed();
       }
@@ -151,6 +154,7 @@ export const VideoNode = memo(function VideoNode({ data }: NodeProps<Node<VideoN
       console.error("Failed to generate videos:", err);
       setNodeStatus("videos", "error");
       setError("videos", err instanceof Error ? err.message : "Failed to generate videos");
+      toast.error("Failed to generate videos");
     }
   };
 
@@ -170,6 +174,7 @@ export const VideoNode = memo(function VideoNode({ data }: NodeProps<Node<VideoN
       updateScene(sceneId, { video_url: response.data.video_url });
     } catch (err) {
       console.error("Failed to regenerate video:", err);
+      toast.error("Failed to regenerate video");
     } finally {
       setGeneratingScene(null);
     }
@@ -244,10 +249,12 @@ export const VideoNode = memo(function VideoNode({ data }: NodeProps<Node<VideoN
                       {/* Poster overlay when not playing */}
                       {!isThisPlaying && scene.image_url && (
                         <div className="absolute inset-0">
-                          <img
+                          <Image
                             src={scene.image_url}
                             alt=""
-                            className="w-full h-full object-cover"
+                            fill
+                            className="object-cover"
+                            unoptimized
                           />
                         </div>
                       )}
@@ -306,7 +313,7 @@ export const VideoNode = memo(function VideoNode({ data }: NodeProps<Node<VideoN
                     </>
                   ) : scene.image_url ? (
                     <div className="relative w-full h-full">
-                      <img src={scene.image_url} alt="" className="w-full h-full object-cover opacity-50" />
+                      <Image src={scene.image_url} alt="" fill className="object-cover opacity-50" unoptimized />
                       <div className="absolute inset-0 flex items-center justify-center">
                         <Film className="w-6 h-6 text-foreground-subtle" />
                       </div>

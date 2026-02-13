@@ -64,7 +64,12 @@ class Settings(BaseSettings):
 
     # Remotion rendering service
     remotion_url: str = "http://localhost:3001"  # Remotion render server
-    
+
+    # Auth0
+    auth0_domain: str = ""  # e.g. "yourapp.us.auth0.com"
+    auth0_audience: str = ""  # e.g. "https://api.kureita.com"
+    auth0_algorithms: str = "RS256"
+
     # Optional
     redis_url: str = "redis://localhost:6379"
     firecrawl_api_key: str = ""

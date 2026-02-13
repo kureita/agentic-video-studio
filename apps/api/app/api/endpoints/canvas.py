@@ -4,10 +4,11 @@ from datetime import datetime, timezone
 from typing import Optional, List
 
 from bson import ObjectId
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, HttpUrl
 
 from app.core.database import get_projects_collection
+from app.core.auth import get_current_user
 from app.models.project import ProjectStatus, VideoStyle, BrandProfile, Story, Scene
 from app.services.scraper import WebScraper
 from app.services.llm import get_llm
@@ -138,12 +139,19 @@ class ProjectLoadResponse(BaseModel):
 # ============================================
 
 @router.get("/{project_id}", response_model=ProjectLoadResponse)
-async def load_canvas_project(project_id: str):
+async def load_canvas_project(project_id: str, current_user: dict = Depends(get_current_user)):
     """Load an existing canvas project with all its data."""
     collection = get_projects_collection()
     
     try:
-        project = await collection.find_one({"_id": ObjectId(project_id)})
+        oid = ObjectId(project_id)
+        user_id = current_user.get("_id")
+        
+        project = await collection.find_one({
+            "_id": oid,
+            "$or": [{"user_id": user_id}, {"user_id": {"$exists": False}}]
+        })
+        
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
         
@@ -163,13 +171,24 @@ async def load_canvas_project(project_id: str):
 
 
 @router.put("/{project_id}/state", response_model=CanvasStateResponse)
-async def save_canvas_state(project_id: str, request: CanvasStateRequest):
+async def save_canvas_state(
+    project_id: str, 
+    request: CanvasStateRequest, 
+    current_user: dict = Depends(get_current_user)
+):
     """Save the canvas flow state (nodes and edges positions)."""
     collection = get_projects_collection()
     
     try:
+        oid = ObjectId(project_id)
+        user_id = current_user.get("_id")
+        query = {
+            "_id": oid,
+            "$or": [{"user_id": user_id}, {"user_id": {"$exists": False}}]
+        }
+        
         result = await collection.update_one(
-            {"_id": ObjectId(project_id)},
+            query,
             {"$set": {
                 "canvas_state": {
                     "nodes": request.nodes,
@@ -192,7 +211,7 @@ async def save_canvas_state(project_id: str, request: CanvasStateRequest):
 
 
 @router.post("", response_model=CanvasCreateResponse)
-async def create_canvas_project(request: CanvasCreateRequest):
+async def create_canvas_project(request: CanvasCreateRequest, current_user: dict = Depends(get_current_user)):
     """Create a new canvas project and analyze the website/brand."""
     collection = get_projects_collection()
     scraper = WebScraper()
@@ -204,6 +223,7 @@ async def create_canvas_project(request: CanvasCreateRequest):
             "website_url": str(request.website_url),
             "status": ProjectStatus.ANALYZING.value,
             "progress": 0,
+            "user_id": current_user.get("_id"),
             "created_at": datetime.now(timezone.utc),
             "updated_at": datetime.now(timezone.utc),
             "pipeline_type": "canvas",  # Mark as canvas pipeline
@@ -248,7 +268,11 @@ async def create_canvas_project(request: CanvasCreateRequest):
 
 
 @router.post("/{project_id}/story", response_model=StoryResponse)
-async def generate_story(project_id: str, request: StoryOptionsRequest):
+async def generate_story(
+    project_id: str, 
+    request: StoryOptionsRequest, 
+    current_user: dict = Depends(get_current_user)
+):
     """Generate story and script based on options."""
     collection = get_projects_collection()
     storyteller = Storyteller()
@@ -256,7 +280,13 @@ async def generate_story(project_id: str, request: StoryOptionsRequest):
     
     try:
         # Get project
-        project = await collection.find_one({"_id": ObjectId(project_id)})
+        oid = ObjectId(project_id)
+        user_id = current_user.get("_id")
+        project = await collection.find_one({
+            "_id": oid,
+            "$or": [{"user_id": user_id}, {"user_id": {"$exists": False}}]
+        })
+        
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
         
@@ -303,7 +333,7 @@ async def generate_story(project_id: str, request: StoryOptionsRequest):
         # Save to project
         scenes_data = [scene.model_dump() for scene in scenes]
         await collection.update_one(
-            {"_id": ObjectId(project_id)},
+            {"_id": oid},
             {"$set": {
                 "story": story.model_dump(),
                 "scenes": scenes_data,
@@ -328,14 +358,24 @@ async def generate_story(project_id: str, request: StoryOptionsRequest):
 
 
 @router.post("/{project_id}/story/improve", response_model=StoryResponse)
-async def improve_story(project_id: str, request: ImproveStoryRequest):
+async def improve_story(
+    project_id: str, 
+    request: ImproveStoryRequest, 
+    current_user: dict = Depends(get_current_user)
+):
     """Improve/edit story and script using LLM - enhances writing quality."""
     collection = get_projects_collection()
     llm = get_llm("openai")
     
     try:
         # Get project
-        project = await collection.find_one({"_id": ObjectId(project_id)})
+        oid = ObjectId(project_id)
+        user_id = current_user.get("_id")
+        project = await collection.find_one({
+            "_id": oid,
+            "$or": [{"user_id": user_id}, {"user_id": {"$exists": False}}]
+        })
+        
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
         
@@ -423,7 +463,7 @@ Enhance this content while keeping the same structure and timing. Make it more p
         
         # Update project with improved content
         await collection.update_one(
-            {"_id": ObjectId(project_id)},
+            {"_id": oid},
             {"$set": {
                 "story": story_data,
                 "scenes": scenes_data,
@@ -446,14 +486,24 @@ Enhance this content while keeping the same structure and timing. Make it more p
 
 
 @router.post("/{project_id}/images/improve", response_model=ImproveImagePromptsResponse)
-async def improve_image_prompts(project_id: str, request: ImproveImagePromptsRequest):
+async def improve_image_prompts(
+    project_id: str, 
+    request: ImproveImagePromptsRequest, 
+    current_user: dict = Depends(get_current_user)
+):
     """Improve image generation prompts using LLM for better visual output."""
     collection = get_projects_collection()
     llm = get_llm("openai")
     
     try:
         # Get project for context
-        project = await collection.find_one({"_id": ObjectId(project_id)})
+        oid = ObjectId(project_id)
+        user_id = current_user.get("_id")
+        project = await collection.find_one({
+            "_id": oid,
+            "$or": [{"user_id": user_id}, {"user_id": {"$exists": False}}]
+        })
+        
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
         
@@ -521,7 +571,7 @@ Enhance each prompt for better AI image generation. Keep scene IDs the same."""
                     break
         
         await collection.update_one(
-            {"_id": ObjectId(project_id)},
+            {"_id": oid},
             {"$set": {
                 "scenes": scenes,
                 "updated_at": datetime.now(timezone.utc),
@@ -542,14 +592,24 @@ Enhance each prompt for better AI image generation. Keep scene IDs the same."""
 
 
 @router.post("/{project_id}/images", response_model=ImageResponse)
-async def generate_images(project_id: str, request: ImageGenerateRequest):
+async def generate_images(
+    project_id: str, 
+    request: ImageGenerateRequest, 
+    current_user: dict = Depends(get_current_user)
+):
     """Generate images for all scenes."""
     collection = get_projects_collection()
     image_generator = ImageGenerator()
     
     try:
         # Get project
-        project = await collection.find_one({"_id": ObjectId(project_id)})
+        oid = ObjectId(project_id)
+        user_id = current_user.get("_id")
+        project = await collection.find_one({
+            "_id": oid,
+            "$or": [{"user_id": user_id}, {"user_id": {"$exists": False}}]
+        })
+        
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
         
@@ -568,7 +628,7 @@ async def generate_images(project_id: str, request: ImageGenerateRequest):
         
         # Update project
         await collection.update_one(
-            {"_id": ObjectId(project_id)},
+            {"_id": oid},
             {"$set": {
                 "scenes": updated_scenes,
                 "progress": 60,
@@ -588,14 +648,25 @@ async def generate_images(project_id: str, request: ImageGenerateRequest):
 
 
 @router.post("/{project_id}/images/{scene_id}", response_model=SingleImageResponse)
-async def regenerate_image(project_id: str, scene_id: int, request: ImageRegenerateRequest):
+async def regenerate_image(
+    project_id: str, 
+    scene_id: int, 
+    request: ImageRegenerateRequest, 
+    current_user: dict = Depends(get_current_user)
+):
     """Regenerate a single scene image."""
     collection = get_projects_collection()
     image_generator = ImageGenerator()
     
     try:
         # Get project
-        project = await collection.find_one({"_id": ObjectId(project_id)})
+        oid = ObjectId(project_id)
+        user_id = current_user.get("_id")
+        project = await collection.find_one({
+            "_id": oid,
+            "$or": [{"user_id": user_id}, {"user_id": {"$exists": False}}]
+        })
+        
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
         
@@ -627,7 +698,7 @@ async def regenerate_image(project_id: str, scene_id: int, request: ImageRegener
                 break
         
         await collection.update_one(
-            {"_id": ObjectId(project_id)},
+            {"_id": oid},
             {"$set": {
                 "scenes": scenes,
                 "updated_at": datetime.now(timezone.utc),
@@ -647,14 +718,20 @@ async def regenerate_image(project_id: str, scene_id: int, request: ImageRegener
 
 
 @router.post("/{project_id}/videos", response_model=VideoResponse)
-async def generate_videos(project_id: str):
+async def generate_videos(project_id: str, current_user: dict = Depends(get_current_user)):
     """Generate videos for all scenes using their images."""
     collection = get_projects_collection()
     video_generator = VideoGenerator()
     
     try:
         # Get project
-        project = await collection.find_one({"_id": ObjectId(project_id)})
+        oid = ObjectId(project_id)
+        user_id = current_user.get("_id")
+        project = await collection.find_one({
+            "_id": oid,
+            "$or": [{"user_id": user_id}, {"user_id": {"$exists": False}}]
+        })
+        
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
         
@@ -710,7 +787,7 @@ async def generate_videos(project_id: str):
         
         # Update project
         await collection.update_one(
-            {"_id": ObjectId(project_id)},
+            {"_id": oid},
             {"$set": {
                 "scenes": updated_scenes,
                 "status": ProjectStatus.COMPOSING.value,
@@ -731,14 +808,24 @@ async def generate_videos(project_id: str):
 
 
 @router.post("/{project_id}/videos/{scene_id}", response_model=SingleVideoResponse)
-async def regenerate_video(project_id: str, scene_id: int):
+async def regenerate_video(
+    project_id: str, 
+    scene_id: int, 
+    current_user: dict = Depends(get_current_user)
+):
     """Regenerate a single scene video."""
     collection = get_projects_collection()
     video_generator = VideoGenerator()
     
     try:
         # Get project
-        project = await collection.find_one({"_id": ObjectId(project_id)})
+        oid = ObjectId(project_id)
+        user_id = current_user.get("_id")
+        project = await collection.find_one({
+            "_id": oid,
+            "$or": [{"user_id": user_id}, {"user_id": {"$exists": False}}]
+        })
+        
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
         
@@ -775,7 +862,7 @@ async def regenerate_video(project_id: str, scene_id: int):
                 break
         
         await collection.update_one(
-            {"_id": ObjectId(project_id)},
+            {"_id": oid},
             {"$set": {
                 "scenes": scenes,
                 "updated_at": datetime.now(timezone.utc),
@@ -792,14 +879,24 @@ async def regenerate_video(project_id: str, scene_id: int):
 
 
 @router.post("/{project_id}/compose", response_model=ComposeResponse)
-async def compose_video(project_id: str, request: ComposeRequest):
+async def compose_video(
+    project_id: str, 
+    request: ComposeRequest, 
+    current_user: dict = Depends(get_current_user)
+):
     """Compose all video clips using Remotion."""
     collection = get_projects_collection()
     video_composer = VideoComposer()
     
     try:
         # Get project
-        project = await collection.find_one({"_id": ObjectId(project_id)})
+        oid = ObjectId(project_id)
+        user_id = current_user.get("_id")
+        project = await collection.find_one({
+            "_id": oid,
+            "$or": [{"user_id": user_id}, {"user_id": {"$exists": False}}]
+        })
+        
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
         
@@ -830,7 +927,7 @@ async def compose_video(project_id: str, request: ComposeRequest):
         
         # Update project
         await collection.update_one(
-            {"_id": ObjectId(project_id)},
+            {"_id": oid},
             {"$set": {
                 "composition_url": preview_url,
                 "composition_settings": request.model_dump(),
@@ -851,13 +948,23 @@ async def compose_video(project_id: str, request: ComposeRequest):
 
 
 @router.post("/{project_id}/render", response_model=RenderResponse)
-async def render_final_video(project_id: str, request: RenderRequest):
+async def render_final_video(
+    project_id: str, 
+    request: RenderRequest, 
+    current_user: dict = Depends(get_current_user)
+):
     """Render the final high-quality video."""
     collection = get_projects_collection()
     
     try:
         # Get project
-        project = await collection.find_one({"_id": ObjectId(project_id)})
+        oid = ObjectId(project_id)
+        user_id = current_user.get("_id")
+        project = await collection.find_one({
+            "_id": oid,
+            "$or": [{"user_id": user_id}, {"user_id": {"$exists": False}}]
+        })
+        
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
         
@@ -877,7 +984,7 @@ async def render_final_video(project_id: str, request: RenderRequest):
         
         # Update project
         await collection.update_one(
-            {"_id": ObjectId(project_id)},
+            {"_id": oid},
             {"$set": {
                 "video_url": composition_url,
                 "render_settings": request.model_dump(),

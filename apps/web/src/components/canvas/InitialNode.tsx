@@ -13,6 +13,7 @@ import {
 import { Button, Input } from "@/components/ui";
 import { useCanvasStore } from "@/lib/canvas-store";
 import { canvasApi } from "@/lib/api";
+import { toast } from "sonner";
 
 type InitialNodeData = {
   onProceed?: () => void;
@@ -49,6 +50,7 @@ export const InitialNode = memo(function InitialNode({ data }: NodeProps<Node<In
       setProjectId(project_id);
       setBrandData(brand_profile);
       setNodeStatus("brand", "success");
+      toast.success("Brand analysis complete");
 
       // Proceed to next node
       if (data?.onProceed) {
@@ -58,6 +60,7 @@ export const InitialNode = memo(function InitialNode({ data }: NodeProps<Node<In
       console.error("Failed to analyze website:", err);
       setNodeStatus("brand", "error");
       setError("brand", err instanceof Error ? err.message : "Failed to analyze website");
+      toast.error("Failed to analyze website");
     }
   };
 

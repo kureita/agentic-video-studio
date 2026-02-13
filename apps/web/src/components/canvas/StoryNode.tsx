@@ -14,13 +14,12 @@ import { Button, Textarea } from "@/components/ui";
 import {
   useCanvasStore,
   visualStyleOptions,
-  themeOptions,
-  directionOptions,
   durationOptions,
   storyTemplates,
   SceneData,
 } from "@/lib/canvas-store";
 import { canvasApi } from "@/lib/api";
+import { toast } from "sonner";
 
 type StoryNodeData = {
   onProceed?: () => void;
@@ -78,6 +77,7 @@ export const StoryNode = memo(function StoryNode({ data }: NodeProps<Node<StoryN
       setStoryData(story);
       setScenes(newScenes);
       setNodeStatus("story", "success");
+      toast.success("Story & script generated");
 
       if (data?.onProceed) {
         data.onProceed();
@@ -86,6 +86,7 @@ export const StoryNode = memo(function StoryNode({ data }: NodeProps<Node<StoryN
       console.error("Failed to generate story:", err);
       setNodeStatus("story", "error");
       setError("story", err instanceof Error ? err.message : "Failed to generate story");
+      toast.error("Failed to generate story");
     }
   };
 
@@ -135,6 +136,7 @@ export const StoryNode = memo(function StoryNode({ data }: NodeProps<Node<StoryN
 
     } catch (err) {
       console.error("Failed to improve with AI:", err);
+      toast.error("Failed to improve story with AI");
     } finally {
       setIsImproving(false);
     }
