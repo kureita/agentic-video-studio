@@ -304,7 +304,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
             });
             set({ isSaving: false, isDirty: false });
             console.log("[WorkflowStore] Saved successfully");
-            toast.success("Workflow saved");
+
         } catch (error) {
             console.error("[WorkflowStore] Save error:", error);
             set({ isSaving: false, error: "Failed to save workflow" });
