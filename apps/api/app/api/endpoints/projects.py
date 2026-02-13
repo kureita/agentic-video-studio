@@ -3,9 +3,10 @@ from typing import List
 from uuid import uuid4
 
 from bson import ObjectId
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
 
 from app.core.database import get_projects_collection
+from app.core.auth import get_current_user
 from app.models.project import (
     Project,
     ProjectCreate,
@@ -31,11 +32,13 @@ async def list_projects(
     status: ProjectStatus | None = None,
     limit: int = 50,
     skip: int = 0,
+    current_user: dict = Depends(get_current_user),
 ):
-    """List all projects with optional filtering."""
+    """List all projects for the current user."""
     collection = get_projects_collection()
     
-    query = {}
+    user_id = current_user.get("_id")
+    query: dict = {"$or": [{"user_id": user_id}, {"user_id": {"$exists": False}}]}
     if status:
         query["status"] = status.value
     
@@ -46,14 +49,21 @@ async def list_projects(
 
 
 @router.get("/{project_id}", response_model=ProjectWithStages)
-async def get_project(project_id: str):
+async def get_project(project_id: str, current_user: dict = Depends(get_current_user)):
     """Get a project by ID with generation stages."""
     collection = get_projects_collection()
     
     try:
-        project = await collection.find_one({"_id": ObjectId(project_id)})
+        oid = ObjectId(project_id)
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid project ID format")
+    
+    user_id = current_user.get("_id")
+    # Allow legacy projects (no user_id) or owned projects
+    project = await collection.find_one({
+        "_id": oid,
+        "$or": [{"user_id": user_id}, {"user_id": {"$exists": False}}]
+    })
     
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -67,7 +77,7 @@ async def get_project(project_id: str):
 
 
 @router.post("", response_model=Project)
-async def create_project(data: ProjectCreate):
+async def create_project(data: ProjectCreate, current_user: dict = Depends(get_current_user)):
     """Create a new project."""
     collection = get_projects_collection()
     now = datetime.now(timezone.utc)
@@ -81,6 +91,7 @@ async def create_project(data: ProjectCreate):
         "style": data.style.value,
         "status": ProjectStatus.DRAFT.value,
         "progress": 0,
+        "user_id": current_user.get("_id"),
         "brand_profile": None,
         "story": None,
         "scenes": [],
@@ -97,7 +108,11 @@ async def create_project(data: ProjectCreate):
 
 
 @router.patch("/{project_id}", response_model=Project)
-async def update_project(project_id: str, data: ProjectUpdate):
+async def update_project(
+    project_id: str, 
+    data: ProjectUpdate,
+    current_user: dict = Depends(get_current_user)
+):
     """Update a project (only changed fields)."""
     collection = get_projects_collection()
     
@@ -118,8 +133,14 @@ async def update_project(project_id: str, data: ProjectUpdate):
     
     update_data["updated_at"] = datetime.now(timezone.utc)
     
+    user_id = current_user.get("_id")
+    query = {
+        "_id": oid,
+        "$or": [{"user_id": user_id}, {"user_id": {"$exists": False}}]
+    }
+
     result = await collection.find_one_and_update(
-        {"_id": oid},
+        query,
         {"$set": update_data},
         return_document=True,
     )
@@ -131,7 +152,7 @@ async def update_project(project_id: str, data: ProjectUpdate):
 
 
 @router.delete("/{project_id}")
-async def delete_project(project_id: str):
+async def delete_project(project_id: str, current_user: dict = Depends(get_current_user)):
     """Delete a project."""
     collection = get_projects_collection()
     
@@ -140,7 +161,13 @@ async def delete_project(project_id: str):
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid project ID format")
     
-    result = await collection.delete_one({"_id": oid})
+    user_id = current_user.get("_id")
+    query = {
+        "_id": oid,
+        "$or": [{"user_id": user_id}, {"user_id": {"$exists": False}}]
+    }
+    
+    result = await collection.delete_one(query)
     
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -149,7 +176,11 @@ async def delete_project(project_id: str):
 
 
 @router.post("/{project_id}/start")
-async def start_generation(project_id: str, background_tasks: BackgroundTasks):
+async def start_generation(
+    project_id: str, 
+    background_tasks: BackgroundTasks,
+    current_user: dict = Depends(get_current_user)
+):
     """Start the video generation pipeline."""
     collection = get_projects_collection()
     
@@ -158,7 +189,13 @@ async def start_generation(project_id: str, background_tasks: BackgroundTasks):
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid project ID format")
     
-    project = await collection.find_one({"_id": oid})
+    user_id = current_user.get("_id")
+    query = {
+        "_id": oid,
+        "$or": [{"user_id": user_id}, {"user_id": {"$exists": False}}]
+    }
+
+    project = await collection.find_one(query)
     
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")

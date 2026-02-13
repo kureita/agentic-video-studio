@@ -1,4 +1,5 @@
 import { memo, useRef, useEffect } from "react";
+import NextImage from "next/image";
 import { NodeProps, useReactFlow } from "@xyflow/react";
 import { Upload, Image as ImageIcon, Video, Music } from "lucide-react";
 import { NodeWrapper } from "@/components/workflow/node-wrapper";
@@ -165,10 +166,12 @@ export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
                                 />
                             </div>
                         ) : (
-                            <img
+                            <NextImage
                                 src={output as string}
                                 alt="Uploaded media"
-                                className="w-full h-full object-contain"
+                                fill
+                                className="object-contain"
+                                unoptimized
                             />
                         )}
 

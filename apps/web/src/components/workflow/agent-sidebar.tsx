@@ -9,7 +9,6 @@ import {
     X,
     Check,
     Copy,
-    RotateCcw,
     Wrench,
     Brain,
     AtSign,
@@ -24,11 +23,13 @@ import {
     Music,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import Image from "next/image";
 import { useWorkflowStore } from "@/lib/workflow-store";
 import { ChatMessage, ToolCall } from "@/lib/workflow-api";
 import { api } from "@/lib/api";
 import { motion, AnimatePresence } from "framer-motion";
 import { MarkdownContent, HighlightedReferences } from "@/components/workflow/markdown-content";
+import { toast } from "sonner";
 
 // ============================================
 // Thinking Block Component
@@ -263,7 +264,7 @@ function ChatMessageItem({ message }: { message: ChatMessage }) {
                                 {attachments.map((att, idx) => (
                                     <div key={idx} className="rounded-lg overflow-hidden border border-primary-foreground/20 max-w-[120px]">
                                         {att.type.startsWith("image") && (
-                                            <img src={att.url} alt={att.filename} className="w-full h-auto object-cover" />
+                                            <Image src={att.url} alt={att.filename} width={200} height={200} className="w-full h-auto object-cover" unoptimized />
                                         )}
                                         {att.type.startsWith("video") && (
                                             <video src={att.url} className="w-full h-auto" controls />
@@ -475,7 +476,7 @@ function CursorInput({
                                     >
                                         {att.type.startsWith("image") ? (
                                             <div className="relative h-14 w-14 rounded-lg overflow-hidden border border-border/40 bg-muted/40">
-                                                <img src={att.url} alt={att.filename} className="h-full w-full object-cover" />
+                                                <Image src={att.url} alt={att.filename} fill className="object-cover" unoptimized />
                                                 <button
                                                     onClick={() => onRemoveAttachment(idx)}
                                                     className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center opacity-0 group-hover/att:opacity-100 transition-opacity cursor-pointer shadow-sm"
@@ -657,6 +658,40 @@ export function AgentSidebar() {
     const [pendingAttachments, setPendingAttachments] = useState<Attachment[]>([]);
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
+    // Resizable sidebar state
+    const [sidebarWidth, setSidebarWidth] = useState(420);
+    const [isResizing, setIsResizing] = useState(false);
+    const sidebarRef = useRef<HTMLDivElement>(null);
+
+    const MIN_WIDTH = 280;
+    const MAX_WIDTH = 600;
+
+    // Handle resize drag
+    useEffect(() => {
+        if (!isResizing) return;
+
+        const handleMouseMove = (e: MouseEvent) => {
+            const newWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, e.clientX));
+            setSidebarWidth(newWidth);
+        };
+
+        const handleMouseUp = () => {
+            setIsResizing(false);
+        };
+
+        document.addEventListener("mousemove", handleMouseMove);
+        document.addEventListener("mouseup", handleMouseUp);
+        document.body.style.cursor = "col-resize";
+        document.body.style.userSelect = "none";
+
+        return () => {
+            document.removeEventListener("mousemove", handleMouseMove);
+            document.removeEventListener("mouseup", handleMouseUp);
+            document.body.style.cursor = "";
+            document.body.style.userSelect = "";
+        };
+    }, [isResizing]);
+
     // Auto-scroll to bottom when messages change
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -683,6 +718,7 @@ export function AgentSidebar() {
             }
         } catch (error) {
             console.error("Upload error:", error);
+            toast.error("Failed to upload file");
         } finally {
             setIsUploading(false);
             e.target.value = "";
@@ -754,6 +790,7 @@ export function AgentSidebar() {
             }
         } catch (error) {
             console.error("Agent error:", error);
+            toast.error("AI service error. Please try again.");
             addChatMessage({
                 role: "assistant",
                 content: "Sorry, something went wrong with the AI service.",
@@ -764,11 +801,15 @@ export function AgentSidebar() {
     };
 
     return (
-        <div className="w-[420px] border-r h-screen bg-card flex flex-col shadow-xl z-20 shrink-0 sticky top-0">
+        <div
+            ref={sidebarRef}
+            className="border-r h-screen bg-card flex flex-col shadow-xl z-20 shrink-0 sticky top-0 relative"
+            style={{ width: `${sidebarWidth}px` }}
+        >
             {/* Header */}
             <div className="px-4 py-3 flex items-center gap-2.5 z-10 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.1)]">
                 <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-violet-500/20 to-blue-500/20 flex items-center justify-center">
-                    <img src="/kureita_logo.png" alt="Kureita" className="w-6 h-6" />
+                    <Image src="/kureita_logo.png" alt="Kureita" width={24} height={24} className="w-6 h-6" unoptimized />
                 </div>
                 <div className="flex-1">
                     <h2 className="font-semibold text-sm">Kureita</h2>
@@ -802,6 +843,32 @@ export function AgentSidebar() {
                 onFileUpload={handleFileUpload}
                 isUploading={isUploading}
             />
+
+            {/* Resize Handle */}
+            <div
+                className={cn(
+                    "absolute top-0 right-0 w-1 h-full cursor-col-resize z-30 group",
+                    "hover:bg-primary/30 active:bg-primary/50 transition-colors duration-150",
+                    isResizing && "bg-primary/50"
+                )}
+                onMouseDown={(e) => {
+                    e.preventDefault();
+                    setIsResizing(true);
+                }}
+            >
+                {/* Visual indicator line */}
+                <div className={cn(
+                    "absolute top-1/2 -translate-y-1/2 right-0 w-[3px] h-8 rounded-full transition-opacity duration-150",
+                    "bg-muted-foreground/20 group-hover:bg-primary/40",
+                    isResizing ? "opacity-100 bg-primary/60" : "opacity-0 group-hover:opacity-100"
+                )} />
+            </div>
+
+            {/* Overlay to prevent iframe/canvas interference during resize */}
+            {isResizing && (
+                <div className="fixed inset-0 z-20 cursor-col-resize" />
+            )}
         </div>
     );
 }
+

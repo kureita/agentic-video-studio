@@ -1,18 +1,41 @@
-import { SidebarSwitcher } from "@/components/sidebar-switcher";
+"use client";
+
+import { usePathname } from "next/navigation";
+import { DashboardHeader } from "@/components/dashboard-header";
+import { AgentSidebar } from "@/components/workflow/agent-sidebar";
+import { AuthGuard } from "@/components/auth/auth-guard";
 
 export default function DashboardLayout({
     children,
 }: {
     children: React.ReactNode;
 }) {
-    return (
-        <div className="flex min-h-screen bg-background text-foreground">
-            <SidebarSwitcher />
-            <main className="flex-1 overflow-auto">
-                <div className="container h-full py-6 px-4 md:px-8 max-w-7xl mx-auto">
-                    {children}
+    const pathname = usePathname();
+    const isWorkflowPage = pathname === "/dashboard/workflow" || pathname === "/dashboard/workflow/";
+
+    if (isWorkflowPage) {
+        return (
+            <AuthGuard>
+                <div className="flex min-h-screen bg-background text-foreground">
+                    <AgentSidebar />
+                    <main className="flex-1 overflow-auto">
+                        {children}
+                    </main>
                 </div>
-            </main>
-        </div>
+            </AuthGuard>
+        );
+    }
+
+    return (
+        <AuthGuard>
+            <div className="flex flex-col min-h-screen bg-background text-foreground">
+                <DashboardHeader />
+                <main className="flex-1 overflow-auto">
+                    <div className="h-full py-5 px-4 md:px-6">
+                        {children}
+                    </div>
+                </main>
+            </div>
+        </AuthGuard>
     );
 }

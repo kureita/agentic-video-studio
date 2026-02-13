@@ -13,6 +13,7 @@ import {
 import { Button } from "@/components/ui";
 import { useCanvasStore } from "@/lib/canvas-store";
 import { canvasApi } from "@/lib/api";
+import { toast } from "sonner";
 
 type RenderNodeData = Record<string, unknown>;
 
@@ -50,10 +51,12 @@ export const RenderNode = memo(function RenderNode({ }: NodeProps<Node<RenderNod
       const response = await canvasApi.render(projectId, { resolution });
       setFinalVideoUrl(response.data.video_url);
       setNodeStatus("render", "success");
+      toast.success("Video rendered successfully!");
     } catch (err) {
       console.error("Failed to render video:", err);
       setNodeStatus("render", "error");
       setError("render", err instanceof Error ? err.message : "Failed to render video");
+      toast.error("Failed to render video");
     }
   };
 

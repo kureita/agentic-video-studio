@@ -27,6 +27,8 @@ dependencies = [
     # Audio
     "elevenlabs>=1.10.0",
     "gtts>=2.5.0",  # Google Text-to-Speech for mock mode
+    # Auth
+    "python-jose[cryptography]>=3.3.0",
     # Utils
     "boto3>=1.35.0",
     "pillow>=10.4.0",

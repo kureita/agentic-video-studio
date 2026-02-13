@@ -8,6 +8,7 @@ import { WorkflowPreview } from "@/components/workflow/workflow-preview";
 import { Button } from "@/components/ui/button";
 import { workflowApi, WorkflowListItem } from "@/lib/workflow-api";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 export default function DashboardPage() {
     const router = useRouter();
@@ -32,6 +33,7 @@ export default function DashboardPage() {
         } catch (err) {
             console.error("Failed to load workflows:", err);
             setError("Failed to load workflows");
+            toast.error("Failed to load workflows");
         } finally {
             setIsLoading(false);
         }
@@ -44,7 +46,7 @@ export default function DashboardPage() {
             router.push(`/dashboard/workflow?id=${newWorkflow.id}`);
         } catch (err) {
             console.error("Failed to create workflow:", err);
-            setError("Failed to create workflow");
+            toast.error("Failed to create workflow");
         }
     }, [router]);
 
@@ -58,8 +60,10 @@ export default function DashboardPage() {
             setWorkflows((prev) =>
                 prev.map((w) => (w.id === id ? { ...w, name: editingName.trim() } : w))
             );
+            toast.success("Workflow renamed");
         } catch (err) {
             console.error("Failed to rename workflow:", err);
+            toast.error("Failed to rename workflow");
         }
         setEditingId(null);
         setMenuOpenId(null);
@@ -70,8 +74,10 @@ export default function DashboardPage() {
         try {
             await workflowApi.delete(id);
             setWorkflows((prev) => prev.filter((w) => w.id !== id));
+            toast.success("Workflow deleted");
         } catch (err) {
             console.error("Failed to delete workflow:", err);
+            toast.error("Failed to delete workflow");
         }
         setMenuOpenId(null);
     }, []);
@@ -91,54 +97,59 @@ export default function DashboardPage() {
         const diffDays = Math.floor(diffHours / 24);
 
         if (diffMins < 1) return "Just now";
-        if (diffMins < 60) return `${diffMins} min ago`;
-        if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? "s" : ""} ago`;
-        if (diffDays < 7) return `${diffDays} day${diffDays > 1 ? "s" : ""} ago`;
+        if (diffMins < 60) return `${diffMins}m ago`;
+        if (diffHours < 24) return `${diffHours}h ago`;
+        if (diffDays < 7) return `${diffDays}d ago`;
         return date.toLocaleDateString();
     };
 
     return (
-        <div className="space-y-8 animate-fade-in">
-            <div className="flex items-center justify-between">
+        <div className="space-y-5 animate-fade-in">
+            {/* Header */}
+            <div className="flex items-end justify-between">
                 <div>
-                    <h1 className="text-3xl font-bold tracking-tight">Workflows</h1>
-                    <p className="text-muted-foreground mt-2">
-                        Manage your creative automation pipelines.
+                    <h1 className="text-xl font-semibold tracking-tight">Workflows</h1>
+                    <p className="text-[13px] text-muted-foreground/80 mt-0.5">
+                        Manage your creative automation pipelines
                     </p>
                 </div>
-                <Button onClick={createNewWorkflow} size="lg" className="shadow-lg shadow-primary/20">
-                    <Plus className="mr-2 h-4 w-4" />
+                <Button
+                    onClick={createNewWorkflow}
+                    size="sm"
+                    className="h-8 px-3 text-[13px] font-medium shadow-sm"
+                >
+                    <Plus className="mr-1.5 h-3.5 w-3.5" />
                     New Workflow
                 </Button>
             </div>
 
             {error && (
-                <div className="bg-destructive/10 text-destructive px-4 py-3 rounded-lg">
+                <div className="bg-destructive/10 text-destructive text-[13px] px-3 py-2 rounded-md">
                     {error}
                 </div>
             )}
 
             {isLoading ? (
-                <div className="flex items-center justify-center py-16">
-                    <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+                <div className="flex items-center justify-center py-12">
+                    <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
                 </div>
             ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
                     {workflows.map((workflow) => (
                         <div key={workflow.id} className="group relative">
                             <Link
                                 href={{ pathname: '/dashboard/workflow', query: { id: workflow.id } }}
                                 className="block"
                             >
-                                <div className="relative aspect-video rounded-lg border border-border bg-card overflow-hidden transition-all hover:border-accent hover:shadow-md">
-                                    <div className="absolute inset-0 bg-[hsl(230,15%,10%)]">
+                                <div className="relative aspect-[4/3] rounded-lg border border-border/60 bg-card overflow-hidden transition-all duration-200 hover:border-border hover:shadow-sm hover:shadow-primary/5">
+                                    <div className="absolute inset-0 bg-[hsl(230,15%,8%)]">
                                         <WorkflowPreview nodes={workflow.nodes} edges={workflow.edges} />
                                     </div>
 
                                     {/* Node count badge */}
                                     {workflow.node_count > 0 && (
-                                        <div className="absolute bottom-2 left-2 px-2 py-1 bg-background/80 backdrop-blur-sm rounded text-xs text-muted-foreground">
-                                            {workflow.node_count} nodes
+                                        <div className="absolute bottom-1.5 left-1.5 px-1.5 py-0.5 bg-background/70 backdrop-blur-sm rounded text-[10px] text-muted-foreground/80 font-medium">
+                                            {workflow.node_count} {workflow.node_count === 1 ? "node" : "nodes"}
                                         </div>
                                     )}
                                 </div>
@@ -146,46 +157,46 @@ export default function DashboardPage() {
 
                             {/* Overlay Actions */}
                             <div className={cn(
-                                "absolute top-2 right-2 transition-opacity",
+                                "absolute top-1.5 right-1.5 transition-opacity duration-150",
                                 menuOpenId === workflow.id ? "opacity-100" : "opacity-0 group-hover:opacity-100"
                             )}>
                                 <div className="relative">
                                     <Button
                                         variant="ghost"
                                         size="icon"
-                                        className="h-8 w-8 bg-background/50 hover:bg-background"
+                                        className="h-6 w-6 bg-background/60 backdrop-blur-sm hover:bg-background/90 rounded-md"
                                         onClick={(e) => {
                                             e.preventDefault();
                                             e.stopPropagation();
                                             setMenuOpenId(menuOpenId === workflow.id ? null : workflow.id);
                                         }}
                                     >
-                                        <MoreHorizontal className="w-4 h-4" />
+                                        <MoreHorizontal className="w-3.5 h-3.5" />
                                     </Button>
 
                                     {/* Dropdown Menu */}
                                     {menuOpenId === workflow.id && (
-                                        <div className="absolute right-0 top-full mt-1 w-36 bg-popover border border-border rounded-md shadow-lg py-1 z-50">
+                                        <div className="absolute right-0 top-full mt-1 w-32 bg-popover border border-border/60 rounded-md shadow-lg shadow-black/20 py-0.5 z-50">
                                             <button
-                                                className="w-full px-3 py-1.5 text-left text-sm hover:bg-muted flex items-center gap-2"
+                                                className="w-full px-2.5 py-1.5 text-left text-[13px] hover:bg-muted/80 flex items-center gap-2 transition-colors"
                                                 onClick={(e) => {
                                                     e.preventDefault();
                                                     e.stopPropagation();
                                                     startEditing(workflow);
                                                 }}
                                             >
-                                                <Pencil className="w-3.5 h-3.5" />
+                                                <Pencil className="w-3 h-3" />
                                                 Rename
                                             </button>
                                             <button
-                                                className="w-full px-3 py-1.5 text-left text-sm text-destructive hover:bg-destructive/10 flex items-center gap-2"
+                                                className="w-full px-2.5 py-1.5 text-left text-[13px] text-destructive hover:bg-destructive/10 flex items-center gap-2 transition-colors"
                                                 onClick={(e) => {
                                                     e.preventDefault();
                                                     e.stopPropagation();
                                                     handleDelete(workflow.id);
                                                 }}
                                             >
-                                                <Trash2 className="w-3.5 h-3.5" />
+                                                <Trash2 className="w-3 h-3" />
                                                 Delete
                                             </button>
                                         </div>
@@ -193,7 +204,7 @@ export default function DashboardPage() {
                                 </div>
                             </div>
 
-                            <div className="mt-3">
+                            <div className="mt-2 px-0.5">
                                 {editingId === workflow.id ? (
                                     <input
                                         type="text"
@@ -205,16 +216,16 @@ export default function DashboardPage() {
                                             if (e.key === "Escape") setEditingId(null);
                                         }}
                                         autoFocus
-                                        className="font-medium bg-transparent border-b border-primary outline-none w-full"
+                                        className="text-[13px] font-medium bg-transparent border-b border-primary outline-none w-full"
                                     />
                                 ) : (
-                                    <h3 className="font-medium truncate group-hover:text-primary transition-colors">
+                                    <h3 className="text-[13px] font-medium truncate group-hover:text-foreground transition-colors text-foreground/90">
                                         {workflow.name}
                                     </h3>
                                 )}
-                                <div className="flex items-center text-xs text-muted-foreground mt-1">
-                                    <Clock className="w-3 h-3 mr-1" />
-                                    <span>Edited {formatDate(workflow.updated_at)}</span>
+                                <div className="flex items-center text-[11px] text-muted-foreground/60 mt-0.5">
+                                    <Clock className="w-2.5 h-2.5 mr-1" />
+                                    <span>{formatDate(workflow.updated_at)}</span>
                                 </div>
                             </div>
                         </div>
@@ -223,12 +234,12 @@ export default function DashboardPage() {
                     {/* Create New Placeholder Card */}
                     <button
                         onClick={createNewWorkflow}
-                        className="group relative aspect-video rounded-lg border border-dashed border-border bg-transparent hover:border-accent/50 hover:bg-accent/5 transition-all flex flex-col items-center justify-center gap-2 text-muted-foreground hover:text-accent"
+                        className="group/create relative aspect-[4/3] rounded-lg border border-dashed border-border/40 bg-transparent hover:border-border/70 hover:bg-muted/5 transition-all duration-200 flex flex-col items-center justify-center gap-1.5 text-muted-foreground/50 hover:text-muted-foreground/80"
                     >
-                        <div className="w-12 h-12 rounded-full border border-current flex items-center justify-center mb-2">
-                            <Plus className="w-6 h-6" />
+                        <div className="w-8 h-8 rounded-full border border-current/30 flex items-center justify-center transition-colors">
+                            <Plus className="w-4 h-4" />
                         </div>
-                        <span className="font-medium text-sm">Create new workflow</span>
+                        <span className="text-[12px] font-medium">New workflow</span>
                     </button>
                 </div>
             )}

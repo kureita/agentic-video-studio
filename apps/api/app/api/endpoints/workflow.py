@@ -4,10 +4,11 @@ from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 
 from bson import ObjectId
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
 from app.core.database import get_database
+from app.core.auth import get_current_user
 from app.services.node_runner import NodeRunner
 
 router = APIRouter()
@@ -152,13 +153,14 @@ def serialize_workflow(workflow: dict) -> dict:
 # ============================================
 
 @router.post("", response_model=WorkflowResponse)
-async def create_workflow(request: CreateWorkflowRequest):
+async def create_workflow(request: CreateWorkflowRequest, current_user: dict = Depends(get_current_user)):
     """Create a new workflow."""
     collection = get_workflows_collection()
     
     now = datetime.now(timezone.utc)
     workflow_data = {
         "name": request.name or "Untitled Workflow",
+        "user_id": current_user.get("_id"),
         "nodes": [],
         "edges": [],
         "outputs": {},
@@ -176,11 +178,14 @@ async def create_workflow(request: CreateWorkflowRequest):
 
 
 @router.get("", response_model=List[WorkflowListItem])
-async def list_workflows():
-    """List all workflows."""
+async def list_workflows(current_user: dict = Depends(get_current_user)):
+    """List all workflows for the current user."""
     collection = get_workflows_collection()
     
-    cursor = collection.find({}).sort("updated_at", -1)
+    # Show user's own workflows + legacy workflows without user_id
+    user_id = current_user.get("_id")
+    query = {"$or": [{"user_id": user_id}, {"user_id": {"$exists": False}}]}
+    cursor = collection.find(query).sort("updated_at", -1)
     workflows = await cursor.to_list(length=100)
     
     return [
@@ -203,15 +208,20 @@ async def list_workflows():
 
 
 @router.get("/{workflow_id}", response_model=WorkflowResponse)
-async def get_workflow(workflow_id: str):
+async def get_workflow(workflow_id: str, current_user: dict = Depends(get_current_user)):
     """Get a workflow by ID."""
     collection = get_workflows_collection()
     
     try:
-        workflow = await collection.find_one({"_id": ObjectId(workflow_id)})
-    except Exception as e:
-        print(f"[Workflow] Invalid workflow ID: {workflow_id}, error: {e}")
+        oid = ObjectId(workflow_id)
+    except Exception:
         raise HTTPException(status_code=400, detail="Invalid workflow ID")
+    
+    user_id = current_user.get("_id")
+    workflow = await collection.find_one({
+        "_id": oid,
+        "$or": [{"user_id": user_id}, {"user_id": {"$exists": False}}]
+    })
     
     if not workflow:
         print(f"[Workflow] Workflow not found: {workflow_id}")
@@ -224,7 +234,11 @@ async def get_workflow(workflow_id: str):
 
 
 @router.put("/{workflow_id}", response_model=WorkflowResponse)
-async def update_workflow(workflow_id: str, request: UpdateWorkflowRequest):
+async def update_workflow(
+    workflow_id: str, 
+    request: UpdateWorkflowRequest,
+    current_user: dict = Depends(get_current_user)
+):
     """Update a workflow (name, nodes, edges)."""
     collection = get_workflows_collection()
     
@@ -245,8 +259,14 @@ async def update_workflow(workflow_id: str, request: UpdateWorkflowRequest):
     if request.chat_history is not None:
         update_data["chat_history"] = [msg.model_dump() for msg in request.chat_history]
     
+    user_id = current_user.get("_id")
+    query = {
+        "_id": oid,
+        "$or": [{"user_id": user_id}, {"user_id": {"$exists": False}}]
+    }
+    
     result = await collection.update_one(
-        {"_id": oid},
+        query,
         {"$set": update_data}
     )
     
@@ -262,7 +282,7 @@ async def update_workflow(workflow_id: str, request: UpdateWorkflowRequest):
 
 
 @router.delete("/{workflow_id}")
-async def delete_workflow(workflow_id: str):
+async def delete_workflow(workflow_id: str, current_user: dict = Depends(get_current_user)):
     """Delete a workflow."""
     collection = get_workflows_collection()
     
@@ -271,7 +291,13 @@ async def delete_workflow(workflow_id: str):
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid workflow ID")
     
-    result = await collection.delete_one({"_id": oid})
+    user_id = current_user.get("_id")
+    query = {
+        "_id": oid,
+        "$or": [{"user_id": user_id}, {"user_id": {"$exists": False}}]
+    }
+    
+    result = await collection.delete_one(query)
     
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Workflow not found")
@@ -286,7 +312,12 @@ async def delete_workflow(workflow_id: str):
 # ============================================
 
 @router.post("/{workflow_id}/nodes/{node_id}/run", response_model=RunNodeResponse)
-async def run_node(workflow_id: str, node_id: str, request: RunNodeRequest = None):
+async def run_node(
+    workflow_id: str, 
+    node_id: str, 
+    request: RunNodeRequest = None,
+    current_user: dict = Depends(get_current_user)
+):
     """Run a single node in a workflow."""
     collection = get_workflows_collection()
     
@@ -295,7 +326,12 @@ async def run_node(workflow_id: str, node_id: str, request: RunNodeRequest = Non
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid workflow ID")
     
-    workflow = await collection.find_one({"_id": oid})
+    user_id = current_user.get("_id")
+    workflow = await collection.find_one({
+        "_id": oid,
+        "$or": [{"user_id": user_id}, {"user_id": {"$exists": False}}]
+    })
+    
     if not workflow:
         raise HTTPException(status_code=404, detail="Workflow not found")
     
@@ -346,7 +382,7 @@ async def run_node(workflow_id: str, node_id: str, request: RunNodeRequest = Non
 
 
 @router.post("/{workflow_id}/run", response_model=RunWorkflowResponse)
-async def run_workflow(workflow_id: str):
+async def run_workflow(workflow_id: str, current_user: dict = Depends(get_current_user)):
     """Run the entire workflow by executing nodes in topological order."""
     collection = get_workflows_collection()
     
@@ -355,7 +391,12 @@ async def run_workflow(workflow_id: str):
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid workflow ID")
     
-    workflow = await collection.find_one({"_id": oid})
+    user_id = current_user.get("_id")
+    workflow = await collection.find_one({
+        "_id": oid,
+        "$or": [{"user_id": user_id}, {"user_id": {"$exists": False}}]
+    })
+    
     if not workflow:
         raise HTTPException(status_code=404, detail="Workflow not found")
     

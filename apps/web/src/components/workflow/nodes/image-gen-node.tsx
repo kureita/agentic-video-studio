@@ -1,4 +1,5 @@
 import React, { memo } from "react";
+import Image from "next/image";
 import { NodeProps, useReactFlow } from "@xyflow/react";
 import { Image as ImageIcon, Minus, Plus, ChevronDown, Square, Loader2, Download } from "lucide-react";
 import { NodeWrapper } from "@/components/workflow/node-wrapper";
@@ -153,10 +154,12 @@ export const ImageGenNode = memo(({ id, selected, data }: NodeProps) => {
                 {/* 1. Background Image (Output) */}
                 {output && !isRunning && (
                     <>
-                        <img
+                        <Image
                             src={output}
                             alt="Generated"
                             className="absolute inset-0 w-full h-full object-cover z-0 transition-transform duration-700 group-hover/image:scale-105"
+                            fill
+                            unoptimized
                             onLoad={(e) => {
                                 const img = e.currentTarget;
                                 const w = img.naturalWidth;

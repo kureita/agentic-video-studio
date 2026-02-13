@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { cn } from "@/lib/utils";
+import { AuthProvider } from "@/components/auth/auth-provider";
+import { Toaster } from "sonner";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -12,6 +14,9 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "Kureita — Visual Workflow Editor",
   description: "Create, control, and connect your creative workflows with Kureita.",
+  icons: {
+    icon: "/kureita_logo.ico",
+  },
 };
 
 export default function RootLayout({
@@ -25,9 +30,20 @@ export default function RootLayout({
         "min-h-screen bg-background font-sans antialiased",
         inter.variable
       )}>
-        {children}
+        <AuthProvider>
+          {children}
+        </AuthProvider>
+        <Toaster
+          theme="dark"
+          position="bottom-right"
+          richColors
+          toastOptions={{
+            style: {
+              fontFamily: 'var(--font-inter)',
+            },
+          }}
+        />
       </body>
     </html>
   );
 }
-

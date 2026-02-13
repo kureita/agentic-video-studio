@@ -13,6 +13,7 @@ import {
 import { Button } from "@/components/ui";
 import { useCanvasStore } from "@/lib/canvas-store";
 import { canvasApi } from "@/lib/api";
+import { toast } from "sonner";
 
 type CompositionNodeData = {
   onProceed?: () => void;
@@ -28,8 +29,6 @@ export const CompositionNode = memo(function CompositionNode({ data }: NodeProps
   const {
     projectId,
     scenes,
-    brandData,
-    storyData,
     nodeStatuses,
     setNodeStatus,
     setError,
@@ -62,6 +61,7 @@ export const CompositionNode = memo(function CompositionNode({ data }: NodeProps
 
       setCompositionUrl(response.data.preview_url);
       setNodeStatus("composition", "success");
+      toast.success("Video composed successfully");
       if (data?.onProceed) {
         data.onProceed();
       }
@@ -69,6 +69,7 @@ export const CompositionNode = memo(function CompositionNode({ data }: NodeProps
       console.error("Failed to compose video:", err);
       setNodeStatus("composition", "error");
       setError("composition", err instanceof Error ? err.message : "Failed to compose video");
+      toast.error("Failed to compose video");
     }
   };
 
@@ -124,8 +125,8 @@ export const CompositionNode = memo(function CompositionNode({ data }: NodeProps
                     key={opt.id}
                     onClick={() => setTransition(opt.id)}
                     className={`flex-1 p-2 rounded-lg border text-xs transition-colors nodrag ${transition === opt.id
-                        ? "border-foreground bg-background-secondary"
-                        : "border-border"
+                      ? "border-foreground bg-background-secondary"
+                      : "border-border"
                       }`}
                   >
                     {opt.label}

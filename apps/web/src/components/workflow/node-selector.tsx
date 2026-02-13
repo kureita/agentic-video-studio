@@ -1,7 +1,6 @@
 "use client";
 
 import {
-    Search,
     Type,
     Image as ImageIcon,
     Video,
@@ -10,14 +9,13 @@ import {
     Upload,
     Music
 } from "lucide-react";
-import { Input } from "@/components/ui/input";
 
 interface NodeSelectorProps {
     onSelect: (type: string) => void;
     onClose: () => void;
 }
 
-export function NodeSelector({ onSelect, onClose }: NodeSelectorProps) {
+export function NodeSelector({ onSelect }: NodeSelectorProps) {
     const NODE_TYPES = [
         { id: "text", label: "Text", icon: <Type className="w-4 h-4 text-emerald-500" /> },
         { id: "imageGen", label: "Image Generator", icon: <ImageIcon className="w-4 h-4 text-blue-500" /> },

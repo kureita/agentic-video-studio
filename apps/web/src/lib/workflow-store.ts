@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { Node, Edge } from "@xyflow/react";
 import { workflowApi, Workflow, ChatMessage, WorkflowNode, WorkflowEdge } from "./workflow-api";
+import { toast } from "sonner";
 
 // ============================================
 // Types
@@ -221,6 +222,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
         } catch (error) {
             console.error("[WorkflowStore] Create error:", error);
             set({ isLoading: false, error: "Failed to create workflow" });
+            toast.error("Failed to create workflow");
             return null;
         }
     },
@@ -269,6 +271,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
         } catch (error) {
             console.error("[WorkflowStore] Load error:", error);
             set({ isLoading: false, error: "Failed to load workflow" });
+            toast.error("Failed to load workflow");
             throw error; // Re-throw to allow caller to handle
         }
     },
@@ -301,9 +304,11 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
             });
             set({ isSaving: false, isDirty: false });
             console.log("[WorkflowStore] Saved successfully");
+            toast.success("Workflow saved");
         } catch (error) {
             console.error("[WorkflowStore] Save error:", error);
             set({ isSaving: false, error: "Failed to save workflow" });
+            toast.error("Failed to save workflow");
         }
     },
 
@@ -332,10 +337,14 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
             if (!result.success && result.errors.length > 0) {
                 console.error("[WorkflowStore] Run errors:", result.errors);
                 set({ error: `Errors in ${result.errors.length} node(s)` });
+                toast.error(`Workflow completed with errors in ${result.errors.length} node(s)`);
+            } else {
+                toast.success("Workflow run completed");
             }
         } catch (error) {
             console.error("[WorkflowStore] Run error:", error);
             set({ isRunning: false, error: "Failed to run workflow" });
+            toast.error("Failed to run workflow");
         }
     },
 
@@ -432,6 +441,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
             } catch (error) {
                 console.error("[WorkflowStore] Run node error:", error);
                 set({ runningNodeId: null, error: "Failed to run node" });
+                toast.error("Failed to run node");
                 return false;
             }
         };

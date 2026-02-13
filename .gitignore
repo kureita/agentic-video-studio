@@ -52,3 +52,5 @@ apps/remotion/output
 apps/api/static/images/*
 apps/api/static/videos/*
 apps/api/static/audios/*.aws-sam/
+
+scripts/deploy-api.sh
