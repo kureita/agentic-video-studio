@@ -12,6 +12,7 @@ class GenerateFlowRequest(BaseModel):
     current_nodes: Optional[List[Dict[str, Any]]] = []
     current_edges: Optional[List[Dict[str, Any]]] = []
     chat_history: Optional[List[Dict[str, Any]]] = []
+    model: Optional[str] = "gemini-3-flash-preview"
 
 class ToolCall(BaseModel):
     name: str
@@ -37,7 +38,8 @@ async def generate_flow(request: GenerateFlowRequest):
         prompt=request.prompt,
         current_nodes=request.current_nodes,
         current_edges=request.current_edges,
-        chat_history=request.chat_history
+        chat_history=request.chat_history,
+        model=request.model
     )
     
     return result

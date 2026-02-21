@@ -361,6 +361,8 @@ function CursorInput({
     onRemoveAttachment,
     onFileUpload,
     isUploading,
+    selectedModel,
+    onModelChange,
 }: {
     value: string;
     onChange: (val: string) => void;
@@ -370,10 +372,14 @@ function CursorInput({
     onRemoveAttachment: (index: number) => void;
     onFileUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
     isUploading: boolean;
+    selectedModel: string;
+    onModelChange: (model: string) => void;
 }) {
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const [showContextMenu, setShowContextMenu] = useState(false);
+    const [showModelMenu, setShowModelMenu] = useState(false);
     const contextMenuRef = useRef<HTMLDivElement>(null);
+    const modelMenuRef = useRef<HTMLDivElement>(null);
     const nodes = useWorkflowStore((state) => state.nodes);
 
     // Auto-resize textarea
@@ -386,18 +392,21 @@ function CursorInput({
         }
     }, [value]);
 
-    // Close context menu when clicking outside
+    // Close menus when clicking outside
     useEffect(() => {
         const handleClickOutside = (e: MouseEvent) => {
             if (contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) {
                 setShowContextMenu(false);
             }
+            if (modelMenuRef.current && !modelMenuRef.current.contains(e.target as Node)) {
+                setShowModelMenu(false);
+            }
         };
-        if (showContextMenu) {
+        if (showContextMenu || showModelMenu) {
             document.addEventListener('mousedown', handleClickOutside);
             return () => document.removeEventListener('mousedown', handleClickOutside);
         }
-    }, [showContextMenu]);
+    }, [showContextMenu, showModelMenu]);
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
         if (e.key === "Enter" && !e.shiftKey) {
@@ -597,9 +606,49 @@ function CursorInput({
                     {/* Right side */}
                     <div className="flex items-center gap-1.5">
                         {/* Model selector */}
-                        <div className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] text-muted-foreground/50">
-                            <Cpu className="w-3 h-3 text-violet-400/50" />
-                            <span>gemini-2.5-flash</span>
+                        <div className="relative" ref={modelMenuRef}>
+                            <button
+                                onClick={() => setShowModelMenu(!showModelMenu)}
+                                className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] text-muted-foreground/70 hover:bg-muted/60 hover:text-muted-foreground transition-colors cursor-pointer"
+                                disabled={isLoading}
+                            >
+                                <Cpu className="w-3 h-3 text-violet-400/70" />
+                                <span>{selectedModel}</span>
+                                <ChevronDown className="w-2.5 h-2.5 opacity-50" />
+                            </button>
+
+                            <AnimatePresence>
+                                {showModelMenu && (
+                                    <motion.div
+                                        initial={{ opacity: 0, y: 4, scale: 0.96 }}
+                                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                                        exit={{ opacity: 0, y: 4, scale: 0.96 }}
+                                        transition={{ duration: 0.12 }}
+                                        className="absolute bottom-full right-0 mb-2 w-36 bg-popover text-popover-foreground rounded-lg border shadow-xl overflow-hidden z-50"
+                                    >
+                                        <div className="p-1">
+                                            {["gemini-3-pro-preview", "gemini-3-flash-preview"].map((model) => (
+                                                <button
+                                                    key={model}
+                                                    onClick={() => {
+                                                        onModelChange(model);
+                                                        setShowModelMenu(false);
+                                                    }}
+                                                    className={cn(
+                                                        "w-full text-left px-2.5 py-1.5 text-xs rounded-md cursor-pointer flex items-center justify-between transition-colors",
+                                                        selectedModel === model
+                                                            ? "bg-violet-500/10 text-violet-600"
+                                                            : "hover:bg-accent hover:text-accent-foreground text-muted-foreground"
+                                                    )}
+                                                >
+                                                    <span>{model}</span>
+                                                    {selectedModel === model && <Check className="w-3 h-3" />}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
                         </div>
 
                         {/* Attachment button */}
@@ -654,6 +703,7 @@ export function AgentSidebar() {
     const [input, setInput] = useState("");
     const [isLoading, setIsLoading] = useState(false);
     const [isUploading, setIsUploading] = useState(false);
+    const [selectedModel, setSelectedModel] = useState("gemini-3-flash-preview");
     const [pendingAttachments, setPendingAttachments] = useState<Attachment[]>([]);
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -727,6 +777,7 @@ export function AgentSidebar() {
                 current_nodes: nodes,
                 current_edges: edges,
                 chat_history: chatHistory,
+                model: selectedModel,
             });
 
             const result = response.data;
@@ -801,6 +852,8 @@ export function AgentSidebar() {
                 onRemoveAttachment={handleRemoveAttachment}
                 onFileUpload={handleFileUpload}
                 isUploading={isUploading}
+                selectedModel={selectedModel}
+                onModelChange={setSelectedModel}
             />
         </div>
     );

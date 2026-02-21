@@ -20,7 +20,7 @@ class AgentService:
             os.environ["GEMINI_API_KEY"] = self.api_key
             self.client = genai.Client()
             
-    async def generate_workflow(self, prompt: str, current_nodes: List[Dict] = [], current_edges: List[Dict] = [], chat_history: List[Dict] = []) -> Dict[str, Any]:
+    async def generate_workflow(self, prompt: str, current_nodes: List[Dict] = [], current_edges: List[Dict] = [], chat_history: List[Dict] = [], model: str = "gemini-3-flash-preview") -> Dict[str, Any]:
         """
         Generate a workflow based on a user prompt.
         """
@@ -191,7 +191,7 @@ This thinking field should describe:
             start_time = time.time()
             
             response = self.client.models.generate_content(
-                model='gemini-2.5-flash',
+                model=model,
                 contents=start_prompt,
                 config=types.GenerateContentConfig(
                     response_mime_type='application/json'

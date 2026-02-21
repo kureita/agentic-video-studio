@@ -357,6 +357,7 @@ class NodeRunner:
         end_image = inputs.get("end_image")
         reference_images = inputs.get("reference_images")
         reference_video = inputs.get("reference_video")
+        audio_input = inputs.get("audio")
         
         # Build prompt
         if not prompt and not start_image and not reference_images and not reference_video:
@@ -416,6 +417,7 @@ class NodeRunner:
                     first_frame_path=start_image,
                     last_frame_path=end_image,
                     duration=duration,
+                    model_name=model_str,
                 )
             
             # Case 2: Start image only (image-to-video)
@@ -427,6 +429,8 @@ class NodeRunner:
                     duration=duration,
                     resolution=resolution,
                     aspect_ratio=ratio,
+                    model_name=model_str,
+                    audio_url=audio_input,
                 )
             
             # Case 3: Reference images (style/asset reference)
@@ -439,6 +443,7 @@ class NodeRunner:
                     reference_images=ref_list,
                     duration=duration,
                     aspect_ratio=ratio,
+                    model_name=model_str,
                 )
             
             # Case 4: Reference video (extend or use as reference)
@@ -460,6 +465,8 @@ class NodeRunner:
                     use_fast_model=use_fast_model,  # Use Veo 3.1 Fast by default
                     resolution=resolution,
                     aspect_ratio=ratio,
+                    model_name=model_str,
+                    audio_url=audio_input,
                 )
             
             if result.get("success"):

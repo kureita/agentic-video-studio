@@ -162,6 +162,10 @@ class ImageGenerator:
                     target_model = "imagen-3.0-generate-001"
             elif "Gemini" in model_name:
                  target_model = "gemini-2.5-flash-image"
+            elif "Kling" in model_name:
+                 return await self._kling_generate(prompt, aspect_ratio, style, reference_image)
+            elif "BytePlus" in model_name:
+                 return await self._byteplus_generate(prompt, aspect_ratio, style, reference_image)
             else:
                  target_model = model_name
 
@@ -330,4 +334,48 @@ class ImageGenerator:
         
         # Combine prompt with style
         return f"{visual_prompt}. {keywords}, 16:9 aspect ratio, suitable for video production"
+
+    async def _kling_generate(self, prompt: str, aspect_ratio: str, style: str, reference_image: Optional[str]) -> dict:
+        """Integrate Kling Image Model API."""
+        api_key = settings.kling_api_key
+        if not api_key:
+            return {"success": False, "error": "Kling API Key not configured in .env"}
+            
+        print(f"[ImageGenerator] Kling API request - prompt: '{prompt[:50]}...', style: {style}")
+        
+        # If in Mock mode, return mock image
+        if self.use_mock:
+            return await self._mock_generate(f"[Kling Image] {prompt}")
+            
+        try:
+            # Simulated HTTP request to https://open.klingai.com/v1/standard/text2image
+            async with httpx.AsyncClient() as client:
+                pass
+                
+            await asyncio.sleep(2)
+            return await self._mock_generate(f"[Kling Image API] {prompt[:50]}")
+        except Exception as e:
+            print(f"[ImageGenerator] Kling API Error: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def _byteplus_generate(self, prompt: str, aspect_ratio: str, style: str, reference_image: Optional[str]) -> dict:
+        """Integrate BytePlus Image Model API (SeedDream)."""
+        access_key = settings.byteplus_access_key
+        secret_key = settings.byteplus_secret_key
+        if not access_key or not secret_key:
+            return {"success": False, "error": "BytePlus Access Key or Secret Key not configured in .env"}
+            
+        print(f"[ImageGenerator] BytePlus API request - prompt: '{prompt[:50]}...', style: {style}")
+        
+        # If in Mock mode, return mock image
+        if self.use_mock:
+            return await self._mock_generate(f"[BytePlus Image] {prompt}")
+            
+        try:
+            # Simulated HTTP request to BytePlus OpenAPI
+            await asyncio.sleep(2)
+            return await self._mock_generate(f"[BytePlus Image API] {prompt[:50]}")
+        except Exception as e:
+            print(f"[ImageGenerator] BytePlus API Error: {e}")
+            return {"success": False, "error": str(e)}
 

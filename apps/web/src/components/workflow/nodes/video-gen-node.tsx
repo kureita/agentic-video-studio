@@ -6,6 +6,16 @@ import { HighlightedTextarea } from "@/components/workflow/nodes/highlighted-tex
 
 import { useWorkflowStore } from "@/lib/workflow-store";
 
+const MODEL_CONFIGS: Record<string, { durations: string[], inputs: { id: string, label: string, type: "text" | "image" | "video" | "audio" }[] }> = {
+    "Veo 3.1": { durations: ["4s", "6s", "8s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }, { id: "reference_images", label: "Ref Images", type: "image" }] },
+    "Veo 3.1 Fast": { durations: ["4s", "6s", "8s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }, { id: "reference_images", label: "Ref Images", type: "image" }] },
+    "Kling V1.5": { durations: ["5s", "10s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }, { id: "end_image", label: "End Image", type: "image" }] },
+    "Kling V1.0": { durations: ["5s", "10s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }, { id: "end_image", label: "End Image", type: "image" }] },
+    "Kling Lip Sync": { durations: ["5s", "10s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }, { id: "audio", label: "Audio (Lip Sync)", type: "audio" }] },
+    "SeedDance 1.5 Pro": { durations: ["5s", "10s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }] },
+    "SeedDance 1.0 Pro": { durations: ["5s", "10s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }] },
+};
+
 export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
     const { deleteElements, updateNodeData } = useReactFlow();
     const { nodes, setNodes, runNode, clearNodeOutput, outputs, runningNodeId } = useWorkflowStore();
@@ -22,6 +32,28 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
 
     const isRunning = runningNodeId === id;
     const output = (outputs[id] as string | undefined) || (data.output as string | undefined);
+
+    const currentModel = (typeof data.model === 'string' ? data.model : "Veo 3.1");
+    // Ensure the current model exists in configs, fallback to default
+    const config = MODEL_CONFIGS[currentModel] || MODEL_CONFIGS["Veo 3.1"];
+
+    // Check if the current duration is valid for the model, otherwise update to default for model.
+    // However, during render we cannot safely update state synchronously without warnings, 
+    // so we just define the effective duration. The actual data sync happens on selection change.
+    const validDurations = config.durations;
+    const effectiveDuration = validDurations.includes(typeof data.duration === 'string' ? data.duration : "4s")
+        ? (data.duration as string || validDurations[0])
+        : validDurations[0];
+
+    const handleModelChange = (newModel: string) => {
+        const newConfig = MODEL_CONFIGS[newModel] || MODEL_CONFIGS["Veo 3.1"];
+        const currentDur = data.duration as string || "4s";
+        let newDuration = currentDur;
+        if (!newConfig.durations.includes(currentDur)) {
+            newDuration = newConfig.durations[0];
+        }
+        updateData({ model: newModel, duration: newDuration });
+    };
 
     const handleDownload = () => {
         if (output) {
@@ -118,13 +150,7 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
             )}`}
             icon={<Video className="w-4 h-4" />}
             selected={selected}
-            inputs={[
-                { id: "text", label: "Text/Prompt", type: "text" },
-                { id: "start_image", label: "Start Image", type: "image" },
-                { id: "end_image", label: "End Image", type: "image" },
-                { id: "reference_images", label: "Ref Images", type: "image" },
-                { id: "reference_video", label: "Ref Video", type: "video" }
-            ]}
+            inputs={config.inputs}
             outputs={[{ id: "video", label: "Video", type: "video" }]}
             contentClassName="p-0 overflow-hidden isolate"
             onDelete={() => deleteElements({ nodes: [{ id }] })}
@@ -243,30 +269,35 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
                     {/* Duration Pill */}
                     <div className="relative h-7 flex items-center gap-1.5 bg-black/60 backdrop-blur-md border border-white/10 rounded-full px-2 text-white/90 hover:bg-black/70 transition-colors">
                         <Clock className="w-2.5 h-2.5 text-white/70 flex-shrink-0" />
-                        <span className="text-[10px] font-medium truncate">{typeof data.duration === 'string' ? data.duration : "4s"}</span>
+                        <span className="text-[10px] font-medium truncate">{effectiveDuration}</span>
                         <ChevronDown className="w-2.5 h-2.5 text-white/50 flex-shrink-0" />
                         <select
                             className="absolute inset-0 opacity-0 cursor-pointer"
-                            value={typeof data.duration === 'string' ? data.duration : "4s"}
+                            value={effectiveDuration}
                             onChange={(e) => updateData({ duration: e.target.value })}
                         >
-                            <option value="4s">4s</option>
-                            <option value="6s">6s</option>
-                            <option value="8s">8s</option>
+                            {validDurations.map(d => (
+                                <option key={d} value={d}>{d}</option>
+                            ))}
                         </select>
                     </div>
 
                     {/* Model Pill */}
                     <div className="relative h-7 flex items-center gap-1.5 bg-black/60 backdrop-blur-md border border-white/10 rounded-full px-2 text-white/90 hover:bg-black/70 transition-colors min-w-0 flex-grow max-w-[100px]">
-                        <span className="text-[10px] font-medium truncate">{typeof data.model === 'string' ? data.model : "Google Veo"}</span>
+                        <span className="text-[10px] font-medium truncate">{currentModel}</span>
                         <ChevronDown className="w-2.5 h-2.5 text-white/50 flex-shrink-0" />
                         <select
                             className="absolute inset-0 opacity-0 cursor-pointer"
-                            value={typeof data.model === 'string' ? data.model : "Veo 3.1"}
-                            onChange={(e) => updateData({ model: e.target.value })}
+                            value={currentModel}
+                            onChange={(e) => handleModelChange(e.target.value)}
                         >
                             <option value="Veo 3.1">Veo 3.1</option>
                             <option value="Veo 3.1 Fast">Veo 3.1 Fast</option>
+                            <option value="Kling V1.5">Kling V1.5</option>
+                            <option value="Kling V1.0">Kling V1.0</option>
+                            <option value="Kling Lip Sync">Kling Lip Sync</option>
+                            <option value="SeedDance 1.5 Pro">SeedDance 1.5 Pro</option>
+                            <option value="SeedDance 1.0 Pro">SeedDance 1.0 Pro</option>
                         </select>
                     </div>
 

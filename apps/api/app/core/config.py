@@ -6,7 +6,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # Determine which env file to load based on APP_ENV
 # "local" (default) -> .env.local, "prod" -> .env.prod
 _app_env = os.getenv("APP_ENV", "local")
-_env_file = f".env.{_app_env}"
+# Load .env first, then override with environment-specific file
+_env_file = (".env", f".env.{_app_env}")
 
 
 class Settings(BaseSettings):
@@ -40,6 +41,9 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""  # Can also use GOOGLE_API_KEY
     google_api_key: str = ""  # Alternative to GEMINI_API_KEY
     use_mock_veo: bool = True  # Set to False to use real Veo API
+    kling_api_key: str = ""
+    byteplus_access_key: str = ""
+    byteplus_secret_key: str = ""
 
     @property
     def google_ai_key(self) -> str:

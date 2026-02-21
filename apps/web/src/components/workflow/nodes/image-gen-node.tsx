@@ -6,12 +6,23 @@ import { HighlightedTextarea } from "@/components/workflow/nodes/highlighted-tex
 
 import { useWorkflowStore } from "@/lib/workflow-store";
 
+const MODEL_CONFIGS: Record<string, { inputs: { id: string, label: string, type: "text" | "image" | "video" | "audio", style?: any }[] }> = {
+    "Imagen 4": { inputs: [{ id: "prompt", label: "Prompt", type: "text", style: { bottom: '108px' } }, { id: "image", label: "Ref Image", type: "image", style: { bottom: '20px' } }] },
+    "Nano Banana Pro": { inputs: [{ id: "prompt", label: "Prompt", type: "text", style: { bottom: '108px' } }, { id: "image", label: "Ref Image", type: "image", style: { bottom: '20px' } }] },
+    "Kling Image": { inputs: [{ id: "prompt", label: "Prompt", type: "text", style: { bottom: '108px' } }, { id: "image", label: "Ref Image", type: "image", style: { bottom: '20px' } }] },
+    "SeedDream 4.0": { inputs: [{ id: "prompt", label: "Prompt", type: "text", style: { bottom: '108px' } }, { id: "image", label: "Ref Image", type: "image", style: { bottom: '20px' } }] },
+    "SeedDream 4.5": { inputs: [{ id: "prompt", label: "Prompt", type: "text", style: { bottom: '108px' } }, { id: "image", label: "Ref Image", type: "image", style: { bottom: '20px' } }] },
+};
+
 export const ImageGenNode = memo(({ id, selected, data }: NodeProps) => {
     const { deleteElements, updateNodeData } = useReactFlow();
     const { runNode, clearNodeOutput, outputs, runningNodeId } = useWorkflowStore();
 
     const isRunning = runningNodeId === id;
     const output = (outputs[id] as string | undefined) || (data.output as string | undefined); // Use store output first, fallback to data.output
+
+    const currentModel = (typeof data.model === 'string' ? data.model : "Imagen 4");
+    const config = MODEL_CONFIGS[currentModel] || MODEL_CONFIGS["Imagen 4"];
 
     const handleDownload = () => {
         if (output) {
@@ -132,10 +143,7 @@ export const ImageGenNode = memo(({ id, selected, data }: NodeProps) => {
             icon={<ImageIcon className="w-4 h-4" />}
             selected={selected}
             color="bg-purple-500"
-            inputs={[
-                { id: "prompt", label: "Prompt", type: "text", style: { bottom: '108px' } },
-                { id: "image", label: "Ref Image", type: "image", style: { bottom: '20px' } }
-            ]}
+            inputs={config.inputs}
             outputs={[{ id: "image", label: "Image", type: "image" }]}
             contentClassName="relative bg-black"
             onDelete={() => deleteElements({ nodes: [{ id }] })}
@@ -283,15 +291,18 @@ export const ImageGenNode = memo(({ id, selected, data }: NodeProps) => {
 
                     {/* Model Pill */}
                     <div className="relative h-7 flex items-center gap-1.5 bg-black/60 backdrop-blur-md border border-white/10 rounded-full px-2 text-white/90 hover:bg-black/70 transition-colors min-w-0 flex-grow max-w-[110px]">
-                        <span className="text-[10px] font-medium truncate">{typeof data.model === 'string' ? data.model : "Imagen 4"}</span>
+                        <span className="text-[10px] font-medium truncate">{currentModel}</span>
                         <ChevronDown className="w-2.5 h-2.5 text-white/50 flex-shrink-0" />
                         <select
                             className="absolute inset-0 opacity-0 cursor-pointer"
-                            value={typeof data.model === 'string' ? data.model : "Imagen 4"}
+                            value={currentModel}
                             onChange={(e) => updateNodeData(id, { model: e.target.value })}
                         >
                             <option value="Imagen 4">Imagen 4</option>
                             <option value="Nano Banana Pro">Nano Banana Pro</option>
+                            <option value="Kling Image">Kling Image</option>
+                            <option value="SeedDream 4.0">SeedDream 4.0</option>
+                            <option value="SeedDream 4.5">SeedDream 4.5</option>
                         </select>
                     </div>
 
