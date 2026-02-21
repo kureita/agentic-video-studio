@@ -1,0 +1,1720 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Kureita AI Video Platform — Architecture</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet" />
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box
+        }
+
+        :root {
+            --bg: #0a0a0f;
+            --surface: #12121a;
+            --surface2: #1a1a26;
+            --surface3: #222233;
+            --border: #2a2a3d;
+            --border2: #363650;
+            --text: #e4e4ed;
+            --text2: #9d9db5;
+            --text3: #6b6b85;
+            --accent: #7c5cfc;
+            --accent2: #9b7dff;
+            --accent-dim: #7c5cfc22;
+            --green: #22c55e;
+            --green-dim: #22c55e18;
+            --yellow: #eab308;
+            --yellow-dim: #eab30818;
+            --red: #ef4444;
+            --red-dim: #ef444418;
+            --blue: #3b82f6;
+            --blue-dim: #3b82f618;
+            --cyan: #06b6d4;
+            --sidebar-w: 260px;
+            --radius: 10px
+        }
+
+        html {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            font-size: 14px;
+            scroll-behavior: smooth
+        }
+
+        body {
+            display: flex;
+            min-height: 100vh
+        }
+
+        .sidebar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: var(--sidebar-w);
+            height: 100vh;
+            background: var(--surface);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            z-index: 100;
+            overflow-y: auto
+        }
+
+        .sidebar::-webkit-scrollbar {
+            width: 4px
+        }
+
+        .sidebar::-webkit-scrollbar-thumb {
+            background: var(--border2);
+            border-radius: 4px
+        }
+
+        .sidebar-header {
+            padding: 20px 18px 14px;
+            border-bottom: 1px solid var(--border)
+        }
+
+        .sidebar-header h1 {
+            font-size: 15px;
+            font-weight: 700;
+            letter-spacing: -0.3px
+        }
+
+        .sidebar-header p {
+            font-size: 11px;
+            color: var(--text3);
+            margin-top: 4px
+        }
+
+        .nav-group {
+            padding: 10px 10px 6px
+        }
+
+        .nav-group-title {
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1.2px;
+            color: var(--text3);
+            padding: 0 8px;
+            margin-bottom: 6px
+        }
+
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 7px 10px;
+            border-radius: 7px;
+            color: var(--text2);
+            font-size: 12.5px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all .15s;
+            text-decoration: none
+        }
+
+        .nav-item:hover {
+            background: var(--surface2);
+            color: var(--text)
+        }
+
+        .nav-item.active {
+            background: var(--accent-dim);
+            color: var(--accent2);
+            font-weight: 600
+        }
+
+        .nav-item .icon {
+            font-size: 11px;
+            width: 22px;
+            text-align: center;
+            flex-shrink: 0;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--text3);
+            font-weight: 600
+        }
+
+        .nav-divider {
+            height: 1px;
+            background: var(--border);
+            margin: 6px 18px
+        }
+
+        .main {
+            margin-left: var(--sidebar-w);
+            flex: 1;
+            padding: 32px 48px 80px
+        }
+
+        .section {
+            display: none;
+            max-width: 1000px;
+            margin: 0 auto;
+            animation: fadeIn .25s ease
+        }
+
+        .section.active {
+            display: block
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(8px)
+            }
+
+            to {
+                opacity: 1;
+                transform: none
+            }
+        }
+
+        h2 {
+            font-size: 22px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            margin-bottom: 20px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--border)
+        }
+
+        h3 {
+            font-size: 16px;
+            font-weight: 600;
+            margin: 24px 0 12px;
+            color: var(--text)
+        }
+
+        h4 {
+            font-size: 13px;
+            font-weight: 600;
+            margin: 16px 0 8px;
+            color: var(--text2);
+            text-transform: uppercase;
+            letter-spacing: 0.5px
+        }
+
+        p,
+        .desc {
+            font-size: 13px;
+            line-height: 1.75;
+            color: var(--text2);
+            margin-bottom: 12px
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 12px 0 20px;
+            font-size: 12.5px
+        }
+
+        th {
+            text-align: left;
+            padding: 10px 14px;
+            background: var(--surface2);
+            color: var(--text2);
+            font-weight: 600;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 1px solid var(--border)
+        }
+
+        td {
+            padding: 9px 14px;
+            border-bottom: 1px solid var(--border);
+            color: var(--text2);
+            vertical-align: top
+        }
+
+        tr:hover td {
+            background: var(--surface);
+            color: var(--text)
+        }
+
+        td code {
+            background: var(--surface3);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11.5px;
+            color: var(--accent2)
+        }
+
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 18px 20px;
+            margin: 12px 0
+        }
+
+        .card-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 12px;
+            margin: 12px 0
+        }
+
+        .card h4 {
+            margin: 0 0 6px;
+            text-transform: none;
+            letter-spacing: 0;
+            color: var(--text);
+            font-size: 13.5px
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 20px;
+            font-size: 10.5px;
+            font-weight: 600
+        }
+
+        .badge-green {
+            background: var(--green-dim);
+            color: var(--green)
+        }
+
+        .badge-yellow {
+            background: var(--yellow-dim);
+            color: var(--yellow)
+        }
+
+        .badge-blue {
+            background: var(--blue-dim);
+            color: var(--blue)
+        }
+
+        .badge-red {
+            background: var(--red-dim);
+            color: var(--red)
+        }
+
+        .badge-accent {
+            background: var(--accent-dim);
+            color: var(--accent2)
+        }
+
+        .callout {
+            padding: 14px 18px;
+            border-radius: 8px;
+            margin: 14px 0;
+            font-size: 12.5px;
+            line-height: 1.65;
+            border-left: 3px solid
+        }
+
+        .callout-info {
+            background: var(--blue-dim);
+            border-color: var(--blue);
+            color: var(--blue)
+        }
+
+        .callout-warn {
+            background: var(--yellow-dim);
+            border-color: var(--yellow);
+            color: var(--yellow)
+        }
+
+        .callout-danger {
+            background: var(--red-dim);
+            border-color: var(--red);
+            color: var(--red)
+        }
+
+        .callout-tip {
+            background: var(--green-dim);
+            border-color: var(--green);
+            color: var(--green)
+        }
+
+        .callout strong {
+            display: block;
+            margin-bottom: 4px;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px
+        }
+
+        .mermaid-wrap {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 20px;
+            margin: 16px 0;
+            overflow-x: auto
+        }
+
+        .mermaid {
+            display: flex;
+            justify-content: center
+        }
+
+        pre {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 14px 18px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            line-height: 1.7;
+            overflow-x: auto;
+            margin: 12px 0;
+            color: var(--text2)
+        }
+
+        .tree {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            line-height: 1.9;
+            color: var(--text2);
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px 20px;
+            margin: 12px 0;
+            white-space: pre
+        }
+
+        .tree .c {
+            color: var(--text3)
+        }
+
+        .tree .h {
+            color: var(--accent2);
+            font-weight: 500
+        }
+
+        @media(max-width:900px) {
+            .sidebar {
+                width: 220px
+            }
+
+            .main {
+                margin-left: 220px;
+                padding: 24px 20px
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <nav class="sidebar">
+        <div class="sidebar-header">
+            <h1>Kureita Architecture</h1>
+            <p>AI Video Platform &bull; v0.1.0</p>
+        </div>
+        <div class="nav-group">
+            <div class="nav-group-title">Overview</div>
+            <a class="nav-item active" onclick="showSection('overview')"><span class="icon">01</span> System
+                Overview</a>
+            <a class="nav-item" onclick="showSection('repo')"><span class="icon">02</span> Repository Structure</a>
+        </div>
+        <div class="nav-divider"></div>
+        <div class="nav-group">
+            <div class="nav-group-title">Backend (API)</div>
+            <a class="nav-item" onclick="showSection('api-stack')"><span class="icon">03</span> Tech Stack &amp;
+                Modules</a>
+            <a class="nav-item" onclick="showSection('api-endpoints')"><span class="icon">04</span> API Endpoints</a>
+            <a class="nav-item" onclick="showSection('api-services')"><span class="icon">05</span> Services Deep
+                Dive</a>
+            <a class="nav-item" onclick="showSection('database')"><span class="icon">06</span> Database Schema</a>
+        </div>
+        <div class="nav-divider"></div>
+        <div class="nav-group">
+            <div class="nav-group-title">Workflows</div>
+            <a class="nav-item" onclick="showSection('creation-modes')"><span class="icon">07</span> Two Creation
+                Modes</a>
+            <a class="nav-item" onclick="showSection('nodes')"><span class="icon">08</span> Workflow Node Types</a>
+        </div>
+        <div class="nav-divider"></div>
+        <div class="nav-group">
+            <div class="nav-group-title">Frontend (Web)</div>
+            <a class="nav-item" onclick="showSection('frontend')"><span class="icon">09</span> Frontend Architecture</a>
+            <a class="nav-item" onclick="showSection('auth')"><span class="icon">10</span> Authentication Flow</a>
+        </div>
+        <div class="nav-divider"></div>
+        <div class="nav-group">
+            <div class="nav-group-title">Infrastructure</div>
+            <a class="nav-item" onclick="showSection('infra')"><span class="icon">11</span> Deployment &amp; Infra</a>
+            <a class="nav-item" onclick="showSection('env')"><span class="icon">12</span> Environment Variables</a>
+            <a class="nav-item" onclick="showSection('devsetup')"><span class="icon">13</span> Local Dev Setup</a>
+            <a class="nav-item" onclick="showSection('notes')"><span class="icon">14</span> Maintainer Notes</a>
+        </div>
+    </nav>
+
+    <div class="main">
+
+        <!-- SECTION: OVERVIEW -->
+        <div id="overview" class="section active">
+            <h2>High-Level System Architecture</h2>
+            <p>Kureita is an AI-powered video production platform. Users provide a website URL or creative prompt, and
+                the platform generates branded promotional videos using AI models for text, image, video, and audio
+                generation. The final video is composed client-side using Remotion.</p>
+
+            <div class="mermaid-wrap">
+                <pre class="mermaid">
+graph TB
+    subgraph "Client Layer"
+        Browser["Browser\n(app.kureita.com)"]
+    end
+    subgraph "Auth"
+        Auth0["Auth0\nIdentity Provider"]
+    end
+    subgraph "Frontend — AWS Amplify"
+        NextJS["Next.js 15\n(Static Export)"]
+        Remotion["Remotion Player\n(Client-Side Render)"]
+    end
+    subgraph "Backend — AWS Lambda"
+        APIGW["API Gateway v2\n(HTTP API)"]
+        API["FastAPI\n(Lambda Web Adapter)"]
+    end
+    subgraph "Data and Storage"
+        MongoDB["MongoDB Atlas"]
+        S3["AWS S3\n(kureita-assets)"]
+    end
+    subgraph "AI Services"
+        OpenAI["OpenAI GPT-4o"]
+        Gemini["Google Gemini\n+ Imagen 4 + Veo 3.1"]
+        ElevenLabs["ElevenLabs TTS"]
+    end
+    Browser --> Auth0
+    Auth0 -->|JWT| Browser
+    Browser --> NextJS
+    NextJS --> Remotion
+    NextJS -->|API + JWT| APIGW
+    APIGW --> API
+    API --> MongoDB
+    API --> S3
+    API --> OpenAI
+    API --> Gemini
+    API --> ElevenLabs
+</pre>
+            </div>
+
+            <div class="card-grid">
+                <div class="card">
+                    <h4>Frontend</h4>
+                    <p>Next.js 15 static export, hosted on AWS Amplify. Auth0 for login. XYFlow for workflow editor.
+                        Remotion for client-side video rendering.</p>
+                </div>
+                <div class="card">
+                    <h4>Backend</h4>
+                    <p>FastAPI running on AWS Lambda via Lambda Web Adapter. Auth0 JWT validation. MongoDB Atlas for
+                        data. S3 for assets.</p>
+                </div>
+                <div class="card">
+                    <h4>AI Stack</h4>
+                    <p>GPT-4o for brand analysis, story, script. Gemini for workflow agent, vision. Imagen 4 for images.
+                        Veo 3.1 for video. ElevenLabs for audio.</p>
+                </div>
+                <div class="card">
+                    <h4>Infrastructure</h4>
+                    <p>SAM/CloudFormation deployment. ECR for Docker images. API Gateway v2 HTTP API. S3 for asset
+                        storage. Amplify for frontend.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- SECTION: REPO -->
+        <div id="repo" class="section">
+            <h2>Repository Structure</h2>
+            <p>Turborepo monorepo with <code>apps/*</code> workspaces. Package manager: npm. Python package manager: uv.
+            </p>
+            <div class="tree">kureita-ai-video/mvp/ <span class="c">-- Turborepo monorepo root</span>
+                +-- package.json <span class="c">-- workspaces: apps/*, packages/*</span>
+                +-- turbo.json <span class="c">-- Turbo pipeline config</span>
+                +-- scripts/
+                | +-- <span class="h">deploy-api.sh</span> <span class="c">-- 8-step API deployment script</span>
+                +-- apps/
+                | +-- <span class="h">api/</span> <span class="c">-- Python FastAPI backend</span>
+                | | +-- main.py <span class="c">-- App entry, lifespan, CORS, routes</span>
+                | | +-- pyproject.toml <span class="c">-- Python deps (uv)</span>
+                | | +-- Dockerfile <span class="c">-- Lambda container image</span>
+                | | +-- template.yaml <span class="c">-- SAM CloudFormation template</span>
+                | | +-- .env.local / .env.prod <span class="c">-- Environment configs</span>
+                | | +-- app/
+                | | +-- api/endpoints/ <span class="c">-- 7 route groups</span>
+                | | | +-- projects.py, workflow.py, canvas.py
+                | | | +-- generate.py, scrape.py, agent.py, assets.py
+                | | +-- core/ <span class="c">-- Auth, DB, Config, User</span>
+                | | | +-- auth.py, config.py, database.py, user.py
+                | | +-- models/ <span class="c">-- Pydantic schemas</span>
+                | | | +-- project.py
+                | | +-- services/ <span class="c">-- Business logic (11 services)</span>
+                | | | +-- node_runner.py, pipeline.py, agent_service.py
+                | | | +-- video_generator.py, image_generator.py
+                | | | +-- audio_generator.py, editor_agent.py
+                | | | +-- storage_service.py, scraper.py, llm.py
+                | | | +-- video_composer.py
+                | | +-- agents/ <span class="c">-- AI agents (3)</span>
+                | | +-- brand_analyzer.py, storyteller.py, script_writer.py
+                | +-- <span class="h">web/</span> <span class="c">-- Next.js 15 frontend</span>
+                | | +-- next.config.ts <span class="c">-- Static export (output: 'export')</span>
+                | | +-- package.json <span class="c">-- React 19, Auth0, XYFlow, Remotion</span>
+                | | +-- src/
+                | | +-- app/ <span class="c">-- Pages: dashboard, workflow</span>
+                | | +-- components/ <span class="c">-- UI components (workflow/, canvas/, auth/)</span>
+                | | +-- lib/ <span class="c">-- API clients, Zustand stores, utils</span>
+                | | +-- hooks/
+                | +-- remotion/ <span class="c">-- Remotion compositions (client-side only)</span></div>
+        </div>
+
+        <!-- SECTION: API STACK -->
+        <div id="api-stack" class="section">
+            <h2>Backend Tech Stack &amp; Modules</h2>
+            <table>
+                <tr>
+                    <th>Component</th>
+                    <th>Technology</th>
+                    <th>Version</th>
+                </tr>
+                <tr>
+                    <td>Framework</td>
+                    <td>FastAPI</td>
+                    <td>&ge;0.115</td>
+                </tr>
+                <tr>
+                    <td>Runtime</td>
+                    <td>Python</td>
+                    <td>&ge;3.11</td>
+                </tr>
+                <tr>
+                    <td>Database</td>
+                    <td>MongoDB (Motor async)</td>
+                    <td>Motor &ge;3.6</td>
+                </tr>
+                <tr>
+                    <td>Auth</td>
+                    <td>Auth0 JWT (python-jose)</td>
+                    <td>RS256</td>
+                </tr>
+                <tr>
+                    <td>AI - Text</td>
+                    <td>OpenAI GPT-4o</td>
+                    <td>&mdash;</td>
+                </tr>
+                <tr>
+                    <td>AI - Image</td>
+                    <td>Google Imagen 4</td>
+                    <td>via genai SDK</td>
+                </tr>
+                <tr>
+                    <td>AI - Video</td>
+                    <td>Google Veo 3.1</td>
+                    <td>via genai SDK</td>
+                </tr>
+                <tr>
+                    <td>AI - Audio</td>
+                    <td>ElevenLabs / gTTS</td>
+                    <td>&mdash;</td>
+                </tr>
+                <tr>
+                    <td>AI - Agent</td>
+                    <td>Google Gemini 2.5 Flash</td>
+                    <td>via genai SDK</td>
+                </tr>
+                <tr>
+                    <td>Storage</td>
+                    <td>S3 / Local (configurable)</td>
+                    <td>boto3 &ge;1.35</td>
+                </tr>
+                <tr>
+                    <td>Scraping</td>
+                    <td>httpx + BeautifulSoup4</td>
+                    <td>&mdash;</td>
+                </tr>
+                <tr>
+                    <td>Pkg Manager</td>
+                    <td>uv</td>
+                    <td>&mdash;</td>
+                </tr>
+            </table>
+
+            <h3>Module Dependency Diagram</h3>
+            <div class="mermaid-wrap">
+                <pre class="mermaid">
+graph LR
+    subgraph "API Layer - Auth0 JWT Required"
+        R["routes.py"]
+        E1["projects"]
+        E2["workflow"]
+        E3["canvas"]
+        E4["generate"]
+        E5["scrape"]
+        E6["agent"]
+        E7["assets"]
+    end
+    subgraph "Services"
+        NR["NodeRunner"]
+        PL["Pipeline"]
+        VG["VideoGenerator\n(Veo 3.1)"]
+        IG["ImageGenerator\n(Imagen 4)"]
+        AG["AudioGenerator\n(ElevenLabs)"]
+        EA["EditorAgent\n(Gemini to TSX)"]
+        AS["AgentService\n(Gemini 2.5)"]
+        SS["StorageService"]
+        SC["WebScraper"]
+    end
+    subgraph "Agents - GPT-4o"
+        BA["BrandAnalyzer"]
+        ST["Storyteller"]
+        SW["ScriptWriter"]
+    end
+    R --> E1
+    R --> E2
+    R --> E3
+    R --> E4
+    R --> E5
+    R --> E6
+    R --> E7
+    E1 --> PL
+    E2 --> NR
+    E3 --> BA
+    E3 --> ST
+    E3 --> SW
+    E3 --> IG
+    E3 --> VG
+    E4 --> VG
+    E4 --> AG
+    E5 --> SC
+    E5 --> BA
+    E6 --> AS
+    E7 --> SS
+    PL --> BA
+    PL --> ST
+    PL --> SW
+    PL --> VG
+    NR --> IG
+    NR --> VG
+    NR --> AG
+    NR --> EA
+    VG --> SS
+    IG --> SS
+    AG --> SS
+</pre>
+            </div>
+        </div>
+
+        <!-- SECTION: API ENDPOINTS -->
+        <div id="api-endpoints" class="section">
+            <h2>API Endpoints Reference</h2>
+            <p>All routes are prefixed with <code>/api</code> and require Auth0 JWT (via <code>get_current_user</code>
+                dependency). The only unauthenticated endpoint is <code>GET /health</code>.</p>
+            <table>
+                <tr>
+                    <th>Group</th>
+                    <th>Prefix</th>
+                    <th>Endpoints</th>
+                    <th>Purpose</th>
+                </tr>
+                <tr>
+                    <td><span class="badge badge-accent">Projects</span></td>
+                    <td><code>/api/projects</code></td>
+                    <td><code>GET /</code> &middot; <code>POST /</code> &middot; <code>GET /{id}</code> &middot;
+                        <code>PATCH /{id}</code> &middot; <code>DELETE /{id}</code> &middot;
+                        <code>POST /{id}/start</code>
+                    </td>
+                    <td>CRUD + trigger generation pipeline</td>
+                </tr>
+                <tr>
+                    <td><span class="badge badge-accent">Workflows</span></td>
+                    <td><code>/api/workflows</code></td>
+                    <td><code>GET /</code> &middot; <code>POST /</code> &middot; <code>GET /{id}</code> &middot;
+                        <code>PUT /{id}</code> &middot; <code>DELETE /{id}</code> &middot;
+                        <code>POST /{id}/nodes/{nid}/run</code> &middot; <code>POST /{id}/run</code>
+                    </td>
+                    <td>CRUD + execute individual/all nodes</td>
+                </tr>
+                <tr>
+                    <td><span class="badge badge-accent">Canvas</span></td>
+                    <td><code>/api/canvas</code></td>
+                    <td><code>POST /create</code> &middot; <code>GET /{id}/load</code> &middot;
+                        <code>PUT /{id}/state</code> &middot; <code>POST /{id}/story</code> &middot;
+                        <code>POST /{id}/story/improve</code> &middot; <code>POST /{id}/images</code> &middot;
+                        <code>POST /{id}/images/{sid}</code> &middot; <code>POST /{id}/videos</code> &middot;
+                        <code>POST /{id}/compose</code>
+                    </td>
+                    <td>Step-by-step guided video creation</td>
+                </tr>
+                <tr>
+                    <td><span class="badge badge-accent">Generate</span></td>
+                    <td><code>/api/generate</code></td>
+                    <td><code>POST /story</code> &middot; <code>POST /video</code> &middot; <code>POST /audio</code>
+                        &middot; <code>GET /voices</code> &middot; <code>POST /assets/{id}</code></td>
+                    <td>Direct AI generation endpoints</td>
+                </tr>
+                <tr>
+                    <td><span class="badge badge-accent">Scrape</span></td>
+                    <td><code>/api/scrape</code></td>
+                    <td><code>POST /</code> &middot; <code>POST /analyze</code></td>
+                    <td>Website scraping + brand analysis</td>
+                </tr>
+                <tr>
+                    <td><span class="badge badge-accent">Agent</span></td>
+                    <td><code>/api/agent</code></td>
+                    <td><code>POST /flow</code></td>
+                    <td>AI-powered workflow generation via Gemini</td>
+                </tr>
+                <tr>
+                    <td><span class="badge badge-accent">Assets</span></td>
+                    <td><code>/api/assets</code></td>
+                    <td><code>POST /upload</code></td>
+                    <td>File upload (S3 or local)</td>
+                </tr>
+                <tr>
+                    <td><span class="badge badge-green">Auth</span></td>
+                    <td><code>/api/me</code></td>
+                    <td><code>GET /me</code></td>
+                    <td>Current user profile</td>
+                </tr>
+                <tr>
+                    <td><span class="badge badge-green">Health</span></td>
+                    <td><code>/health</code></td>
+                    <td><code>GET /health</code></td>
+                    <td>Health check (no auth required)</td>
+                </tr>
+            </table>
+        </div>
+
+        <!-- SECTION: SERVICES -->
+        <div id="api-services" class="section">
+            <h2>Services Deep Dive</h2>
+            <div class="card-grid">
+                <div class="card">
+                    <h4>VideoGenerator</h4>
+                    <p><code>video_generator.py</code> &mdash; Uses Google Veo 3.1
+                        (<code>veo-3.0-generate-preview</code>). Supports text-to-video, image-to-video, reference
+                        images, frame interpolation, video extension. Mock mode returns placeholders from
+                        <code>static/videos/</code>. 720p/1080p, 4/6/8 sec.
+                    </p>
+                </div>
+                <div class="card">
+                    <h4>ImageGenerator</h4>
+                    <p><code>image_generator.py</code> &mdash; Uses Imagen 4
+                        (<code>imagen-4.0-generate-preview-05-20</code>) or Gemini Flash multimodal. Supports reference
+                        image input. Mock mode returns placeholders from <code>static/images/</code>.</p>
+                </div>
+                <div class="card">
+                    <h4>AudioGenerator</h4>
+                    <p><code>audio_generator.py</code> &mdash; Uses ElevenLabs TTS API
+                        (<code>eleven_multilingual_v2</code>). Falls back to Google gTTS in mock/free mode. Multiple
+                        voice support.</p>
+                </div>
+                <div class="card">
+                    <h4>EditorAgent</h4>
+                    <p><code>editor_agent.py</code> &mdash; Uses Gemini to generate Remotion TSX composition code. Takes
+                        video/image/audio URLs + text instruction, outputs React component code. Frontend compiles via
+                        <code>sucrase</code> and renders with <code>@remotion/player</code>.
+                    </p>
+                </div>
+                <div class="card">
+                    <h4>NodeRunner</h4>
+                    <p><code>node_runner.py</code> (709 lines) &mdash; Central workflow execution engine. Dispatches
+                        nodes to correct service based on type. Resolves input dependencies via edge connections.
+                        Supports <code>@Text #N</code> prompt references.</p>
+                </div>
+                <div class="card">
+                    <h4>GenerationPipeline</h4>
+                    <p><code>pipeline.py</code> &mdash; Orchestrates full video gen: Analyze &rarr; Story &rarr; Script
+                        &rarr; Generate Assets &rarr; Compose. Runs as background task from
+                        <code>POST /projects/{id}/start</code>.
+                    </p>
+                </div>
+                <div class="card">
+                    <h4>AgentService</h4>
+                    <p><code>agent_service.py</code> &mdash; Uses Gemini 2.5 Flash to generate workflow structures
+                        (nodes + edges) from natural language prompts. Returns thinking process and tool calls.</p>
+                </div>
+                <div class="card">
+                    <h4>StorageService</h4>
+                    <p><code>storage_service.py</code> &mdash; Abstract base with <code>LocalStorageService</code>
+                        (static dir) and <code>S3StorageService</code> (boto3, date-organized uploads). Selected via
+                        <code>STORAGE_TYPE</code> env var.
+                    </p>
+                </div>
+                <div class="card">
+                    <h4>WebScraper</h4>
+                    <p><code>scraper.py</code> &mdash; httpx + BeautifulSoup4. Extracts title, meta, headings, main
+                        content, images, links, contact info, social links from any URL.</p>
+                </div>
+                <div class="card">
+                    <h4>LLMService</h4>
+                    <p><code>llm.py</code> &mdash; Unified LLM interface. Supports <code>openai</code> (GPT-4o) and
+                        <code>gemini</code> (2.5 Flash) providers. JSON response mode for OpenAI.
+                    </p>
+                </div>
+            </div>
+
+            <h3>AI Agents (all use GPT-4o)</h3>
+            <table>
+                <tr>
+                    <th>Agent</th>
+                    <th>File</th>
+                    <th>Input</th>
+                    <th>Output</th>
+                </tr>
+                <tr>
+                    <td><strong>BrandAnalyzer</strong></td>
+                    <td><code>brand_analyzer.py</code></td>
+                    <td>Scraped website content + URL</td>
+                    <td><code>BrandProfile</code> (name, tagline, colors, tone, products, USPs)</td>
+                </tr>
+                <tr>
+                    <td><strong>Storyteller</strong></td>
+                    <td><code>storyteller.py</code></td>
+                    <td>BrandProfile + duration + style</td>
+                    <td><code>Story</code> (title, synopsis, key messages, emotion, CTA)</td>
+                </tr>
+                <tr>
+                    <td><strong>ScriptWriter</strong></td>
+                    <td><code>script_writer.py</code></td>
+                    <td>Story + BrandProfile + duration</td>
+                    <td><code>Scene[]</code> (timing, visual_prompt, voiceover, on-screen text)</td>
+                </tr>
+            </table>
+        </div>
+
+        <!-- SECTION: DATABASE -->
+        <div id="database" class="section">
+            <h2>Database Schema (MongoDB)</h2>
+            <p>4 collections in the <code>kureita</code> database (MongoDB Atlas). Users are auto-provisioned on first
+                API call from Auth0 token.</p>
+            <div class="mermaid-wrap">
+                <pre class="mermaid">
+erDiagram
+    USERS {
+        ObjectId _id PK
+        string auth0_sub UK
+        string email
+        string name
+        datetime created_at
+        datetime updated_at
+    }
+    PROJECTS {
+        ObjectId _id PK
+        string user_id FK
+        string website_url
+        string brand_name
+        string status
+        int progress
+        object brand_profile
+        object story
+        array scenes
+        string video_url
+        datetime created_at
+    }
+    WORKFLOWS {
+        ObjectId _id PK
+        string user_id FK
+        string name
+        array nodes
+        array edges
+        object outputs
+        array chat_history
+        datetime created_at
+    }
+    GENERATIONS {
+        ObjectId _id PK
+        string project_id FK
+        string type
+        object result
+    }
+    USERS ||--o{ PROJECTS : owns
+    USERS ||--o{ WORKFLOWS : owns
+    PROJECTS ||--o{ GENERATIONS : has
+</pre>
+            </div>
+
+            <h3>Key Schemas</h3>
+            <table>
+                <tr>
+                    <th>Schema</th>
+                    <th>Fields</th>
+                </tr>
+                <tr>
+                    <td><strong>Project.status</strong> (enum)</td>
+                    <td><code>draft</code> &rarr; <code>analyzing</code> &rarr; <code>planning</code> &rarr;
+                        <code>generating</code> &rarr; <code>composing</code> &rarr; <code>completed</code> /
+                        <code>failed</code>
+                    </td>
+                </tr>
+                <tr>
+                    <td><strong>BrandProfile</strong> (embedded)</td>
+                    <td>name, tagline, description, primary_colors[], logo_url, tone, products[],
+                        unique_selling_points[]</td>
+                </tr>
+                <tr>
+                    <td><strong>Story</strong> (embedded)</td>
+                    <td>title, synopsis, key_messages[], target_emotion, call_to_action</td>
+                </tr>
+                <tr>
+                    <td><strong>Scene</strong> (embedded[])</td>
+                    <td>id, start_time, end_time, description, visual_prompt, voiceover_text, on_screen_text, asset_url
+                    </td>
+                </tr>
+                <tr>
+                    <td><strong>WorkflowNode</strong></td>
+                    <td>id, type, position{x,y}, data{...}</td>
+                </tr>
+                <tr>
+                    <td><strong>WorkflowEdge</strong></td>
+                    <td>id, source, target, sourceHandle, targetHandle</td>
+                </tr>
+            </table>
+        </div>
+
+        <!-- SECTION: CREATION MODES -->
+        <div id="creation-modes" class="section">
+            <h2>Two Creation Modes</h2>
+            <p>The platform offers two distinct ways to create videos:</p>
+
+            <h3>Mode 1: Canvas Pipeline (Guided, Step-by-Step)</h3>
+            <p>A linear, wizard-like flow where the user is guided through each stage. Best for users who want a simple,
+                opinionated workflow.</p>
+            <div class="mermaid-wrap">
+                <pre class="mermaid">
+sequenceDiagram
+    actor User
+    participant Canvas as Canvas UI
+    participant API as Backend API
+    participant AI as AI Services
+    User->>Canvas: Enter website URL
+    Canvas->>API: POST /canvas/create
+    API->>AI: Scrape + BrandAnalyzer (GPT-4o)
+    AI-->>API: BrandProfile
+    API-->>Canvas: brand_profile + project_id
+    User->>Canvas: Configure story options
+    Canvas->>API: POST /canvas/{id}/story
+    API->>AI: Storyteller + ScriptWriter (GPT-4o)
+    AI-->>API: Story + Scenes[]
+    API-->>Canvas: story + scenes
+    User->>Canvas: Review, edit scenes, generate images
+    Canvas->>API: POST /canvas/{id}/images
+    API->>AI: ImageGenerator (Imagen 4)
+    API-->>Canvas: scenes with image_url
+    User->>Canvas: Generate videos
+    Canvas->>API: POST /canvas/{id}/videos
+    API->>AI: VideoGenerator (Veo 3.1)
+    API-->>Canvas: scenes with video_url
+    User->>Canvas: Compose final video
+    Note over Canvas: Remotion renders client-side
+</pre>
+            </div>
+
+            <h3>Mode 2: Workflow Editor (Node-Based, Flexible)</h3>
+            <p>A freeform node graph editor (like ComfyUI). Users connect nodes visually or use the AI chat agent to
+                generate workflows. Best for power users who want full control.</p>
+            <div class="mermaid-wrap">
+                <pre class="mermaid">
+sequenceDiagram
+    actor User
+    participant Editor as Workflow Editor (XYFlow)
+    participant Agent as Agent Sidebar (Chat AI)
+    participant API as Backend API
+    participant AI as AI Services
+    User->>Agent: "Create a video from my product images"
+    Agent->>API: POST /agent/flow
+    API->>AI: AgentService (Gemini 2.5 Flash)
+    AI-->>API: nodes[] + edges[]
+    API-->>Agent: workflow structure
+    Agent->>Editor: Render nodes on canvas
+    User->>Editor: Adjust nodes, connect edges
+    Editor->>API: PUT /workflows/{id} (auto-save)
+    User->>Editor: Run node (play button)
+    Editor->>API: POST /workflows/{id}/nodes/{nid}/run
+    Note over API: Resolves dependencies, runs service
+    API-->>Editor: output URL displayed in node
+</pre>
+            </div>
+        </div>
+
+        <!-- SECTION: NODES -->
+        <div id="nodes" class="section">
+            <h2>Workflow Node Types</h2>
+            <p>The workflow editor supports these node types, each dispatched by <code>NodeRunner</code>:</p>
+            <table>
+                <tr>
+                    <th>Node Type</th>
+                    <th>Inputs</th>
+                    <th>Output</th>
+                    <th>Service</th>
+                </tr>
+                <tr>
+                    <td><strong>Text</strong></td>
+                    <td>User text</td>
+                    <td>Text string</td>
+                    <td>Passthrough</td>
+                </tr>
+                <tr>
+                    <td><strong>Upload</strong></td>
+                    <td>File selector</td>
+                    <td>File URL</td>
+                    <td>Passthrough</td>
+                </tr>
+                <tr>
+                    <td><strong>Media Upload</strong></td>
+                    <td>Image/Video file</td>
+                    <td>Media URL</td>
+                    <td>Passthrough</td>
+                </tr>
+                <tr>
+                    <td><strong>Image Gen</strong></td>
+                    <td>Prompt, ref images, model selector</td>
+                    <td>Image URL</td>
+                    <td><code>ImageGenerator</code> (Imagen 4 / Gemini)</td>
+                </tr>
+                <tr>
+                    <td><strong>Video Gen</strong></td>
+                    <td>Prompt, ref images/videos, settings</td>
+                    <td>Video URL</td>
+                    <td><code>VideoGenerator</code> (Veo 3.1)</td>
+                </tr>
+                <tr>
+                    <td><strong>Audio Gen</strong></td>
+                    <td>Text, voice selector</td>
+                    <td>Audio URL</td>
+                    <td><code>AudioGenerator</code> (ElevenLabs / gTTS)</td>
+                </tr>
+                <tr>
+                    <td><strong>Vision</strong></td>
+                    <td>Text + images/videos</td>
+                    <td>AI analysis text</td>
+                    <td>Gemini multimodal</td>
+                </tr>
+                <tr>
+                    <td><strong>Editor Agent</strong></td>
+                    <td>Instruction, ref videos/images, audio</td>
+                    <td>Remotion TSX code</td>
+                    <td><code>EditorAgent</code> (Gemini to TSX)</td>
+                </tr>
+                <tr>
+                    <td><strong>Upscaler</strong></td>
+                    <td>Media input</td>
+                    <td>Enhanced media</td>
+                    <td>Placeholder (not yet implemented)</td>
+                </tr>
+            </table>
+
+            <h3>Node Connection Diagram</h3>
+            <div class="mermaid-wrap">
+                <pre class="mermaid">
+graph LR
+    T["Text"] --> VG["Video Gen"]
+    T --> IG["Image Gen"]
+    T --> AG["Audio Gen"]
+    T --> VI["Vision"]
+    U["Upload"] --> IG
+    U --> VG
+    MU["Media Upload"] --> VG
+    MU --> EA["Editor Agent"]
+    MU --> VI
+    IG --> VG
+    IG --> EA
+    VG --> EA
+    AG --> EA
+    EA -->|TSX Code| RP["Remotion Player\n(Client-Side)"]
+</pre>
+            </div>
+        </div>
+
+        <!-- SECTION: FRONTEND -->
+        <div id="frontend" class="section">
+            <h2>Frontend Architecture</h2>
+            <table>
+                <tr>
+                    <th>Component</th>
+                    <th>Technology</th>
+                    <th>Version</th>
+                </tr>
+                <tr>
+                    <td>Framework</td>
+                    <td>Next.js</td>
+                    <td>15.1</td>
+                </tr>
+                <tr>
+                    <td>React</td>
+                    <td>React</td>
+                    <td>19.0</td>
+                </tr>
+                <tr>
+                    <td>Styling</td>
+                    <td>Tailwind CSS</td>
+                    <td>v4</td>
+                </tr>
+                <tr>
+                    <td>State Management</td>
+                    <td>Zustand</td>
+                    <td>5.0</td>
+                </tr>
+                <tr>
+                    <td>Flow Editor</td>
+                    <td>@xyflow/react</td>
+                    <td>12.10</td>
+                </tr>
+                <tr>
+                    <td>Video Player</td>
+                    <td>Remotion Player</td>
+                    <td>4.0</td>
+                </tr>
+                <tr>
+                    <td>Auth</td>
+                    <td>@auth0/auth0-react</td>
+                    <td>2.13</td>
+                </tr>
+                <tr>
+                    <td>HTTP</td>
+                    <td>Axios</td>
+                    <td>1.7</td>
+                </tr>
+                <tr>
+                    <td>Animations</td>
+                    <td>Framer Motion</td>
+                    <td>11.18</td>
+                </tr>
+                <tr>
+                    <td>Toast</td>
+                    <td>Sonner</td>
+                    <td>2.0</td>
+                </tr>
+            </table>
+
+            <h3>Page and Component Tree</h3>
+            <div class="mermaid-wrap">
+                <pre class="mermaid">
+graph TB
+    subgraph "App Shell"
+        Layout["RootLayout\n(AuthProvider + Toaster)"]
+    end
+    subgraph "Pages"
+        Root["/ - redirect /dashboard"]
+        Dash["/dashboard\n(Workflow list + Templates)"]
+        WF["/dashboard/workflow?id=xxx\n(Flow Editor)"]
+    end
+    subgraph "Workflow Editor"
+        FE["FlowEditor (XYFlow canvas)"]
+        AgSB["Agent Sidebar (Chat AI)"]
+        TB["Toolbar"]
+        Preview["Workflow Preview"]
+    end
+    subgraph "12 Node Components"
+        Nodes["text, upload, media-upload\nimage-gen, video-gen, audio-gen\nvision, editor-agent, comment"]
+    end
+    Layout --> Root
+    Layout --> Dash
+    Layout --> WF
+    WF --> FE
+    WF --> AgSB
+    WF --> TB
+    WF --> Preview
+    FE --> Nodes
+</pre>
+            </div>
+
+            <h3>State Management (Zustand)</h3>
+            <table>
+                <tr>
+                    <th>Store</th>
+                    <th>File</th>
+                    <th>Persisted?</th>
+                    <th>Purpose</th>
+                </tr>
+                <tr>
+                    <td><code>useWorkflowStore</code></td>
+                    <td><code>lib/workflow-store.ts</code></td>
+                    <td>No</td>
+                    <td>Workflow CRUD, node/edge state, run node/workflow, chat history, outputs</td>
+                </tr>
+                <tr>
+                    <td><code>useCanvasStore</code></td>
+                    <td><code>lib/canvas-store.ts</code></td>
+                    <td>Yes (localStorage)</td>
+                    <td>Canvas pipeline state: brand data, story, scenes, node statuses</td>
+                </tr>
+            </table>
+
+            <h3>API Client Layer</h3>
+            <table>
+                <tr>
+                    <th>File</th>
+                    <th>Exports</th>
+                    <th>Description</th>
+                </tr>
+                <tr>
+                    <td><code>lib/api.ts</code></td>
+                    <td><code>projectsApi</code>, <code>scrapeApi</code>, <code>generateApi</code>,
+                        <code>canvasApi</code>
+                    </td>
+                    <td>Axios instance with Auth0 token interceptor, 401 handling with token refresh/redirect</td>
+                </tr>
+                <tr>
+                    <td><code>lib/workflow-api.ts</code></td>
+                    <td><code>workflowApi</code></td>
+                    <td>Workflow CRUD + run node/workflow</td>
+                </tr>
+            </table>
+        </div>
+
+        <!-- SECTION: AUTH -->
+        <div id="auth" class="section">
+            <h2>Authentication Flow</h2>
+            <p>Auth0 handles all authentication. The backend validates JWT tokens against Auth0's JWKS endpoint and
+                auto-provisions users in MongoDB.</p>
+            <div class="mermaid-wrap">
+                <pre class="mermaid">
+sequenceDiagram
+    actor User
+    participant Browser
+    participant Auth0
+    participant Frontend
+    participant API
+    User->>Browser: Visit app.kureita.com
+    Browser->>Frontend: Load page
+    Frontend->>Frontend: AuthGuard checks isAuthenticated
+    alt Not authenticated
+        Frontend->>Auth0: Redirect to Auth0 login
+        Auth0->>User: Login/Signup form
+        User->>Auth0: Credentials
+        Auth0->>Browser: Redirect with auth code
+        Browser->>Auth0: Exchange code for tokens
+        Auth0-->>Browser: Access Token (JWT)
+    end
+    Frontend->>API: GET /api/me (Bearer token)
+    API->>Auth0: Validate JWT via JWKS
+    API->>API: get_or_create_user (MongoDB)
+    API-->>Frontend: User profile
+</pre>
+            </div>
+
+            <h3>Key Implementation Details</h3>
+            <div class="card-grid">
+                <div class="card">
+                    <h4>Frontend Auth</h4>
+                    <p><code>AuthProvider</code> wraps app with <code>@auth0/auth0-react</code>. <code>AuthGuard</code>
+                        protects routes. Token getter injected into Axios interceptor via
+                        <code>setAuthTokenGetter()</code>.
+                    </p>
+                </div>
+                <div class="card">
+                    <h4>Backend Auth</h4>
+                    <p><code>core/auth.py</code>: Fetches JWKS from Auth0, validates JWT signature + audience + issuer.
+                        <code>get_current_user</code> dependency on all <code>/api</code> routes.
+                    </p>
+                </div>
+                <div class="card">
+                    <h4>User Provisioning</h4>
+                    <p><code>core/user.py</code>: <code>get_or_create_user()</code> looks up by <code>auth0_sub</code>.
+                        Creates new doc in <code>users</code> collection if first time. Returns user dict for downstream
+                        use.</p>
+                </div>
+                <div class="card">
+                    <h4>Data Tenancy</h4>
+                    <p>All queries filter by <code>user_id</code> from the authenticated user. Legacy projects (no
+                        <code>user_id</code>) are visible via <code>$or</code> query fallback.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- SECTION: INFRA -->
+        <div id="infra" class="section">
+            <h2>Deployment &amp; Infrastructure</h2>
+            <div class="mermaid-wrap">
+                <pre class="mermaid">
+graph TB
+    subgraph "Developer"
+        Code["Source Code"]
+        Env[".env.prod"]
+    end
+    subgraph "CI/CD"
+        SAM["AWS SAM CLI"]
+        Docker["Docker Build"]
+    end
+    subgraph "AWS Cloud - ap-south-1"
+        ECR["ECR Registry"]
+        Lambda["Lambda\n(2GB, 600s timeout)"]
+        APIGW["API Gateway v2"]
+        S3["S3 Assets Bucket"]
+        Amplify["Amplify\n(app.kureita.com)"]
+    end
+    subgraph "External"
+        Atlas["MongoDB Atlas"]
+        Auth0E["Auth0"]
+    end
+    Code --> Docker --> ECR
+    SAM --> Lambda
+    SAM --> APIGW
+    SAM --> S3
+    Env -->|env vars| Lambda
+    APIGW -->|proxy| Lambda
+    Lambda --> Atlas
+    Lambda --> S3
+    Code -->|git push| Amplify
+</pre>
+            </div>
+
+            <h3>Deploy Script Steps (<code>scripts/deploy-api.sh</code>)</h3>
+            <table>
+                <tr>
+                    <th>Step</th>
+                    <th>Action</th>
+                    <th>Details</th>
+                </tr>
+                <tr>
+                    <td><span class="badge badge-blue">0</span></td>
+                    <td>Pre-flight</td>
+                    <td>Verify AWS CLI, SAM, Docker, jq, curl; validate AWS account ID</td>
+                </tr>
+                <tr>
+                    <td><span class="badge badge-blue">1</span></td>
+                    <td>Load .env.prod</td>
+                    <td>Parse key=value pairs, validate critical secrets</td>
+                </tr>
+                <tr>
+                    <td><span class="badge badge-blue">2</span></td>
+                    <td>ECR Setup</td>
+                    <td>Auth Docker to ECR, create repo if not exists</td>
+                </tr>
+                <tr>
+                    <td><span class="badge badge-blue">3</span></td>
+                    <td>SAM Build</td>
+                    <td>Build Docker image with Lambda Web Adapter + FastAPI</td>
+                </tr>
+                <tr>
+                    <td><span class="badge badge-blue">4</span></td>
+                    <td>SAM Deploy</td>
+                    <td>Push to ECR, CloudFormation stack (Lambda + API GW + S3)</td>
+                </tr>
+                <tr>
+                    <td><span class="badge badge-blue">5</span></td>
+                    <td>Env Sync</td>
+                    <td>Inject .env.prod vars into Lambda config (merge existing)</td>
+                </tr>
+                <tr>
+                    <td><span class="badge badge-blue">6</span></td>
+                    <td>S3 Verify</td>
+                    <td>Check assets bucket exists, CORS configured</td>
+                </tr>
+                <tr>
+                    <td><span class="badge badge-blue">7</span></td>
+                    <td>MongoDB Check</td>
+                    <td>Validate connection string format</td>
+                </tr>
+                <tr>
+                    <td><span class="badge badge-green">8</span></td>
+                    <td>Smoke Test</td>
+                    <td><code>curl /health</code> on custom domain + fallback API GW URL</td>
+                </tr>
+            </table>
+            <p>Flags: <code>--skip-build</code>, <code>--skip-env-sync</code>, <code>--guided</code>,
+                <code>--dry-run</code>, <code>--start-from N</code>
+            </p>
+
+            <h3>Web Deployment (Amplify)</h3>
+            <div class="card">
+                <p>Git-triggered builds from <code>main</code> branch. <code>npm run build</code> produces a Next.js
+                    static export (<code>output: 'export'</code>) into the <code>out/</code> directory. Custom domain:
+                    <code>app.kureita.com</code>. Env var <code>NEXT_PUBLIC_API_URL</code> is baked at build time.
+                </p>
+            </div>
+        </div>
+
+        <!-- SECTION: ENV -->
+        <div id="env" class="section">
+            <h2>Environment Variables</h2>
+
+            <h3>Backend (<code>apps/api/.env.prod</code>)</h3>
+            <table>
+                <tr>
+                    <th>Variable</th>
+                    <th>Req</th>
+                    <th>Description</th>
+                </tr>
+                <tr>
+                    <td><code>MONGODB_URL</code></td>
+                    <td><span class="badge badge-red">required</span></td>
+                    <td>MongoDB Atlas connection string</td>
+                </tr>
+                <tr>
+                    <td><code>MONGODB_DATABASE</code></td>
+                    <td><span class="badge badge-red">required</span></td>
+                    <td>Database name (default: kureita)</td>
+                </tr>
+                <tr>
+                    <td><code>OPENAI_API_KEY</code></td>
+                    <td><span class="badge badge-red">required</span></td>
+                    <td>GPT-4o for brand analysis, story, script</td>
+                </tr>
+                <tr>
+                    <td><code>GEMINI_API_KEY</code></td>
+                    <td><span class="badge badge-red">required</span></td>
+                    <td>Veo 3.1, Imagen 4, workflow agent, vision</td>
+                </tr>
+                <tr>
+                    <td><code>AUTH0_DOMAIN</code></td>
+                    <td><span class="badge badge-red">required</span></td>
+                    <td>e.g. yourapp.us.auth0.com</td>
+                </tr>
+                <tr>
+                    <td><code>AUTH0_AUDIENCE</code></td>
+                    <td><span class="badge badge-red">required</span></td>
+                    <td>e.g. https://api.kureita.com</td>
+                </tr>
+                <tr>
+                    <td><code>CORS_ORIGINS</code></td>
+                    <td><span class="badge badge-red">required</span></td>
+                    <td>Comma-separated allowed origins</td>
+                </tr>
+                <tr>
+                    <td><code>API_BASE_URL</code></td>
+                    <td><span class="badge badge-red">required</span></td>
+                    <td>Public URL for asset URL generation</td>
+                </tr>
+                <tr>
+                    <td><code>STORAGE_TYPE</code></td>
+                    <td><span class="badge badge-red">required</span></td>
+                    <td><code>local</code> or <code>s3</code></td>
+                </tr>
+                <tr>
+                    <td><code>S3_BUCKET</code></td>
+                    <td><span class="badge badge-yellow">if s3</span></td>
+                    <td>S3 bucket name</td>
+                </tr>
+                <tr>
+                    <td><code>ELEVENLABS_API_KEY</code></td>
+                    <td><span class="badge badge-blue">optional</span></td>
+                    <td>TTS audio (falls back to gTTS)</td>
+                </tr>
+                <tr>
+                    <td><code>USE_MOCK_VEO</code></td>
+                    <td><span class="badge badge-blue">optional</span></td>
+                    <td><code>true</code> for dev, <code>false</code> for prod</td>
+                </tr>
+                <tr>
+                    <td><code>DEBUG</code></td>
+                    <td><span class="badge badge-blue">optional</span></td>
+                    <td><code>true</code> enables /docs and /redoc</td>
+                </tr>
+            </table>
+
+            <h3>Frontend (<code>apps/web/.env.production.local</code>)</h3>
+            <table>
+                <tr>
+                    <th>Variable</th>
+                    <th>Req</th>
+                    <th>Description</th>
+                </tr>
+                <tr>
+                    <td><code>NEXT_PUBLIC_API_URL</code></td>
+                    <td><span class="badge badge-red">required</span></td>
+                    <td>Backend API URL</td>
+                </tr>
+                <tr>
+                    <td><code>NEXT_PUBLIC_AUTH0_DOMAIN</code></td>
+                    <td><span class="badge badge-red">required</span></td>
+                    <td>Auth0 tenant domain</td>
+                </tr>
+                <tr>
+                    <td><code>NEXT_PUBLIC_AUTH0_CLIENT_ID</code></td>
+                    <td><span class="badge badge-red">required</span></td>
+                    <td>Auth0 SPA client ID</td>
+                </tr>
+                <tr>
+                    <td><code>NEXT_PUBLIC_AUTH0_AUDIENCE</code></td>
+                    <td><span class="badge badge-red">required</span></td>
+                    <td>Auth0 API audience</td>
+                </tr>
+            </table>
+        </div>
+
+        <!-- SECTION: DEV SETUP -->
+        <div id="devsetup" class="section">
+            <h2>Local Development Setup</h2>
+            <pre>
+# 1. Clone and install monorepo deps
+cd kureita-ai-video/mvp
+npm install
+
+# 2. Backend setup
+cd apps/api
+cp .env.example .env.local     # Fill in API keys
+uv sync                        # Install Python deps
+# From repo root:
+npm run dev:api                # uvicorn on :8000
+
+# 3. Frontend setup
+cd apps/web
+cp .env.example .env.local     # Set API URL + Auth0 credentials
+# From repo root:
+npm run dev:web                # Next.js on :3000
+</pre>
+
+            <h3>Dev Ports</h3>
+            <table>
+                <tr>
+                    <th>Service</th>
+                    <th>Port</th>
+                    <th>URL</th>
+                </tr>
+                <tr>
+                    <td>Frontend</td>
+                    <td>3000</td>
+                    <td><code>http://localhost:3000</code></td>
+                </tr>
+                <tr>
+                    <td>Backend</td>
+                    <td>8000</td>
+                    <td><code>http://localhost:8000</code></td>
+                </tr>
+                <tr>
+                    <td>API Docs</td>
+                    <td>8000</td>
+                    <td><code>http://localhost:8000/docs</code> (debug mode only)</td>
+                </tr>
+            </table>
+
+            <h3>Production URLs</h3>
+            <table>
+                <tr>
+                    <th>Component</th>
+                    <th>URL</th>
+                    <th>Infrastructure</th>
+                </tr>
+                <tr>
+                    <td>Web UI</td>
+                    <td><code>https://app.kureita.com</code></td>
+                    <td>AWS Amplify</td>
+                </tr>
+                <tr>
+                    <td>API</td>
+                    <td><code>https://app-api.kureita.com</code></td>
+                    <td>Lambda + API Gateway</td>
+                </tr>
+                <tr>
+                    <td>S3 Assets</td>
+                    <td><code>kureita-assets</code> bucket</td>
+                    <td>S3 (ap-south-1)</td>
+                </tr>
+                <tr>
+                    <td>AWS Region</td>
+                    <td><code>ap-south-1</code></td>
+                    <td>Account: 071329584603</td>
+                </tr>
+            </table>
+        </div>
+
+        <!-- SECTION: MAINTAINER NOTES -->
+        <div id="notes" class="section">
+            <h2>Key Maintainer Notes</h2>
+
+            <div class="callout callout-danger">
+                <strong>API Gateway Timeout</strong>
+                API Gateway has a hard <strong>29-second timeout</strong>. Video generation with Veo 3.1 can take 60+
+                seconds. The <code>start_generation</code> endpoint uses FastAPI <code>BackgroundTasks</code>, but
+                individual workflow node runs (<code>POST /workflows/{id}/nodes/{nid}/run</code>) are synchronous and
+                may timeout for video gen nodes in production. Consider implementing WebSocket or polling pattern.
+            </div>
+
+            <div class="callout callout-warn">
+                <strong>Playwright in Lambda</strong>
+                <code>WebScraper</code> lists Playwright as a dependency in <code>pyproject.toml</code>, but browser
+                install is <strong>commented out</strong> in the Dockerfile. Currently scraping uses httpx +
+                BeautifulSoup (no JS rendering). If full JS rendering is needed, enable Playwright in container
+                (significantly increases image size).
+            </div>
+
+            <div class="callout callout-info">
+                <strong>Mock Mode</strong>
+                Set <code>USE_MOCK_VEO=true</code> for development. This makes all video/image generation return
+                placeholder files from <code>static/</code> directories with simulated delays, avoiding API costs. Audio
+                mock uses free Google gTTS.
+            </div>
+
+            <div class="callout callout-tip">
+                <strong>Remotion Rendering</strong>
+                Video composition happens entirely <strong>client-side</strong> using <code>@remotion/player</code> and
+                <code>@remotion/web-renderer</code>. The <code>EditorAgent</code> generates TSX code on the backend,
+                which the frontend compiles using <code>sucrase</code> and renders in the browser. No server-side
+                rendering infrastructure needed.
+            </div>
+
+            <div class="callout callout-info">
+                <strong>Data Storage Summary</strong>
+                User accounts: MongoDB <code>users</code> (auto-provisioned). Projects: MongoDB <code>projects</code>
+                (embedded brand, story, scenes). Workflows: MongoDB <code>workflows</code> (nodes, edges, outputs,
+                chat). Generated media: S3 or <code>static/uploads/</code>. Remotion compositions: in-memory (frontend
+                only). Auth tokens: browser memory. Canvas state: localStorage (Zustand persist).
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        mermaid.initialize({
+            startOnLoad: false,
+            theme: 'dark',
+            themeVariables: {
+                primaryColor: '#7c5cfc',
+                primaryTextColor: '#e4e4ed',
+                primaryBorderColor: '#363650',
+                lineColor: '#6b6b85',
+                secondaryColor: '#1a1a26',
+                tertiaryColor: '#222233',
+                background: '#12121a',
+                mainBkg: '#1a1a26',
+                nodeBorder: '#363650',
+                clusterBkg: '#12121a',
+                clusterBorder: '#2a2a3d',
+                titleColor: '#e4e4ed',
+                edgeLabelBackground: '#1a1a26',
+                nodeTextColor: '#e4e4ed',
+            },
+            flowchart: { curve: 'basis', padding: 16 },
+            sequence: { actorMargin: 60, mirrorActors: false },
+        });
+
+        var rendered = {};
+
+        function renderMermaid(sectionId) {
+            if (rendered[sectionId]) return;
+            var el = document.getElementById(sectionId);
+            if (!el) return;
+            var diagrams = el.querySelectorAll('pre.mermaid');
+            if (diagrams.length > 0) {
+                mermaid.run({ nodes: diagrams }).then(function () {
+                    rendered[sectionId] = true;
+                }).catch(function (err) {
+                    console.warn('Mermaid render error in ' + sectionId + ':', err);
+                });
+            }
+        }
+
+        function showSection(id) {
+            document.querySelectorAll('.section').forEach(function (s) { s.classList.remove('active'); });
+            document.querySelectorAll('.nav-item').forEach(function (n) { n.classList.remove('active'); });
+            document.getElementById(id).classList.add('active');
+            event.currentTarget.classList.add('active');
+            setTimeout(function () { renderMermaid(id); }, 50);
+        }
+
+        document.addEventListener('DOMContentLoaded', function () {
+            renderMermaid('overview');
+        });
+    </script>
+</body>
+
+</html>

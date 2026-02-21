@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     gemini_api_key: str = ""  # Can also use GOOGLE_API_KEY
     google_api_key: str = ""  # Alternative to GEMINI_API_KEY
+    anthropic_api_key: str = ""
     use_mock_veo: bool = True  # Set to False to use real Veo API
     kling_api_key: str = ""
     byteplus_access_key: str = ""

@@ -363,7 +363,7 @@ function CursorInput({
     onFileUpload,
     isUploading,
     selectedModel,
-    onModelChange,
+    onModelSelect,
 }: {
     value: string;
     onChange: (val: string) => void;
@@ -374,7 +374,7 @@ function CursorInput({
     onFileUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
     isUploading: boolean;
     selectedModel: string;
-    onModelChange: (model: string) => void;
+    onModelSelect: (model: string) => void;
 }) {
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const [showContextMenu, setShowContextMenu] = useState(false);
@@ -610,14 +610,19 @@ function CursorInput({
                         <div className="relative" ref={modelMenuRef}>
                             <button
                                 onClick={() => setShowModelMenu(!showModelMenu)}
-                                className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] text-muted-foreground/70 hover:bg-muted/60 hover:text-muted-foreground transition-colors cursor-pointer"
+                                className={cn(
+                                    "flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] transition-colors cursor-pointer",
+                                    "text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted/60",
+                                    showModelMenu && "text-muted-foreground bg-muted/60",
+                                    isLoading && "opacity-50 cursor-not-allowed"
+                                )}
                                 disabled={isLoading}
                             >
-                                <Cpu className="w-3 h-3 text-violet-400/70" />
+                                <ChevronDown className="w-3.5 h-3.5" />
                                 <span>{selectedModel}</span>
-                                <ChevronDown className="w-2.5 h-2.5 opacity-50" />
                             </button>
 
+                            {/* Model Menu Dropdown */}
                             <AnimatePresence>
                                 {showModelMenu && (
                                     <motion.div
@@ -625,25 +630,40 @@ function CursorInput({
                                         animate={{ opacity: 1, y: 0, scale: 1 }}
                                         exit={{ opacity: 0, y: 4, scale: 0.96 }}
                                         transition={{ duration: 0.12 }}
-                                        className="absolute bottom-full right-0 mb-2 w-36 bg-popover text-popover-foreground rounded-lg border shadow-xl overflow-hidden z-50"
+                                        className="absolute bottom-full right-0 mb-2 w-64 bg-popover text-popover-foreground rounded-lg border shadow-xl overflow-hidden z-50"
                                     >
-                                        <div className="p-1">
-                                            {["gemini-3-pro-preview", "gemini-3-flash-preview"].map((model) => (
+                                        <div className="px-3 py-2 text-[11px] text-muted-foreground border-b border-border/50">
+                                            Model
+                                        </div>
+                                        <div className="max-h-[240px] overflow-y-auto flex flex-col">
+                                            {[
+                                                { name: "Gemini 3.1 Pro (High)", isNew: true },
+                                                { name: "Gemini 3 Flash (Medium)", isNew: true },
+                                                { name: "Gemini 2.5 Flash-Lite (Low)", isNew: false },
+                                                { name: "Claude 4.6 Opus (High)", isNew: true },
+                                                { name: "Claude 4.6 Sonnet (Medium)", isNew: true },
+                                                { name: "Claude 4.5 Haiku (Low)", isNew: true },
+                                                { name: "GPT-5.2 Pro (High)", isNew: true },
+                                                { name: "GPT-5 Mini (Medium)", isNew: true },
+                                                { name: "GPT-4.1 Nano (Low)", isNew: true }
+                                            ].map((model) => (
                                                 <button
-                                                    key={model}
+                                                    key={model.name}
                                                     onClick={() => {
-                                                        onModelChange(model);
+                                                        onModelSelect(model.name);
                                                         setShowModelMenu(false);
                                                     }}
                                                     className={cn(
-                                                        "w-full text-left px-2.5 py-1.5 text-xs rounded-md cursor-pointer flex items-center justify-between transition-colors",
-                                                        selectedModel === model
-                                                            ? "bg-violet-500/10 text-violet-600"
-                                                            : "hover:bg-accent hover:text-accent-foreground text-muted-foreground"
+                                                        "w-full text-left px-2 py-2 text-[11px] hover:bg-accent/80 hover:text-accent-foreground cursor-pointer flex items-center justify-between",
+                                                        selectedModel === model.name && "bg-accent/60 text-accent-foreground font-medium"
                                                     )}
                                                 >
-                                                    <span>{model}</span>
-                                                    {selectedModel === model && <Check className="w-3 h-3" />}
+                                                    <span className={cn(selectedModel !== model.name && "text-muted-foreground/90")}>{model.name}</span>
+                                                    {model.isNew && (
+                                                        <span className="bg-muted/80 px-1.5 py-0.5 rounded-full text-[9px] text-muted-foreground border border-border/50 shadow-sm font-medium">
+                                                            New
+                                                        </span>
+                                                    )}
                                                 </button>
                                             ))}
                                         </div>
@@ -701,12 +721,14 @@ function CursorInput({
 
 export function AgentSidebar() {
     const { chatHistory, addChatMessage, setNodes, setEdges, nodes, edges } = useWorkflowStore();
+    const storeId = useWorkflowStore((state) => state.id);
     const [input, setInput] = useState("");
     const [isLoading, setIsLoading] = useState(false);
     const [isUploading, setIsUploading] = useState(false);
-    const [selectedModel, setSelectedModel] = useState("gemini-3-flash-preview");
+    const [selectedModel, setSelectedModel] = useState("Gemini 3.1 Pro (High)");
     const [pendingAttachments, setPendingAttachments] = useState<Attachment[]>([]);
     const messagesEndRef = useRef<HTMLDivElement>(null);
+    const autoPromptSent = useRef(false);
 
     // Resizable sidebar state
     const [sidebarWidth, setSidebarWidth] = useState(420);
@@ -791,29 +813,47 @@ export function AgentSidebar() {
             ]
             : chatHistory;
 
-    const handleSubmit = async () => {
-        if ((!input.trim() && pendingAttachments.length === 0) || isLoading) return;
+    const handleSubmit = async (overrideMessage?: string) => {
+        let userMessage: string;
 
-        let userMessage = input.trim();
-        if (pendingAttachments.length > 0) {
-            const attachmentLines = pendingAttachments.map(
-                (att) => `[Attached: ${att.filename}] (${att.type}) - URL: ${att.url}`
-            );
-            userMessage += '\n' + attachmentLines.join('\n');
+        if (overrideMessage) {
+            // Auto-prompt: use the override directly
+            userMessage = overrideMessage;
+        } else {
+            // Manual submit: build from input + attachments
+            if ((!input.trim() && pendingAttachments.length === 0) || isLoading) return;
+
+            userMessage = input.trim();
+            if (pendingAttachments.length > 0) {
+                const attachmentLines = pendingAttachments.map(
+                    (att) => `[Attached: ${att.filename}] (${att.type}) - URL: ${att.url}`
+                );
+                userMessage += '\n' + attachmentLines.join('\n');
+            }
+
+            setInput("");
+            setPendingAttachments([]);
         }
 
-        setInput("");
-        setPendingAttachments([]);
+        if (!userMessage || isLoading) return;
+
         addChatMessage({ role: "user", content: userMessage });
         setIsLoading(true);
 
         try {
+            // Sanitize chatHistory to plain {role, content} objects before sending to backend
+            // to avoid circular JSON errors from SDK objects in the store
+            const sanitizedHistory = chatHistory.map((m) => ({
+                role: m.role,
+                content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
+            }));
+
             const response = await api.post("/api/agent/flow", {
                 prompt: userMessage,
+                model: selectedModel,
                 current_nodes: nodes,
                 current_edges: edges,
-                chat_history: chatHistory,
-                model: selectedModel,
+                chat_history: sanitizedHistory,
             });
 
             const result = response.data;
@@ -851,6 +891,25 @@ export function AgentSidebar() {
         }
     };
 
+    // -- Auto-send initial prompt from dashboard --
+    const handleSubmitRef = useRef(handleSubmit);
+    handleSubmitRef.current = handleSubmit;
+
+    useEffect(() => {
+        if (storeId && !autoPromptSent.current) {
+            const prompt = sessionStorage.getItem("kureita_initial_prompt");
+            if (prompt) {
+                autoPromptSent.current = true;
+                sessionStorage.removeItem("kureita_initial_prompt");
+                // small delay to ensure the workflow is fully loaded and UI is ready
+                const timer = setTimeout(() => {
+                    handleSubmitRef.current(prompt);
+                }, 600);
+                return () => clearTimeout(timer);
+            }
+        }
+    }, [storeId]);
+
     return (
         <div
             ref={sidebarRef}
@@ -872,7 +931,7 @@ export function AgentSidebar() {
             <div className="flex-1 overflow-y-auto px-4 py-4">
                 {displayMessages.map((msg, i) => (
                     <ChatMessageItem
-                        key={`${i}-${msg.role}-${msg.content.substring(0, 20)}`}
+                        key={`${i}-${msg.role}-${(typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content)).substring(0, 20)}`}
                         message={msg}
                     />
                 ))}
@@ -894,7 +953,7 @@ export function AgentSidebar() {
                 onFileUpload={handleFileUpload}
                 isUploading={isUploading}
                 selectedModel={selectedModel}
-                onModelChange={setSelectedModel}
+                onModelSelect={setSelectedModel}
             />
 
             {/* Resize Handle */}

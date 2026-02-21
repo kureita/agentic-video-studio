@@ -9,6 +9,7 @@ agent_service = AgentService()
 
 class GenerateFlowRequest(BaseModel):
     prompt: str
+    model: str = "Gemini 2.5 Flash"
     current_nodes: Optional[List[Dict[str, Any]]] = []
     current_edges: Optional[List[Dict[str, Any]]] = []
     chat_history: Optional[List[Dict[str, Any]]] = []
@@ -36,6 +37,7 @@ async def generate_flow(request: GenerateFlowRequest):
     """
     result = await agent_service.generate_workflow(
         prompt=request.prompt,
+        model=request.model,
         current_nodes=request.current_nodes,
         current_edges=request.current_edges,
         chat_history=request.chat_history,

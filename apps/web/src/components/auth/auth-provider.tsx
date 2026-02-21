@@ -6,13 +6,26 @@ import { useAuth0 } from "@auth0/auth0-react";
 import { setAuthTokenGetter } from "@/lib/api";
 
 function AuthTokenSync() {
-    const { getAccessTokenSilently, isAuthenticated } = useAuth0();
+    const { getAccessTokenSilently, isAuthenticated, logout } = useAuth0();
 
     useEffect(() => {
         if (isAuthenticated) {
             setAuthTokenGetter(() => getAccessTokenSilently());
         }
     }, [isAuthenticated, getAccessTokenSilently]);
+
+    useEffect(() => {
+        const handleUnauthorized = () => {
+            logout({
+                logoutParams: { returnTo: window.location.origin },
+            });
+        };
+
+        window.addEventListener("auth:unauthorized", handleUnauthorized as EventListener);
+        return () => {
+            window.removeEventListener("auth:unauthorized", handleUnauthorized as EventListener);
+        };
+    }, [logout]);
 
     return null;
 }

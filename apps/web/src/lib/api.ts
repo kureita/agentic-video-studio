@@ -1,4 +1,5 @@
 import axios from "axios";
+import { toast } from "sonner";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -44,8 +45,11 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      // Auth0 will handle re-authentication via the AuthGuard
-      console.warn("Unauthorized API request — user may need to re-authenticate");
+      if (typeof window !== "undefined") {
+        toast.error("Session expired. Please log in again.");
+        window.dispatchEvent(new CustomEvent("auth:unauthorized"));
+        // The event listener in AuthProvider will handle the logout and redirect
+      }
     }
     return Promise.reject(error);
   }
