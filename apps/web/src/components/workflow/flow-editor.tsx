@@ -27,7 +27,6 @@ import { UploadNode } from "./nodes/upload-node";
 import { ImageGenNode } from "./nodes/image-gen-node";
 import { AudioGenNode } from "./nodes/audio-gen-node";
 import { VideoGenNode } from "./nodes/video-gen-node";
-import { VisionNode } from "./nodes/vision-node";
 import { EditorAgentNode } from "./nodes/editor-agent-node";
 import { MediaUploadNode } from "./nodes/media-upload-node";
 import { CommentNode } from "./nodes/comment-node";
@@ -41,8 +40,6 @@ const nodeTypes = {
     imageGen: ImageGenNode,
     audioGen: AudioGenNode,
     videoGen: VideoGenNode,
-    vision: VisionNode,
-    assistant: VisionNode, // Keep backward compatibility
     editorAgent: EditorAgentNode,
     mediaUpload: MediaUploadNode,
     comment: CommentNode,
@@ -119,6 +116,10 @@ function FlowEditorInner({ workflowId }: FlowEditorProps) {
         setEdges,
         loadWorkflow,
         runNode,
+        runWorkflowAsync,
+        nodeExecutionStates,
+        executionProgress,
+        isRunningAsync,
     } = useWorkflowStore();
 
     const [activeTool, setActiveTool] = useState("pointer");
@@ -164,13 +165,14 @@ function FlowEditorInner({ workflowId }: FlowEditorProps) {
         };
     }, [workflowId, loadWorkflow, isInitialized]);
 
-    // Inject outputs into node data for display
+    // Inject outputs and execution state into node data for display
     const nodesWithOutputs = nodes.map((node) => ({
         ...node,
         data: {
             ...node.data,
             output: outputs[node.id] || node.data.output,
             isRunning: runningNodeId === node.id,
+            executionStatus: nodeExecutionStates[node.id]?.status || null,
             onRun: () => runNode(node.id),
         },
     }));
@@ -467,6 +469,9 @@ function FlowEditorInner({ workflowId }: FlowEditorProps) {
                 onRedo={handleRedo}
                 canUndo={canUndo}
                 canRedo={canRedo}
+                onRunAll={runWorkflowAsync}
+                isRunningAll={isRunningAsync}
+                executionProgress={executionProgress}
             />
 
             <ReactFlow

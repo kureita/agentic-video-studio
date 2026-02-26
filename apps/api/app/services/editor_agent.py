@@ -1,12 +1,11 @@
-"""Editor Agent Service - Uses Gemini to write Remotion composition code dynamically."""
+"""Editor Agent Service - Uses Anthropic Claude to write Remotion composition code dynamically."""
 
 import os
 import json
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 
-from google import genai
-from google.genai import types
+from anthropic import AsyncAnthropic
 
 from app.core.config import settings
 
@@ -187,15 +186,115 @@ const scale = interpolate(frame, [0, durationInFrames], [1, 1.3], { extrapolateR
 """
 
 
+# ── Scene-level prompt additions ─────────────────────────────────────────────
+
+REMOTION_SCENE_RULES = """
+## SCENE MODE – Component Architecture
+
+You are generating a **single, self-contained scene** component (NOT a full composition).
+
+Follow these additional rules:
+1. Export a NAMED function component (e.g., `HookScene`, `CTAScene`, `MontageScene`).
+2. Export `sceneDurationInFrames` as a constant indicating how many frames this scene lasts.
+3. Accept `width` and `height` as props for responsive sizing.
+4. Keep ALL animations relative to frame 0 (the scene manages its own time).
+5. Do NOT export `fps`, `width`, `height`, or `durationInFrames` at the module level.
+6. Do NOT export a `default` function – export a named component instead.
+
+### Scene Template
+```tsx
+import React from 'react';
+import { AbsoluteFill, Sequence, useCurrentFrame, useVideoConfig, interpolate, spring } from 'remotion';
+import { Video, Audio } from '@remotion/media';
+
+export const sceneDurationInFrames = 90; // 3 seconds at 30fps
+
+export function HookScene({ width, height }: { width: number; height: number }) {
+  const frame = useCurrentFrame();
+  // All frame-based animations start at 0
+  return (
+    <AbsoluteFill style={{ backgroundColor: 'black' }}>
+      {/* Scene content */}
+    </AbsoluteFill>
+  );
+}
+```
+
+Return ONLY the TSX code for this one scene. No markdown fences, no explanations.
+"""
+
+REMOTION_COMPOSITOR_RULES = """
+## COMPOSITOR MODE – Final Composition
+
+You are generating the **final composition** that stitches multiple scene components together.
+The upstream scene TSX codes are provided below. You must INLINE them (copy the component functions)
+into your output and arrange them chronologically using `<Sequence>`.
+
+Follow these rules:
+1. Copy each scene's component function and `sceneDurationInFrames` into the output.
+2. Use `<Sequence from={offset} durationInFrames={sceneDuration}>` for each scene.
+3. Add crossfade transitions between scenes (overlapping Sequences with opacity interpolation).
+4. Export: `fps`, `width`, `height`, `durationInFrames` (sum of all scenes), and a `default` component.
+5. Calculate total `durationInFrames` by summing all scene durations.
+
+### Compositor Template
+```tsx
+import React from 'react';
+import { AbsoluteFill, Sequence, useCurrentFrame, interpolate } from 'remotion';
+import { Video, Audio } from '@remotion/media';
+
+// === Scene 1 (inlined) ===
+const scene1Duration = 90;
+function HookScene({ width, height }: { width: number; height: number }) {
+  const frame = useCurrentFrame();
+  return (<AbsoluteFill>...</AbsoluteFill>);
+}
+
+// === Scene 2 (inlined) ===
+const scene2Duration = 120;
+function MontageScene({ width, height }: { width: number; height: number }) {
+  const frame = useCurrentFrame();
+  return (<AbsoluteFill>...</AbsoluteFill>);
+}
+
+export const fps = 30;
+export const width = 1920;
+export const height = 1080;
+export const durationInFrames = scene1Duration + scene2Duration;
+
+export default function MyComposition() {
+  return (
+    <AbsoluteFill>
+      <Sequence from={0} durationInFrames={scene1Duration}>
+        <HookScene width={1920} height={1080} />
+      </Sequence>
+      <Sequence from={scene1Duration} durationInFrames={scene2Duration}>
+        <MontageScene width={1920} height={1080} />
+      </Sequence>
+    </AbsoluteFill>
+  );
+}
+```
+
+Return ONLY the TSX code. No markdown fences, no explanations.
+"""
+
+
 class EditorAgent:
     """AI-powered video editor. Generates Remotion TSX composition code
-    that the frontend compiles and renders client-side."""
+    that the frontend compiles and renders client-side.
+    
+    Supports two modes:
+    - 'scene': generates a self-contained scene component (~50-100 lines)
+    - 'compositor': stitches upstream scene codes into a final composition
+    - None/default: original monolithic mode (backward compatible)
+    """
 
     def __init__(self):
-        self.client = genai.Client(api_key=settings.gemini_api_key)
+        self.client = AsyncAnthropic(api_key=settings.anthropic_api_key)
         self.compositions_dir = Path("static/compositions")
         self.compositions_dir.mkdir(parents=True, exist_ok=True)
-        print("[EditorAgent] Initialized (code-generation mode)")
+        print("[EditorAgent] Initialized (code-generation mode, Claude Opus 4.6)")
 
     async def edit_video(
         self,
@@ -205,15 +304,18 @@ class EditorAgent:
         audio: Optional[str] = None,
         text_input: Optional[str] = None,
         ref_images: Optional[List[str]] = None,
+        mode: Optional[str] = None,  # 'scene', 'compositor', or None (default)
+        upstream_scenes: Optional[List[Dict[str, Any]]] = None,  # For compositor mode
     ) -> dict:
         """
         Generate a Remotion composition TSX file based on the editing instruction.
 
         Returns:
-            { success: True, code: "<TSX source code>" }
+            { success: True, code: "<TSX source code>", mode: "scene"|"compositor"|None,
+              sceneConfig: { durationFrames, label } }  # Only in scene mode
         """
         try:
-            print(f"[EditorAgent] Generating code for: {instruction[:100]}...")
+            print(f"[EditorAgent] Generating code (mode={mode}) for: {instruction[:100]}...")
 
             ref_videos = ref_videos or []
             ref_images = ref_images or []
@@ -228,6 +330,8 @@ class EditorAgent:
                 audio=audio,
                 text_input=text_input,
                 ref_images=ref_images,
+                mode=mode,
+                upstream_scenes=upstream_scenes,
             )
 
             # Save to file for persistence / debugging
@@ -235,10 +339,28 @@ class EditorAgent:
             file_path.write_text(code, encoding="utf-8")
             print(f"[EditorAgent] Saved composition to {file_path}")
 
-            return {
+            result = {
                 "success": True,
                 "code": code,
+                "mode": mode,
             }
+
+            # For scene mode, try to extract scene config from the generated code
+            if mode == "scene":
+                import re
+                duration_match = re.search(r'sceneDurationInFrames\s*=\s*(\d+)', code)
+                scene_duration = int(duration_match.group(1)) if duration_match else 90
+                
+                # Extract the component name
+                name_match = re.search(r'export\s+function\s+(\w+)', code)
+                scene_label = name_match.group(1) if name_match else "Scene"
+                
+                result["sceneConfig"] = {
+                    "durationFrames": scene_duration,
+                    "label": scene_label,
+                }
+
+            return result
 
         except Exception as e:
             print(f"[EditorAgent] Error: {e}")
@@ -256,8 +378,10 @@ class EditorAgent:
         audio: Optional[str],
         text_input: Optional[str],
         ref_images: List[str],
+        mode: Optional[str] = None,
+        upstream_scenes: Optional[List[Dict[str, Any]]] = None,
     ) -> str:
-        """Use Gemini to write Remotion composition TSX code."""
+        """Use Anthropic Claude Opus 4.6 to write Remotion composition TSX code."""
 
         # Build input descriptions
         video_list = ""
@@ -268,13 +392,18 @@ class EditorAgent:
         for i, url in enumerate(ref_images):
             image_list += f"  Image {i + 1}: \"{url}\"\n"
 
-        prompt = f"""{REMOTION_SKILLS}
+        # Select the appropriate rules based on mode (used as system prompt)
+        if mode == "scene":
+            system_prompt = REMOTION_SKILLS + "\n\n" + REMOTION_SCENE_RULES
+        elif mode == "compositor" and upstream_scenes:
+            system_prompt = REMOTION_SKILLS + "\n\n" + REMOTION_COMPOSITOR_RULES
+        else:
+            system_prompt = REMOTION_SKILLS
 
----
+        # Build the user prompt (task-specific, rules go into system message)
+        user_prompt = f"""## Your Task
 
-## Your Task
-
-Write a complete Remotion composition in TSX that fulfills the user's editing instruction.
+{"Write a single SCENE component" if mode == 'scene' else "Write a FINAL COMPOSITION that stitches scenes together" if mode == 'compositor' else "Write a complete Remotion composition"} in TSX that fulfills the user's editing instruction.
 
 ### User Instruction
 "{instruction}"
@@ -286,7 +415,47 @@ Images ({len(ref_images)} total):
 {image_list if image_list else "  (none)"}
 Audio: {"Yes - " + audio if audio else "None"}
 Additional context: {text_input if text_input else "None"}
+"""
 
+        # Add upstream scene codes for compositor mode
+        if mode == "compositor" and upstream_scenes:
+            user_prompt += "\n### Upstream Scene Components to Stitch\n"
+            for i, scene in enumerate(upstream_scenes):
+                label = scene.get("label", f"Scene {i + 1}")
+                code = scene.get("code", "")
+                duration = scene.get("durationFrames", 90)
+                user_prompt += f"\n#### {label} ({duration} frames)\n```tsx\n{code}\n```\n"
+            user_prompt += "\nINLINE these scene components into your composition. Do NOT use import statements for them.\n"
+
+        # Output requirements differ by mode
+        if mode == "scene":
+            user_prompt += """
+### Output Requirements
+1. Write COMPLETE, VALID TSX code. No placeholders, no TODOs.
+2. Use EXACT video/image URLs from the inputs above. Do NOT invent URLs.
+3. Export a NAMED component and `sceneDurationInFrames`.
+4. Do NOT export `default`, `fps`, `width`, `height`, or `durationInFrames`.
+5. Keep animations relative to frame 0.
+6. Use ONLY supported CSS properties (no filter, clip-path, z-index, etc.).
+7. Use `<Video>` from '@remotion/media', NOT from 'remotion'.
+
+Return ONLY the TSX code. No markdown fences, no explanations.
+"""
+        elif mode == "compositor":
+            user_prompt += """
+### Output Requirements
+1. Write COMPLETE, VALID TSX code. No placeholders, no TODOs.
+2. INLINE all upstream scene component functions directly in your code.
+3. Export: `fps`, `width`, `height`, `durationInFrames`, and `default` component.
+4. Calculate `durationInFrames` as the sum of all scene durations.
+5. Use `<Sequence>` to arrange scenes chronologically.
+6. Add fade transitions between scenes (overlapping Sequences with opacity interpolation).
+7. Use ONLY supported CSS properties (no filter, clip-path, z-index, etc.).
+
+Return ONLY the TSX code. No markdown fences, no explanations.
+"""
+        else:
+            user_prompt += """
 ### Output Requirements
 1. Write COMPLETE, VALID TSX code. No placeholders, no TODOs.
 2. Use EXACT video/image URLs from the inputs above. Do NOT invent URLs.
@@ -300,15 +469,20 @@ Additional context: {text_input if text_input else "None"}
 Return ONLY the TSX code. No markdown fences, no explanations. Do NOT use negative playbackRate even if asked to reverse.
 """
 
-        response = self.client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                temperature=0.4,
-            ),
+        stream = await self.client.messages.create(
+            model="claude-opus-4-6",
+            max_tokens=128000,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_prompt}],
+            stream=True,
         )
 
-        code = response.text.strip()
+        code_chunks = []
+        async for event in stream:
+            if event.type == "content_block_delta" and event.delta.type == "text_delta":
+                code_chunks.append(event.delta.text)
+
+        code = "".join(code_chunks).strip()
 
         # Strip markdown fences if present
         if code.startswith("```"):
@@ -326,8 +500,12 @@ Return ONLY the TSX code. No markdown fences, no explanations. Do NOT use negati
         code = re.sub(r'playbackRate={-(\d+(\.\d+)?)}', r'playbackRate={\1}', code)
         code = re.sub(r'playbackRate={-\s*(\d+(\.\d+)?)}', r'playbackRate={\1}', code)
 
-        # Basic validation
-        if "export default" not in code and "export function" not in code:
-            raise ValueError("Generated code does not contain a default export. The AI may have produced invalid output.")
+        # Basic validation depends on mode
+        if mode == "scene":
+            if "export function" not in code and "export const" not in code:
+                raise ValueError("Generated scene code does not contain a named export.")
+        elif mode == "compositor" or mode is None:
+            if "export default" not in code and "export function" not in code:
+                raise ValueError("Generated code does not contain a default export. The AI may have produced invalid output.")
 
         return code

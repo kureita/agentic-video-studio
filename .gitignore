@@ -54,3 +54,5 @@ apps/api/static/videos/*
 apps/api/static/audios/*.aws-sam/
 
 scripts/deploy-api.sh
+
+apps/api/static/*

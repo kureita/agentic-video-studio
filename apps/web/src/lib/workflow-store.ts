@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { Node, Edge } from "@xyflow/react";
-import { workflowApi, Workflow, ChatMessage, WorkflowNode, WorkflowEdge } from "./workflow-api";
+import { workflowApi, Workflow, ChatMessage, WorkflowNode, WorkflowEdge, NodeState, WorkflowRunStatus } from "./workflow-api";
 import { toast } from "sonner";
 
 // ============================================
@@ -13,6 +13,10 @@ interface WorkflowState {
     name: string;
     nodes: Node[];
     edges: Edge[];
+
+    // Async execution state (polling-based Run All)
+    nodeExecutionStates: Record<string, NodeState>;
+    executionProgress: { current: number; total: number } | null;
     outputs: Record<string, string>; // nodeId -> output URL
     chatHistory: ChatMessage[];
 
@@ -27,6 +31,7 @@ interface WorkflowState {
 
     // Dirty tracking
     isDirty: boolean;
+    isRunningAsync: boolean;
 
     // Actions
     setWorkflow: (workflow: Workflow) => void;
@@ -46,7 +51,9 @@ interface WorkflowState {
     loadWorkflow: (id: string) => Promise<void>;
     saveWorkflow: () => Promise<void>;
     runWorkflow: () => Promise<void>;
+    runWorkflowAsync: () => Promise<void>;
     runNode: (nodeId: string) => Promise<void>;
+    clearExecutionStates: () => void;
 
     // Reset
     reset: () => void;
@@ -62,7 +69,10 @@ const initialState = {
     isLoading: false,
     isSaving: false,
     isRunning: false,
+    isRunningAsync: false,
     runningNodeId: null,
+    nodeExecutionStates: {} as Record<string, NodeState>,
+    executionProgress: null as { current: number; total: number } | null,
     error: null,
     isDirty: false,
 };
@@ -346,6 +356,79 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
             set({ isRunning: false, error: "Failed to run workflow" });
             toast.error("Failed to run workflow");
         }
+    },
+
+    // Run the entire workflow (async + polling for real-time progress)
+    runWorkflowAsync: async () => {
+        const { id } = get();
+        if (!id) {
+            console.error("[WorkflowStore] No workflow ID to run");
+            return;
+        }
+
+        // Save first to ensure latest nodes/edges are persisted
+        await get().saveWorkflow();
+
+        set({
+            isRunning: true,
+            isRunningAsync: true,
+            error: null,
+            nodeExecutionStates: {},
+            executionProgress: null,
+        });
+
+        try {
+            // Start the async run
+            await workflowApi.runWorkflowAsync(id);
+
+            // Poll for status updates
+            const finalStatus = await workflowApi.pollWorkflowRun(id, (status: WorkflowRunStatus) => {
+                // Update node execution states for real-time visual feedback
+                set({
+                    nodeExecutionStates: status.node_states,
+                    executionProgress: status.progress,
+                });
+
+                // Update outputs as they become available
+                if (Object.keys(status.outputs).length > 0) {
+                    set((state) => ({
+                        outputs: { ...state.outputs, ...status.outputs },
+                    }));
+                }
+            });
+
+            // Final update
+            set({
+                isRunning: false,
+                isRunningAsync: false,
+                outputs: { ...get().outputs, ...finalStatus.outputs },
+                nodeExecutionStates: finalStatus.node_states,
+                executionProgress: finalStatus.progress,
+            });
+
+            if (finalStatus.status === "failed" && finalStatus.errors.length > 0) {
+                console.error("[WorkflowStore] Run errors:", finalStatus.errors);
+                set({ error: `Errors in ${finalStatus.errors.length} node(s)` });
+                toast.error(`Workflow completed with errors in ${finalStatus.errors.length} node(s)`);
+            } else {
+                toast.success("Workflow run completed");
+            }
+        } catch (error) {
+            console.error("[WorkflowStore] Async run error:", error);
+            set({
+                isRunning: false,
+                isRunningAsync: false,
+                error: "Failed to run workflow",
+                nodeExecutionStates: {},
+                executionProgress: null,
+            });
+            toast.error("Failed to run workflow");
+        }
+    },
+
+    // Clear execution state indicators from all nodes
+    clearExecutionStates: () => {
+        set({ nodeExecutionStates: {}, executionProgress: null });
     },
 
     // Run a single node with recursive dependency execution

@@ -7,13 +7,13 @@ import { HighlightedTextarea } from "@/components/workflow/nodes/highlighted-tex
 import { useWorkflowStore } from "@/lib/workflow-store";
 
 const MODEL_CONFIGS: Record<string, { durations: string[], inputs: { id: string, label: string, type: "text" | "image" | "video" | "audio" }[] }> = {
-    "Veo 3.1": { durations: ["4s", "6s", "8s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }, { id: "reference_images", label: "Ref Images", type: "image" }] },
-    "Veo 3.1 Fast": { durations: ["4s", "6s", "8s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }, { id: "reference_images", label: "Ref Images", type: "image" }] },
-    "Kling V1.5": { durations: ["5s", "10s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }, { id: "end_image", label: "End Image", type: "image" }] },
-    "Kling V1.0": { durations: ["5s", "10s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }, { id: "end_image", label: "End Image", type: "image" }] },
-    "Kling Lip Sync": { durations: ["5s", "10s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }, { id: "audio", label: "Audio (Lip Sync)", type: "audio" }] },
-    "SeedDance 1.5 Pro": { durations: ["5s", "10s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }] },
-    "SeedDance 1.0 Pro": { durations: ["5s", "10s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }] },
+    "Kling 3.0 Standard": { durations: ["5s", "10s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }, { id: "end_image", label: "End Image", type: "image" }] },
+    "Kling 3.0 Pro": { durations: ["5s", "10s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }, { id: "end_image", label: "End Image", type: "image" }] },
+    "Kling 2.1 Master": { durations: ["5s", "10s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }, { id: "end_image", label: "End Image", type: "image" }] },
+    "Runway Gen-4.5": { durations: ["5s", "10s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }] },
+    "Wan2.6 Flash": { durations: ["3s", "5s", "10s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }] },
+    "PixVerse V5.6": { durations: ["5s", "8s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }] },
+    "Kling Lip Sync": { durations: ["5s", "10s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Video", type: "video" }, { id: "audio", label: "Audio", type: "audio" }] },
 };
 
 export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
@@ -33,9 +33,9 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
     const isRunning = runningNodeId === id;
     const output = (outputs[id] as string | undefined) || (data.output as string | undefined);
 
-    const currentModel = (typeof data.model === 'string' ? data.model : "Veo 3.1");
+    const currentModel = (typeof data.model === 'string' ? data.model : "Kling 3.0 Standard");
     // Ensure the current model exists in configs, fallback to default
-    const config = MODEL_CONFIGS[currentModel] || MODEL_CONFIGS["Veo 3.1"];
+    const config = MODEL_CONFIGS[currentModel] || MODEL_CONFIGS["Kling 3.0 Standard"];
 
     // Check if the current duration is valid for the model, otherwise update to default for model.
     // However, during render we cannot safely update state synchronously without warnings, 
@@ -46,7 +46,7 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
         : validDurations[0];
 
     const handleModelChange = (newModel: string) => {
-        const newConfig = MODEL_CONFIGS[newModel] || MODEL_CONFIGS["Veo 3.1"];
+        const newConfig = MODEL_CONFIGS[newModel] || MODEL_CONFIGS["Kling 3.0 Standard"];
         const currentDur = data.duration as string || "4s";
         let newDuration = currentDur;
         if (!newConfig.durations.includes(currentDur)) {
@@ -157,6 +157,7 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
             onRun={() => runNode(id)}
             onClear={output ? () => clearNodeOutput(id) : undefined}
             isRunning={isRunning}
+            executionStatus={data.executionStatus as "queued" | "running" | "completed" | "failed" | null}
         >
             <div
                 className="relative bg-muted/30 group/video transition-all duration-300 ease-in-out overflow-hidden"
@@ -291,13 +292,13 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
                             value={currentModel}
                             onChange={(e) => handleModelChange(e.target.value)}
                         >
-                            <option value="Veo 3.1">Veo 3.1</option>
-                            <option value="Veo 3.1 Fast">Veo 3.1 Fast</option>
-                            <option value="Kling V1.5">Kling V1.5</option>
-                            <option value="Kling V1.0">Kling V1.0</option>
-                            <option value="Kling Lip Sync">Kling Lip Sync</option>
-                            <option value="SeedDance 1.5 Pro">SeedDance 1.5 Pro</option>
-                            <option value="SeedDance 1.0 Pro">SeedDance 1.0 Pro</option>
+                            <option value="Kling 3.0 Standard">Kling 3.0 Standard</option>
+                            <option value="Kling 3.0 Pro">Kling 3.0 Pro</option>
+                            <option value="Kling 2.1 Master">Kling 2.1 Master</option>
+                            <option value="Runway Gen-4.5">Runway Gen-4.5</option>
+                            <option value="Wan2.6 Flash">Wan2.6 Flash ⚡</option>
+                            <option value="PixVerse V5.6">PixVerse V5.6</option>
+                            <option value="Kling Lip Sync">Kling Lip Sync 💋</option>
                         </select>
                     </div>
 

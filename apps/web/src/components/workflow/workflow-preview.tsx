@@ -9,8 +9,6 @@ const NODE_COLORS: Record<string, string> = {
     imageGen: "#a855f7",    // purple-500
     videoGen: "#f43f5e",    // rose-500
     audioGen: "#f97316",    // orange-500
-    vision: "#10b981",      // emerald-500
-    assistant: "#10b981",   // emerald-500
     editorAgent: "#a855f7", // purple-500
     mediaUpload: "#6366f1", // indigo-500
     upload: "#6366f1",      // indigo-500
@@ -201,8 +199,7 @@ export function WorkflowPreview({ nodes, edges }: WorkflowPreviewProps) {
                                         node.type === "editorAgent" ? "Editor" :
                                             node.type === "mediaUpload" ? "Media" :
                                                 node.type === "text" ? "Text" :
-                                                    node.type === "vision" ? "Vision" :
-                                                        node.type}
+                                                    node.type}
                         </text>
                         {/* Connection dots */}
                         <circle cx={x} cy={y + NODE_HEIGHT / 2} r={2.5} fill={color} opacity={0.6} />

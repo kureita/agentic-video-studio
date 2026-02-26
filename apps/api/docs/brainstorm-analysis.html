@@ -1,0 +1,2221 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kureita — Strategic Product Analysis</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        :root {
+            --bg: #ffffff;
+            --bg-card: #f8f8fa;
+            --bg-card-alt: #f1f1f5;
+            --bg-accent: #eeeef2;
+            --border: #e0e0e8;
+            --border-subtle: #ececf0;
+            --text: #1a1a2e;
+            --text-secondary: #4a4a65;
+            --text-muted: #8888a0;
+            --accent: #5b4cdb;
+            --accent-light: #5b4cdb;
+            --accent-glow: rgba(91, 76, 219, 0.07);
+            --green: #0d9668;
+            --green-bg: rgba(13, 150, 104, 0.07);
+            --red: #c0392b;
+            --red-bg: rgba(192, 57, 43, 0.06);
+            --amber: #b8860b;
+            --amber-bg: rgba(184, 134, 11, 0.07);
+            --blue: #2e7bbf;
+            --blue-bg: rgba(46, 123, 191, 0.07);
+            --radius: 10px;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.75;
+            -webkit-font-smoothing: antialiased;
+            font-size: 15px;
+        }
+
+        /* ── Page Layout ── */
+        .page-wrapper {
+            min-height: 100vh;
+        }
+
+        .sidebar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 240px;
+            height: 100vh;
+            overflow-y: auto;
+            border-right: 1px solid var(--border);
+            padding: 32px 0;
+            background: var(--bg-card);
+            z-index: 100;
+        }
+
+        .sidebar::-webkit-scrollbar {
+            width: 3px;
+        }
+
+        .sidebar::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 3px;
+        }
+
+        .sidebar-title {
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1.8px;
+            color: var(--text-muted);
+            padding: 0 20px;
+            margin-bottom: 16px;
+        }
+
+        .toc {
+            list-style: none;
+        }
+
+        .toc li a {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 9px 20px;
+            font-size: 12.5px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            text-decoration: none;
+            border-left: 2px solid transparent;
+            transition: all 0.15s;
+        }
+
+        .toc li a:hover {
+            color: var(--accent-light);
+            background: var(--accent-glow);
+            border-left-color: var(--accent);
+        }
+
+        .toc li a .toc-num {
+            font-size: 10px;
+            font-weight: 700;
+            color: var(--text-muted);
+            min-width: 20px;
+        }
+
+        .toc li.toc-divider {
+            height: 1px;
+            background: var(--border);
+            margin: 10px 20px;
+        }
+
+        .container {
+            margin-left: 240px;
+            padding: 60px 48px 100px;
+            max-width: 960px;
+        }
+
+        /* ── Header ── */
+        .doc-header {
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 40px;
+            margin-bottom: 48px;
+        }
+
+        .doc-header .label {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: var(--accent-light);
+            background: var(--accent-glow);
+            padding: 5px 12px;
+            border-radius: 20px;
+            margin-bottom: 20px;
+        }
+
+        .doc-header h1 {
+            font-size: 36px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+            background: linear-gradient(135deg, #1a1a2e, #5b4cdb);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 12px;
+        }
+
+        .doc-header .subtitle {
+            font-size: 15px;
+            color: var(--text-secondary);
+            max-width: 600px;
+        }
+
+        .doc-meta {
+            display: flex;
+            gap: 24px;
+            margin-top: 20px;
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .doc-meta span {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        /* ── Sections ── */
+        .section {
+            margin-bottom: 64px;
+            scroll-margin-top: 24px;
+        }
+
+        .section-label {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1.8px;
+            color: var(--text-muted);
+            margin-bottom: 10px;
+        }
+
+        .section h2 {
+            font-size: 24px;
+            font-weight: 700;
+            letter-spacing: -0.3px;
+            color: var(--text);
+            margin-bottom: 10px;
+            scroll-margin-top: 24px;
+        }
+
+        .section .lead {
+            font-size: 15px;
+            color: var(--text-secondary);
+            margin-bottom: 28px;
+            max-width: 760px;
+            line-height: 1.8;
+        }
+
+        .section h3 {
+            font-size: 17px;
+            font-weight: 600;
+            color: var(--text);
+            margin: 36px 0 14px;
+        }
+
+        p {
+            font-size: 14.5px;
+            color: var(--text-secondary);
+            margin-bottom: 16px;
+            line-height: 1.75;
+        }
+
+        /* ── Cards ── */
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 24px;
+            margin-bottom: 16px;
+        }
+
+        .card-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 14px;
+        }
+
+        .card-sm {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 18px 20px;
+        }
+
+        .card-sm .card-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 13px;
+            margin-bottom: 12px;
+        }
+
+        .card-sm h4 {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text);
+            margin-bottom: 4px;
+        }
+
+        .card-sm p {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin: 0;
+            line-height: 1.5;
+        }
+
+        .icon-purple {
+            background: var(--accent-glow);
+            color: var(--accent-light);
+        }
+
+        .icon-green {
+            background: var(--green-bg);
+            color: var(--green);
+        }
+
+        .icon-amber {
+            background: var(--amber-bg);
+            color: var(--amber);
+        }
+
+        .icon-red {
+            background: var(--red-bg);
+            color: var(--red);
+        }
+
+        .icon-blue {
+            background: var(--blue-bg);
+            color: var(--blue);
+        }
+
+        /* ── Tables ── */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+            background: var(--bg-card);
+            border-radius: var(--radius);
+            overflow: hidden;
+            border: 1px solid var(--border);
+        }
+
+        thead {
+            background: var(--bg-accent);
+        }
+
+        th {
+            text-align: left;
+            padding: 12px 16px;
+            font-weight: 600;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: var(--text-muted);
+            border-bottom: 1px solid var(--border);
+        }
+
+        td {
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border-subtle);
+            color: var(--text-secondary);
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        td strong {
+            color: var(--text);
+            font-weight: 500;
+        }
+
+        /* ── Tags ── */
+        .tag {
+            display: inline-block;
+            font-size: 10px;
+            font-weight: 600;
+            letter-spacing: 0.4px;
+            padding: 3px 8px;
+            border-radius: 4px;
+            text-transform: uppercase;
+        }
+
+        .tag-high {
+            background: var(--red-bg);
+            color: var(--red);
+        }
+
+        .tag-med {
+            background: var(--amber-bg);
+            color: var(--amber);
+        }
+
+        .tag-low {
+            background: var(--green-bg);
+            color: var(--green);
+        }
+
+        .tag-accent {
+            background: var(--accent-glow);
+            color: var(--accent-light);
+        }
+
+        /* ── Stat Row ── */
+        .stat-row {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 14px;
+            margin-bottom: 24px;
+        }
+
+        .stat-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 20px;
+        }
+
+        .stat-card .stat-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--text);
+            letter-spacing: -0.5px;
+        }
+
+        .stat-card .stat-label {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+        }
+
+        /* ── Flow Diagram ── */
+        .flow {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            padding: 20px 24px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            margin-bottom: 16px;
+        }
+
+        .flow-step {
+            background: var(--bg-accent);
+            border: 1px solid var(--border);
+            padding: 8px 14px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text-secondary);
+        }
+
+        .flow-step.active {
+            border-color: var(--accent);
+            color: #fff;
+            background: var(--accent);
+        }
+
+        .flow-arrow {
+            color: var(--text-muted);
+            font-size: 11px;
+        }
+
+        /* ── Lists ── */
+        .check-list {
+            list-style: none;
+            padding: 0;
+        }
+
+        .check-list li {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            font-size: 13px;
+            color: var(--text-secondary);
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+
+        .check-list li:last-child {
+            border: none;
+        }
+
+        .check-list .li-icon {
+            color: var(--green);
+            font-size: 11px;
+            margin-top: 3px;
+            flex-shrink: 0;
+        }
+
+        .num-list {
+            list-style: none;
+            padding: 0;
+            counter-reset: numlist;
+        }
+
+        .num-list li {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            font-size: 13px;
+            color: var(--text-secondary);
+            padding: 10px 0;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+
+        .num-list li:last-child {
+            border: none;
+        }
+
+        .num-list li::before {
+            counter-increment: numlist;
+            content: counter(numlist);
+            width: 22px;
+            height: 22px;
+            border-radius: 6px;
+            display: flex;
+            flex-shrink: 0;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            font-weight: 700;
+            background: var(--accent-glow);
+            color: var(--accent-light);
+        }
+
+        /* ── Code ── */
+        code {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            background: var(--bg-accent);
+            padding: 2px 6px;
+            border-radius: 4px;
+            color: var(--accent-light);
+        }
+
+        /* ── Divider ── */
+        .divider {
+            border: none;
+            border-top: 1px solid var(--border);
+            margin: 56px 0;
+        }
+
+        /* ── Callout ── */
+        .callout {
+            border-left: 3px solid var(--accent);
+            background: var(--accent-glow);
+            padding: 16px 20px;
+            border-radius: 0 var(--radius) var(--radius) 0;
+            margin: 24px 0;
+        }
+
+        .callout p {
+            color: var(--text);
+            margin: 0;
+            font-size: 13px;
+        }
+
+        .callout strong {
+            color: var(--accent-light);
+        }
+
+        .callout-green {
+            border-left-color: var(--green);
+            background: var(--green-bg);
+        }
+
+        .callout-green strong {
+            color: var(--green);
+        }
+
+        /* ── Priority Table ── */
+        .priority-num {
+            width: 24px;
+            height: 24px;
+            border-radius: 6px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            font-weight: 700;
+            background: var(--accent-glow);
+            color: var(--accent-light);
+        }
+
+        /* ── Heat bar ── */
+        .heat {
+            display: inline-flex;
+            gap: 2px;
+        }
+
+        .heat span {
+            width: 6px;
+            height: 14px;
+            border-radius: 2px;
+            background: var(--border);
+        }
+
+        .heat span.on {
+            background: var(--red);
+        }
+
+        /* ── Two column layout ── */
+        .two-col {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        /* ── Accordion ── */
+        .accordion {
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            overflow: hidden;
+            margin-bottom: 16px;
+        }
+
+        .accordion-trigger {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 18px 22px;
+            background: var(--bg-card);
+            border: none;
+            cursor: pointer;
+            font-family: 'Inter', sans-serif;
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text);
+            text-align: left;
+            transition: background 0.15s;
+        }
+
+        .accordion-trigger:hover {
+            background: var(--bg-card-alt);
+        }
+
+        .accordion-trigger .acc-meta {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .accordion-trigger .acc-badge {
+            font-size: 10px;
+            font-weight: 600;
+            padding: 3px 8px;
+            border-radius: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+        }
+
+        .accordion-trigger .acc-icon {
+            font-size: 11px;
+            color: var(--text-muted);
+            transition: transform 0.25s;
+        }
+
+        .accordion[open] .accordion-trigger .acc-icon {
+            transform: rotate(180deg);
+        }
+
+        .accordion-body {
+            padding: 0 22px 24px;
+        }
+
+        /* ── Responsive ── */
+        @media (min-width: 1280px) {
+            .container {
+                max-width: 960px;
+            }
+        }
+
+        @media (max-width: 1024px) {
+            .sidebar {
+                width: 200px;
+            }
+
+            .container {
+                margin-left: 200px;
+                padding: 48px 32px 80px;
+                max-width: none;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .sidebar {
+                position: fixed;
+                top: auto;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                width: 100%;
+                height: auto;
+                max-height: 60vh;
+                border-right: none;
+                border-top: 1px solid var(--border);
+                border-radius: 16px 16px 0 0;
+                box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.1);
+                transform: translateY(calc(100% - 44px));
+                transition: transform 0.3s ease;
+            }
+
+            .sidebar:hover,
+            .sidebar:focus-within {
+                transform: translateY(0);
+            }
+
+            .sidebar-title {
+                text-align: center;
+                padding: 12px 20px 6px;
+                cursor: pointer;
+            }
+
+            .sidebar-title::after {
+                content: ' ▲ tap to expand';
+                font-size: 9px;
+                color: var(--text-muted);
+                letter-spacing: 0.5px;
+            }
+
+            .container {
+                margin-left: 0;
+                padding: 28px 16px 80px;
+                max-width: none;
+            }
+
+            .card-grid,
+            .stat-row,
+            .two-col {
+                grid-template-columns: 1fr;
+            }
+
+            .doc-header h1 {
+                font-size: 26px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="page-wrapper">
+
+        <!-- ═══════════════════════════════════════════ SIDEBAR TOC ═══════════════════════════════════════════ -->
+        <nav class="sidebar">
+            <div class="sidebar-title">Table of Contents</div>
+            <ul class="toc">
+                <li><a href="#current-state"><span class="toc-num">01</span> Current Product State</a></li>
+                <li><a href="#market"><span class="toc-num">02</span> Market Intelligence</a></li>
+                <li><a href="#competition"><span class="toc-num">03</span> Competitive Landscape</a></li>
+                <li><a href="#strategy"><span class="toc-num">04</span> Beachhead Strategy</a></li>
+                <li><a href="#execution"><span class="toc-num">05</span> 30-Day Execution Plan</a></li>
+                <li><a href="#tech"><span class="toc-num">06</span> Technical Priorities</a></li>
+                <li><a href="#positioning"><span class="toc-num">07</span> Strategic Positioning</a></li>
+                <li><a href="#data"><span class="toc-num">08</span> Data Flywheel &amp; Moat</a></li>
+                <li class="toc-divider"></li>
+                <li><a href="#journeys"><span class="toc-num">09</span> User Journeys</a></li>
+            </ul>
+        </nav>
+
+        <!-- ═══════════════════════════════════════════ MAIN CONTENT ═══════════════════════════════════════════ -->
+        <main class="container">
+
+            <!-- ═══════════════════════════════════════════ HEADER ═══════════════════════════════════════════ -->
+            <header class="doc-header">
+                <div class="label"><i class="fa-solid fa-diagram-project"></i> Internal Document</div>
+                <h1>Kureita — Strategic Product Analysis</h1>
+                <p class="subtitle">Market intelligence, competitive positioning, and execution roadmap for AI-powered
+                    video
+                    production.</p>
+                <div class="doc-meta">
+                    <span><i class="fa-regular fa-calendar"></i> February 2026</span>
+                    <span><i class="fa-regular fa-file-lines"></i> v1.0</span>
+                    <span><i class="fa-solid fa-lock"></i> Confidential</span>
+                </div>
+            </header>
+
+            <!-- ═══════════════════════════════════════════ 1. CURRENT STATE ═══════════════════════════════════════════ -->
+            <div class="section">
+                <div class="section-label"><i class="fa-solid fa-cube"></i> Section 01</div>
+                <h2 id="current-state">Current Product State</h2>
+                <p class="lead">An honest audit of what exists in the Kureita codebase today and where the gaps are.</p>
+
+                <div class="stat-row">
+                    <div class="stat-card">
+                        <div class="stat-value">2</div>
+                        <div class="stat-label">Apps (Web, API)</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">8</div>
+                        <div class="stat-label">Node Types</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">3</div>
+                        <div class="stat-label">LLM Providers</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">3</div>
+                        <div class="stat-label">Inspirations</div>
+                    </div>
+                </div>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Layer</th>
+                            <th>What Exists</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Frontend</strong></td>
+                            <td>Next.js 15 dashboard with hero input, recent workflows grid, inspiration gallery. React
+                                Flow
+                                node canvas.</td>
+                            <td><span class="tag tag-med">Functional</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Node Editor</strong></td>
+                            <td>Visual node-based workflow canvas with nodes: <code>text</code>, <code>imageGen</code>
+                                (Imagen 4), <code>videoGen</code> (Veo 3.1), <code>audioGen</code> (ElevenLabs),
+                                <code>editorAgent</code> (Client-Side Renderer), <code>vision</code>,
+                                <code>mediaUpload</code>
+                            </td>
+                            <td><span class="tag tag-med">Functional</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>AI Agent</strong></td>
+                            <td>Agent sidebar converts natural language to node workflows. Supports Gemini, GPT-5,
+                                Claude.
+                                Web search via Firecrawl for context injection.</td>
+                            <td><span class="tag tag-med">Functional</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Backend</strong></td>
+                            <td>FastAPI with pipeline service, node runner executing each node type, S3 storage, MongoDB
+                                persistence. Auth0 integration.</td>
+                            <td><span class="tag tag-low">Stable</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Remotion (Client-Side)</strong></td>
+                            <td>Migrating to <code>@remotion/web-renderer</code> for in-browser video composition using
+                                WebCodecs API. Eliminates the server directory, renders directly in the user's browser
+                                with
+                                hardware acceleration.</td>
+                            <td><span class="tag tag-high">Migration</span></td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <div class="callout" style="margin-top:20px;">
+                    <p><strong>Honest Assessment:</strong> Kureita has built a node-based AI video workflow
+                        orchestrator,
+                        which is a powerful architectural concept. However, the UX is developer-oriented, the dashboard
+                        does
+                        not communicate value to non-technical users, and the pipeline lacks a one-click execution flow.
+                    </p>
+                </div>
+
+                <h3>Architecture Flow</h3>
+                <div class="flow">
+                    <div class="flow-step active">User Prompt</div>
+                    <div class="flow-arrow"><i class="fa-solid fa-arrow-right"></i></div>
+                    <div class="flow-step">AI Agent</div>
+                    <div class="flow-arrow"><i class="fa-solid fa-arrow-right"></i></div>
+                    <div class="flow-step">Node Workflow</div>
+                    <div class="flow-arrow"><i class="fa-solid fa-arrow-right"></i></div>
+                    <div class="flow-step">Image Gen</div>
+                    <div class="flow-arrow"><i class="fa-solid fa-arrow-right"></i></div>
+                    <div class="flow-step">Video Gen</div>
+                    <div class="flow-arrow"><i class="fa-solid fa-arrow-right"></i></div>
+                    <div class="flow-step">Audio Gen</div>
+                    <div class="flow-arrow"><i class="fa-solid fa-arrow-right"></i></div>
+                    <div class="flow-step active">Client-Side Compose</div>
+                </div>
+            </div>
+
+            <hr class="divider">
+
+            <!-- ═══════════════════════════════════════════ 2. MARKET INTELLIGENCE ═══════════════════════════════════════════ -->
+            <div class="section">
+                <div class="section-label"><i class="fa-solid fa-chart-line"></i> Section 02</div>
+                <h2 id="market">Market Intelligence</h2>
+                <p class="lead">Pain points aggregated from Reddit, forums, and community discussions across AI video
+                    creation spaces (r/aivideo, r/ecommerce, r/remotion, Freepik Spaces, Higgsfield communities).</p>
+
+                <h3>User Pain Points by Severity</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Pain Point</th>
+                            <th>Severity</th>
+                            <th>Kureita Opportunity</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Fragmented workflow</strong> &mdash; juggling 5&ndash;6 tools (script, image,
+                                video,
+                                audio, edit)</td>
+                            <td>
+                                <div class="heat"><span class="on"></span><span class="on"></span><span
+                                        class="on"></span><span class="on"></span><span class="on"></span></div>
+                            </td>
+                            <td>Core positioning. Single platform combining all steps in one visual workflow.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>No consistency</strong> &mdash; character faces drift, styles change between
+                                scenes
+                            </td>
+                            <td>
+                                <div class="heat"><span class="on"></span><span class="on"></span><span
+                                        class="on"></span><span class="on"></span><span></span></div>
+                            </td>
+                            <td><code>imageGen</code> reference node system already addresses this by feeding consistent
+                                start frames.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Lack of control</strong> &mdash; AI makes random decisions, can't direct
+                                shot-by-shot</td>
+                            <td>
+                                <div class="heat"><span class="on"></span><span class="on"></span><span
+                                        class="on"></span><span class="on"></span><span></span></div>
+                            </td>
+                            <td>Node-based editor provides explicit, per-step control. Users see and modify each
+                                decision.
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><strong>Generic output</strong> &mdash; "competent but boring" AI videos lacking brand
+                                voice
+                            </td>
+                            <td>
+                                <div class="heat"><span class="on"></span><span class="on"></span><span
+                                        class="on"></span><span class="on"></span><span></span></div>
+                            </td>
+                            <td>Client-side Remotion composition + brand kit + AI direction enables unique, branded
+                                results.
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><strong>Short clip limits</strong> &mdash; 4&ndash;10 seconds max per generation</td>
+                            <td>
+                                <div class="heat"><span class="on"></span><span class="on"></span><span
+                                        class="on"></span><span></span><span></span></div>
+                            </td>
+                            <td>Editor Agent stitches multiple clips into longer, coherent videos.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Expensive credits</strong> &mdash; Freepik, Runway burn through budgets quickly
+                            </td>
+                            <td>
+                                <div class="heat"><span class="on"></span><span class="on"></span><span
+                                        class="on"></span><span></span><span></span></div>
+                            </td>
+                            <td>Bring-your-own-key model, transparent cost estimates before generation.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Poor sound integration</strong> &mdash; most tools generate silent video only
+                            </td>
+                            <td>
+                                <div class="heat"><span class="on"></span><span
+                                        class="on"></span><span></span><span></span><span></span></div>
+                            </td>
+                            <td>Integrated ElevenLabs audio generation built into the workflow.</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3>Market Size Indicators</h3>
+                <div class="card-grid">
+                    <div class="card-sm">
+                        <div class="card-icon icon-purple"><i class="fa-solid fa-dollar-sign"></i></div>
+                        <h4>$4.4B by 2033</h4>
+                        <p>Projected AI video editing SaaS market (source: overlap.ai, Grand View Research)</p>
+                    </div>
+                    <div class="card-sm">
+                        <div class="card-icon icon-green"><i class="fa-solid fa-arrow-trend-up"></i></div>
+                        <h4>$716M to $3.35B</h4>
+                        <p>AI video generator market growth 2025&ndash;2034 (Fortune Business Insights)</p>
+                    </div>
+                    <div class="card-sm">
+                        <div class="card-icon icon-amber"><i class="fa-solid fa-video"></i></div>
+                        <h4>$200&ndash;$500/video</h4>
+                        <p>Average cost for an e-commerce business to produce a single product video via freelancers</p>
+                    </div>
+                    <div class="card-sm">
+                        <div class="card-icon icon-blue"><i class="fa-solid fa-users"></i></div>
+                        <h4>10&ndash;50 videos/product</h4>
+                        <p>Number of video variants an e-commerce seller needs per product across platforms and A/B
+                            tests
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <hr class="divider">
+
+            <!-- ═══════════════════════════════════════════ 3. COMPETITIVE LANDSCAPE ═══════════════════════════════════════════ -->
+            <div class="section">
+                <div class="section-label"><i class="fa-solid fa-crosshairs"></i> Section 03</div>
+                <h2 id="competition">Competitive Landscape</h2>
+                <p class="lead">Direct competitors in the node-based AI video workflow space, with their strengths and
+                    weaknesses.</p>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Competitor</th>
+                            <th>What They Do</th>
+                            <th>Key Weakness</th>
+                            <th>Pricing</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Krea Nodes</strong></td>
+                            <td>50+ models on infinite canvas for images, video, audio, 3D</td>
+                            <td>Image-focused. No editor agent, no programmatic video composition.</td>
+                            <td>Freemium</td>
+                        </tr>
+                        <tr>
+                            <td><strong>ComfyUI</strong></td>
+                            <td>Most powerful open-source node editor for Stable Diffusion pipelines</td>
+                            <td>Developer-only. Intimidating UI. No opinionated video workflow.</td>
+                            <td>Free (OSS)</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Freepik Spaces</strong></td>
+                            <td>Node-based AI suite inside Freepik ecosystem</td>
+                            <td>Locked to their models, strict NSFW moderation, unreliable lip-sync.</td>
+                            <td>Subscription</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Runway Workflows</strong></td>
+                            <td>Chain multiple AI models together for video generation</td>
+                            <td>Expensive ($12+/min). Focused on cinematic, not practical marketing.</td>
+                            <td>$12+/min</td>
+                        </tr>
+                        <tr>
+                            <td><strong>LTX Studio</strong></td>
+                            <td>Full AI video pipeline, concept to final cut, enterprise-focused</td>
+                            <td>Enterprise pricing. Overkill for small teams and solopreneurs.</td>
+                            <td>Enterprise</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Flora</strong></td>
+                            <td>Figma-like AI canvas with collaboration tools</td>
+                            <td>Early stage, primarily image-focused, limited video capabilities.</td>
+                            <td>Early access</td>
+                        </tr>
+                        <tr>
+                            <td><strong>InVideo AI</strong></td>
+                            <td>Prompt-to-finished-video with templates, stock footage, voiceovers</td>
+                            <td>Template-driven, limited creative control, stock footage dependency.</td>
+                            <td>$25/mo+</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Pictory</strong></td>
+                            <td>Repurposes written content (blogs, scripts) into video</td>
+                            <td>Text-to-video only. No visual workflow. No AI generation models.</td>
+                            <td>$19/mo+</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Figma Weave</strong></td>
+                            <td>Generative AI + compositing in node-based canvas via fal.ai</td>
+                            <td>Compositing-heavy, less focused on end-to-end video production.</td>
+                            <td>TBD</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <div class="callout-green callout" style="margin-top:20px;">
+                    <p><strong>Where Kureita Wins:</strong> No competitor combines AI Agent-directed workflow generation
+                        +
+                        visual node editor + client-side video composition for non-developer users at an accessible
+                        price
+                        point. ComfyUI has the power but not the accessibility. InVideo has the accessibility but not
+                        the
+                        control. Kureita can occupy the middle ground.</p>
+                </div>
+
+                <h3>Positioning Matrix</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th></th>
+                            <th>Low Control (Auto)</th>
+                            <th>High Control (Manual)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Non-Technical Users</strong></td>
+                            <td>InVideo, Pictory, Lumen5</td>
+                            <td style="color: var(--accent-light); font-weight: 600;">Kureita (target position)</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Technical / Developer</strong></td>
+                            <td>Runway, Synthesia</td>
+                            <td>ComfyUI, Krea Nodes</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <hr class="divider">
+
+            <!-- ═══════════════════════════════════════════ 4. BEACHHEAD STRATEGY ═══════════════════════════════════════════ -->
+            <div class="section">
+                <div class="section-label"><i class="fa-solid fa-bullseye"></i> Section 04</div>
+                <h2 id="strategy">Beachhead Strategy: E-Commerce Product Videos</h2>
+                <p class="lead">Recommendation to focus on a single, high-impact niche before expanding&mdash;e-commerce
+                    product video creation for small-to-medium sellers.</p>
+
+                <h3>Why This Niche</h3>
+                <div class="card-grid">
+                    <div class="card-sm">
+                        <div class="card-icon icon-red"><i class="fa-solid fa-fire"></i></div>
+                        <h4>Massive, Quantifiable Pain</h4>
+                        <p>E-commerce sellers need 10&ndash;50 videos per product across platforms, A/B tests, and
+                            seasonal
+                            campaigns. They spend $200&ndash;$500 per video on freelancers. Reddit is saturated with
+                            sellers
+                            asking for affordable solutions.</p>
+                    </div>
+                    <div class="card-sm">
+                        <div class="card-icon icon-purple"><i class="fa-solid fa-trophy"></i></div>
+                        <h4>No Exact Competitor</h4>
+                        <p>TagShop does UGC-style, InVideo does templates, but nobody gives sellers a visual workflow to
+                            orchestrate AI-generated product videos with brand consistency and real control.</p>
+                    </div>
+                    <div class="card-sm">
+                        <div class="card-icon icon-green"><i class="fa-solid fa-chart-simple"></i></div>
+                        <h4>Clear, Measurable ROI</h4>
+                        <p>"Saved $2,000/month on video production" is a story that sells itself. Easy to quantify value
+                            in
+                            sales conversations and landing page copy.</p>
+                    </div>
+                    <div class="card-sm">
+                        <div class="card-icon icon-blue"><i class="fa-solid fa-share-nodes"></i></div>
+                        <h4>Built-in Viral Loop</h4>
+                        <p>Sellers share product videos on social media. "Made with Kureita" watermark drives organic
+                            discovery. Each video becomes a marketing asset.</p>
+                    </div>
+                </div>
+
+                <h3>Target User Persona</h3>
+                <div class="card">
+                    <table>
+                        <tbody>
+                            <tr>
+                                <td style="width:160px;"><strong>Who</strong></td>
+                                <td>D2C brand owner, Shopify/Amazon seller, marketing manager at small e-commerce
+                                    company
+                                </td>
+                            </tr>
+                            <tr>
+                                <td><strong>Scale</strong></td>
+                                <td>Revenue $100K&ndash;$5M/year, team of 1&ndash;10, no dedicated video person</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Current Workflow</strong></td>
+                                <td>Canva + stock footage + freelancer on Fiverr, or phone recordings with CapCut</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Pain</strong></td>
+                                <td>Needs 20+ product videos, each costing $200&ndash;$500 and taking 3&ndash;7 days
+                                </td>
+                            </tr>
+                            <tr>
+                                <td><strong>Dream State</strong></td>
+                                <td>Paste product URL, pick a style, get a ready-to-post video in minutes</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Willingness to Pay</strong></td>
+                                <td>$29&ndash;$99/month (already paying $100&ndash;$500/month for video freelancers)
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <hr class="divider">
+
+            <!-- ═══════════════════════════════════════════ 5. EXECUTION PLAN ═══════════════════════════════════════════ -->
+            <div class="section">
+                <div class="section-label"><i class="fa-solid fa-list-check"></i> Section 05</div>
+                <h2 id="execution">30-Day Execution Plan</h2>
+                <p class="lead">A phased roadmap covering product development, UX improvements, and go-to-market
+                    execution.
+                </p>
+
+                <!-- Phase 1 -->
+                <h3>Phase 1 &mdash; Make the Dashboard Magical <span class="tag tag-accent"
+                        style="margin-left:8px;">Week
+                        1&ndash;2</span></h3>
+                <p>The dashboard is the first thing users see. Currently, it serves workflows but does not communicate
+                    value
+                    to non-technical users.</p>
+
+                <div class="card">
+                    <h4 style="font-size:14px; font-weight:600; margin-bottom:12px; color:var(--text);">Priority 1:
+                        "Zero to
+                        Video in 60 Seconds" Flow</h4>
+                    <p>Current state: Hero input creates an empty workflow. Users must manually understand the node
+                        system.
+                    </p>
+                    <p>Target state:</p>
+                    <div class="flow" style="margin:12px 0;">
+                        <div class="flow-step">User types prompt</div>
+                        <div class="flow-arrow"><i class="fa-solid fa-arrow-right"></i></div>
+                        <div class="flow-step">AI generates full workflow</div>
+                        <div class="flow-arrow"><i class="fa-solid fa-arrow-right"></i></div>
+                        <div class="flow-step">Preview with cost/time estimate</div>
+                        <div class="flow-arrow"><i class="fa-solid fa-arrow-right"></i></div>
+                        <div class="flow-step active">One-click "Generate All"</div>
+                        <div class="flow-arrow"><i class="fa-solid fa-arrow-right"></i></div>
+                        <div class="flow-step">Progress tracker</div>
+                        <div class="flow-arrow"><i class="fa-solid fa-arrow-right"></i></div>
+                        <div class="flow-step active">Final video plays inline</div>
+                    </div>
+                    <p style="margin:0;"><strong>Code changes:</strong> <code>dashboard/page.tsx</code> &mdash; add
+                        Quick
+                        Generate mode. <code>agent_service.py</code> &mdash; return cost/time estimates. New
+                        <code>WorkflowRunner</code> service for topological node execution. Replace polling with
+                        WebSocket/SSE push.
+                    </p>
+                </div>
+
+                <div class="card">
+                    <h4 style="font-size:14px; font-weight:600; margin-bottom:12px; color:var(--text);">Priority 2:
+                        Inspiration
+                        Gallery (E-Commerce Focused)</h4>
+                    <p>Expand from 3 generic inspirations to 10+ e-commerce-specific inspirations, each with a sample
+                        output
+                        video.</p>
+                    <ul class="check-list">
+                        <li><span class="li-icon"><i class="fa-solid fa-check"></i></span>Amazon Listing Video</li>
+                        <li><span class="li-icon"><i class="fa-solid fa-check"></i></span>Instagram Reel Ad (9:16)</li>
+                        <li><span class="li-icon"><i class="fa-solid fa-check"></i></span>TikTok Product Demo</li>
+                        <li><span class="li-icon"><i class="fa-solid fa-check"></i></span>Before / After Comparison</li>
+                        <li><span class="li-icon"><i class="fa-solid fa-check"></i></span>Unboxing Style Video</li>
+                        <li><span class="li-icon"><i class="fa-solid fa-check"></i></span>Product vs. Competitor</li>
+                        <li><span class="li-icon"><i class="fa-solid fa-check"></i></span>Holiday Sale Promo</li>
+                        <li><span class="li-icon"><i class="fa-solid fa-check"></i></span>30-Second Story Ad</li>
+                        <li><span class="li-icon"><i class="fa-solid fa-check"></i></span>Product Feature Breakdown</li>
+                        <li><span class="li-icon"><i class="fa-solid fa-check"></i></span>Customer Testimonial (AI
+                            Avatar)
+                        </li>
+                    </ul>
+                </div>
+
+                <div class="card">
+                    <h4 style="font-size:14px; font-weight:600; margin-bottom:12px; color:var(--text);">Priority 3:
+                        Dashboard Cards &mdash; Video Thumbnails</h4>
+                    <p>Replace node-graph previews with video thumbnails (first frame or custom), video duration,
+                        platform
+                        tag, and status badge (Draft / Generating / Ready). Non-technical users do not understand node
+                        graphs.</p>
+                </div>
+
+                <!-- Phase 2 -->
+                <h3>Phase 2 &mdash; Polish the Editor <span class="tag tag-accent" style="margin-left:8px;">Week
+                        2&ndash;3</span></h3>
+
+                <div class="card">
+                    <h4 style="font-size:14px; font-weight:600; margin-bottom:12px; color:var(--text);">Priority 4: "Run
+                        All" Workflow Execution</h4>
+                    <p>Add a single "Run Workflow" button that executes nodes in topological order. Nodes light up green
+                        as
+                        they complete. Failed nodes show red borders with a retry option. This is the single biggest
+                        unlock
+                        &mdash; without it, users must manually run each node.</p>
+                </div>
+
+                <div class="card">
+                    <h4 style="font-size:14px; font-weight:600; margin-bottom:12px; color:var(--text);">Priority 5:
+                        Video
+                        Preview Panel</h4>
+                    <p>When the <code>editorAgent</code> node finishes, display the client-side rendered video in a
+                        split-screen preview alongside the canvas. Leverage <code>@remotion/web-renderer</code> with
+                        WebCodecs for in-browser rendering &mdash; no server round-trip needed. Enable play/pause,
+                        adjustment and re-render, and multi-format download (9:16, 16:9, 1:1).</p>
+                </div>
+
+                <div class="card">
+                    <h4 style="font-size:14px; font-weight:600; margin-bottom:12px; color:var(--text);">Priority 6:
+                        Brand
+                        Kit / Asset Library</h4>
+                    <p>E-commerce sellers reuse logos, color palettes, product images across all videos. Add a
+                        persistent
+                        Brand Kit (logo, colors, fonts, voice preference). Auto-inject into workflows. This is a
+                        retention
+                        hook &mdash; once configured, switching cost increases.</p>
+                </div>
+
+                <!-- Phase 3 -->
+                <h3>Phase 3 &mdash; Go-to-Market Without Users <span class="tag tag-accent"
+                        style="margin-left:8px;">Week
+                        3&ndash;4</span></h3>
+
+                <div class="two-col">
+                    <div class="card">
+                        <h4 style="font-size:14px; font-weight:600; margin-bottom:8px; color:var(--text);"><i
+                                class="fa-solid fa-bullhorn" style="color:var(--accent-light); margin-right:6px;"></i>
+                            Build
+                            in Public</h4>
+                        <p style="margin-bottom:8px;">Record yourself using Kureita to make a product video. Speed up to
+                            30
+                            seconds. Post on Twitter/X and targeted subreddits:</p>
+                        <p style="font-size:12px; color:var(--text-muted);">r/ecommerce, r/AmazonSeller, r/ShopifyPOS,
+                            r/FulfillmentByAmazon, r/SideProject, r/EntrepreneurRideAlong, r/SaaS</p>
+                    </div>
+                    <div class="card">
+                        <h4 style="font-size:14px; font-weight:600; margin-bottom:8px; color:var(--text);"><i
+                                class="fa-solid fa-film" style="color:var(--green); margin-right:6px;"></i> Proof Videos
+                        </h4>
+                        <p>Pick 10 real products from Amazon. Generate actual promo videos using Kureita. Post
+                            side-by-side
+                            comparisons: "Traditional production ($500) vs Kureita (free)" &mdash; this content IS your
+                            marketing.</p>
+                    </div>
+                    <div class="card">
+                        <h4 style="font-size:14px; font-weight:600; margin-bottom:8px; color:var(--text);"><i
+                                class="fa-solid fa-envelope" style="color:var(--amber); margin-right:6px;"></i>
+                            Concierge
+                            Outreach</h4>
+                        <p>Find 20 small D2C brands on Instagram (50K&ndash;500K followers). Make a video FOR them (your
+                            pipeline scrapes their website). DM: "I made this AI-generated promo for [brand]. Took 3
+                            minutes. Want the source file?"</p>
+                    </div>
+                    <div class="card">
+                        <h4 style="font-size:14px; font-weight:600; margin-bottom:8px; color:var(--text);"><i
+                                class="fa-solid fa-rocket" style="color:var(--blue); margin-right:6px;"></i> Waitlist +
+                            Demo
+                        </h4>
+                        <p>Record a 2-minute demo video (hero input &rarr; workflow &rarr; final video). Embed on
+                            landing
+                            page with waitlist. Submit to Product Hunt, Indie Hackers, and Hacker News.</p>
+                    </div>
+                </div>
+            </div>
+
+            <hr class="divider">
+
+            <!-- ═══════════════════════════════════════════ 6. TECHNICAL PRIORITIES ═══════════════════════════════════════════ -->
+            <div class="section">
+                <div class="section-label"><i class="fa-solid fa-code"></i> Section 06</div>
+                <h2 id="tech">Technical Priority Queue</h2>
+                <p class="lead">Engineering tasks ordered by impact, with effort estimates. Focus on unlocking the
+                    demo-ready state first.</p>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width:40px;">#</th>
+                            <th>Task</th>
+                            <th>Impact</th>
+                            <th>Effort</th>
+                            <th>Rationale</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><span class="priority-num">1</span></td>
+                            <td><strong>Auto-run workflow</strong><br><span
+                                    style="color:var(--text-muted); font-size:11px;">Topological sort + one-click
+                                    execute</span></td>
+                            <td><span class="tag tag-high">Critical</span></td>
+                            <td>Medium</td>
+                            <td>Without this, users manually run each node. Kills conversion and demo quality.</td>
+                        </tr>
+                        <tr>
+                            <td><span class="priority-num">2</span></td>
+                            <td><strong>Real-time progress</strong><br><span
+                                    style="color:var(--text-muted); font-size:11px;">WebSocket/SSE for node execution
+                                    status</span></td>
+                            <td><span class="tag tag-high">Critical</span></td>
+                            <td>Medium</td>
+                            <td>Users need to see nodes light up as they execute. Magic moment for retention.</td>
+                        </tr>
+                        <tr>
+                            <td><span class="priority-num">3</span></td>
+                            <td><strong>Video thumbnails on dashboard</strong><br><span
+                                    style="color:var(--text-muted); font-size:11px;">Replace node graph with video
+                                    first-frame</span></td>
+                            <td><span class="tag tag-high">High</span></td>
+                            <td>Low</td>
+                            <td>First impression for non-technical users. Node graphs are meaningless to target persona.
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><span class="priority-num">4</span></td>
+                            <td><strong>10 e-commerce inspirations</strong><br><span
+                                    style="color:var(--text-muted); font-size:11px;">Pre-built workflows for common
+                                    product
+                                    video types</span></td>
+                            <td><span class="tag tag-high">High</span></td>
+                            <td>Medium</td>
+                            <td>Reduces time-to-value to near zero. Each inspiration is also marketing content.</td>
+                        </tr>
+                        <tr>
+                            <td><span class="priority-num">5</span></td>
+                            <td><strong>Brand Kit</strong><br><span
+                                    style="color:var(--text-muted); font-size:11px;">Persistent logo, colors, fonts,
+                                    voice
+                                    per user</span></td>
+                            <td><span class="tag tag-med">Medium</span></td>
+                            <td>Medium</td>
+                            <td>Retention hook. Once set up, switching cost increases significantly.</td>
+                        </tr>
+                        <tr>
+                            <td><span class="priority-num">6</span></td>
+                            <td><strong>Multi-format export</strong><br><span
+                                    style="color:var(--text-muted); font-size:11px;">9:16, 16:9, 1:1 from same
+                                    workflow</span></td>
+                            <td><span class="tag tag-med">Medium</span></td>
+                            <td>Low&ndash;Med</td>
+                            <td>One workflow, 3 platform-ready videos. Major value multiplier for sellers.</td>
+                        </tr>
+                        <tr>
+                            <td><span class="priority-num">7</span></td>
+                            <td><strong>Usage analytics dashboard</strong><br><span
+                                    style="color:var(--text-muted); font-size:11px;">Videos created, render time saved,
+                                    estimated cost saved</span></td>
+                            <td><span class="tag tag-low">Low</span></td>
+                            <td>Low</td>
+                            <td>Shows users quantifiable value. Helps retention and upgrade conversations.</td>
+                        </tr>
+                        <tr>
+                            <td><span class="priority-num">8</span></td>
+                            <td><strong>Shareable video links</strong><br><span
+                                    style="color:var(--text-muted); font-size:11px;">Public URL to share renders with
+                                    "Made
+                                    with Kureita" badge</span></td>
+                            <td><span class="tag tag-low">Low</span></td>
+                            <td>Low</td>
+                            <td>Viral growth mechanism. Every shared video is a marketing impression.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <hr class="divider">
+
+            <!-- ═══════════════════════════════════════════ 7. POSITIONING ═══════════════════════════════════════════ -->
+            <div class="section">
+                <div class="section-label"><i class="fa-solid fa-gem"></i> Section 07</div>
+                <h2 id="positioning">Strategic Positioning</h2>
+                <p class="lead">How Kureita should communicate its value proposition externally.</p>
+
+                <div class="callout-green callout">
+                    <p><strong>One-liner:</strong> Kureita is the visual AI video studio that turns your product into a
+                        ready-to-post video in minutes &mdash; no filming, no editing, no freelancers.</p>
+                </div>
+
+                <h3>What Kureita Is Not Competing With</h3>
+                <ul class="check-list">
+                    <li><span class="li-icon" style="color:var(--red);"><i
+                                class="fa-solid fa-xmark"></i></span><strong>Runway / Sora</strong> &mdash; AI model
+                        generation. Kureita uses their models, not competes with them.</li>
+                    <li><span class="li-icon" style="color:var(--red);"><i
+                                class="fa-solid fa-xmark"></i></span><strong>CapCut / Premiere Pro</strong> &mdash;
+                        traditional editing tools. Kureita is automated, not manual.</li>
+                    <li><span class="li-icon" style="color:var(--red);"><i
+                                class="fa-solid fa-xmark"></i></span><strong>InVideo / Pictory</strong> &mdash; template
+                        auto-fill tools. Kureita gives real control via nodes.</li>
+                </ul>
+
+                <h3>What Kureita Is Competing With</h3>
+                <ul class="check-list">
+                    <li><span class="li-icon"><i class="fa-solid fa-check"></i></span>The
+                        <strong>$200&ndash;$500</strong> a
+                        small business spends per freelance video per product
+                    </li>
+                    <li><span class="li-icon"><i class="fa-solid fa-check"></i></span>The <strong>5+ separate
+                            tools</strong>
+                        a creator juggles to produce one video</li>
+                    <li><span class="li-icon"><i class="fa-solid fa-check"></i></span>The <strong>3&ndash;5
+                            hours</strong>
+                        it takes to go from idea to final video manually</li>
+                </ul>
+
+                <h3>Unfair Advantage</h3>
+                <div class="card" style="border-left: 3px solid var(--accent);">
+                    <p style="margin:0; color:var(--text);"><strong>AI Agent + Visual Node Workflow +
+                            Client-Side Video Composition</strong> in a single platform. No server infrastructure
+                        required for rendering &mdash; videos compose directly in the browser via WebCodecs. No other
+                        tool
+                        aimed at non-developers combines all three. ComfyUI has the power but not the accessibility.
+                        InVideo has the accessibility but not the control. Kureita occupies the gap.</p>
+                </div>
+            </div>
+
+            <hr class="divider">
+
+            <!-- ═══════════════════════════════════════════ 8. DATA ADVANTAGE ═══════════════════════════════════════════ -->
+            <div class="section">
+                <div class="section-label"><i class="fa-solid fa-database"></i> Section 08</div>
+                <h2 id="data">Data Flywheel &amp; Long-Term Moat</h2>
+                <p class="lead">How usage data creates a compounding competitive advantage over time.</p>
+
+                <div class="flow">
+                    <div class="flow-step">Users create videos</div>
+                    <div class="flow-arrow"><i class="fa-solid fa-arrow-right"></i></div>
+                    <div class="flow-step">System learns what works</div>
+                    <div class="flow-arrow"><i class="fa-solid fa-arrow-right"></i></div>
+                    <div class="flow-step">AI Agent improves suggestions</div>
+                    <div class="flow-arrow"><i class="fa-solid fa-arrow-right"></i></div>
+                    <div class="flow-step active">Better videos, faster</div>
+                    <div class="flow-arrow"><i class="fa-solid fa-arrow-right"></i></div>
+                    <div class="flow-step">More users attracted</div>
+                </div>
+
+                <ol class="num-list" style="margin-top:16px;">
+                    <li><strong>Hook performance data</strong> &mdash; Track which opening scenes drive higher
+                        engagement.
+                        Feed this back to the AI Agent's brainstorming step so it recommends proven hooks for each
+                        product
+                        category.</li>
+                    <li><strong>Duration optimization</strong> &mdash; Learn optimal video lengths per platform
+                        (Instagram
+                        vs TikTok vs Amazon listing) from aggregate usage. Auto-suggest durations to new users.</li>
+                    <li><strong>Inspiration evolution</strong> &mdash; Identify which inspirations get the most usage
+                        and
+                        highest
+                        completion rates. Prioritize improvements to popular inspirations. Deprecate unused ones.</li>
+                    <li><strong>Brand consistency scoring</strong> &mdash; Build a scoring system that evaluates how
+                        well a
+                        generated video matches the user's brand kit (colors, tone, logo placement). Optimize over time.
+                    </li>
+                    <li><strong>Cost optimization</strong> &mdash; Track which AI model combinations produce the best
+                        quality-to-cost ratio. Recommend the most efficient pipeline per video type.</li>
+                </ol>
+            </div>
+
+            <hr class="divider">
+
+            <!-- ═══════════════════════════════════════════ 9. USER JOURNEY ═══════════════════════════════════════════ -->
+            <div class="section">
+                <div class="section-label"><i class="fa-solid fa-route"></i> Section 09</div>
+                <h2 id="journeys">User Journeys: From Blank Prompt to Viral Video</h2>
+                <p class="lead">Concrete, step-by-step walkthroughs of how different types of users create
+                    high-performing videos using Kureita. Each story covers a different industry, platform,
+                    visual style, and rendering strategy to demonstrate the platform's range.</p>
+
+                <!-- ═══════════════════ STORY 1: GLOWBERRY ═══════════════════ -->
+                <details class="accordion" open>
+                    <summary class="accordion-trigger">
+                        <div class="acc-meta">
+                            <span class="acc-badge"
+                                style="background:var(--red-bg); color:var(--red);">E-Commerce</span>
+                            Story 1: GlowBerry — Skincare Instagram Reel (Problem &rarr; Transformation)
+                        </div>
+                        <i class="fa-solid fa-chevron-down acc-icon"></i>
+                    </summary>
+                    <div class="accordion-body">
+
+                        <div class="callout" style="margin-top:16px;">
+                            <p><strong>Scenario:</strong> Priya runs a small D2C skincare brand called "GlowBerry"
+                                selling
+                                on
+                                Shopify and Instagram. She needs an Instagram Reel ad for her new Vitamin C serum. She
+                                has
+                                never
+                                made a video ad before. She has: a product photo, a Shopify product page, and 10
+                                minutes.
+                            </p>
+                        </div>
+
+                        <h3>Step 1: The Prompt</h3>
+                        <div class="card">
+                            <p style="margin-bottom:8px;"><strong>What Priya types in the dashboard hero input:</strong>
+                            </p>
+                            <div
+                                style="background:var(--bg-accent); border:1px solid var(--border); border-radius:8px; padding:14px 18px; font-size:13px; color:var(--text); font-family:'JetBrains Mono',monospace; margin-bottom:16px;">
+                                "Instagram reel ad for my vitamin C serum, glowberry.com, show the problem of dull skin
+                                then
+                                the glow-up after using it"
+                            </div>
+                            <p style="margin-bottom:0;"><strong>What happens behind the scenes:</strong></p>
+                            <ol class="num-list" style="margin-top:8px;">
+                                <li>AI Agent receives the prompt. Detects a URL (<code>glowberry.com</code>). Fires
+                                    <code>search_web</code> tool automatically via Firecrawl to scrape the product page.
+                                </li>
+                                <li>Agent extracts: brand name "GlowBerry", tagline, product benefits (brightening,
+                                    hydrating,
+                                    anti-dark-spots), hero color (#F5A623 warm orange), price, key ingredient (15%
+                                    Vitamin C
+                                    +
+                                    Niacinamide).</li>
+                                <li>Agent decides: this is a "Problem &rarr; Solution" format (the most viral ad
+                                    structure
+                                    for
+                                    skincare, 72% of top-performing skincare reels use this pattern per industry data).
+                                    It
+                                    also
+                                    detects "Instagram Reel" &rarr; sets aspect ratio to 9:16.</li>
+                                <li>Agent does NOT immediately build the full workflow. Instead, it brainstorms first
+                                    (per
+                                    the
+                                    brainstorm-first rule in the prompt). It responds to Priya with a proposed idea.
+                                </li>
+                            </ol>
+                        </div>
+
+                        <h3>Step 2: The Brainstorm</h3>
+                        <div class="card">
+                            <p style="margin-bottom:8px;"><strong>What Priya sees in the agent chat sidebar:</strong>
+                            </p>
+                            <div
+                                style="background:var(--bg-accent); border:1px solid var(--border); border-radius:8px; padding:16px 18px; font-size:13px; color:var(--text-secondary); margin-bottom:16px; line-height:1.8;">
+                                <span style="font-weight:600; color:var(--text);">Kureita Agent:</span><br>
+                                I checked out glowberry.com &mdash; love the warm branding. Here's what I'd suggest for
+                                your
+                                reel:<br><br>
+                                <strong style="color:var(--text);">Format:</strong> Problem &rarr; Transformation &rarr;
+                                Product Reveal (12 seconds)<br>
+                                <strong style="color:var(--text);">Why this works:</strong> 72% of top skincare reels
+                                use a
+                                before/after structure. Opening with a relatable pain point ("dull skin") creates an
+                                immediate hook &mdash; viewers who relate will stay past the 3-second mark.<br><br>
+                                <strong style="color:var(--text);">Proposed scenes:</strong><br>
+                                1. <strong>Hook (0&ndash;3s):</strong> Close-up of tired, dull skin under harsh
+                                lighting.
+                                Bold text: "Tired of looking tired?" &mdash; this is the pattern interrupt. No product
+                                yet.<br>
+                                2. <strong>Agitation (3&ndash;6s):</strong> Quick montage of rejected skincare products,
+                                frustrated expression. Text: "Nothing actually works." &mdash; builds empathy.<br>
+                                3. <strong>Transformation (6&ndash;9s):</strong> The glow-up. Same face, now radiant
+                                with
+                                golden hour lighting. Serene expression. Product bottle enters frame. Text: "Until
+                                GlowBerry
+                                Vitamin C."<br>
+                                4. <strong>CTA (9&ndash;12s):</strong> Product hero shot with price, "Shop now" button
+                                animation, brand logo. Text: "Your glow starts today. Link in bio."<br><br>
+                                Should I build this workflow? Or want to adjust the scenes?
+                            </div>
+                            <p><strong>Why this matters:</strong> The agent is not just generating random scenes. It is
+                                applying
+                                data-backed viral patterns:</p>
+                            <ul class="check-list">
+                                <li><span class="li-icon"><i class="fa-solid fa-check"></i></span><strong>3-second hook
+                                        rule</strong>
+                                    &mdash; Instagram's Skip Rate metric measures exits in the first 3 seconds. Videos
+                                    with
+                                    faces
+                                    in the first 3s get 35% higher retention. The "dull skin close-up" maximizes this.
+                                </li>
+                                <li><span class="li-icon"><i class="fa-solid fa-check"></i></span><strong>Problem &rarr;
+                                        Solution
+                                        structure</strong> &mdash; The highest-converting ad format for e-commerce on
+                                    TikTok
+                                    and
+                                    Instagram. Creates emotional investment before showing the product.</li>
+                                <li><span class="li-icon"><i class="fa-solid fa-check"></i></span><strong>12-second
+                                        total
+                                        length</strong> &mdash; Under-15-second reels have a 72% average completion rate
+                                    vs
+                                    46%
+                                    for longer videos. Completion rate directly drives algorithm distribution.</li>
+                                <li><span class="li-icon"><i class="fa-solid fa-check"></i></span><strong>Bold text
+                                        overlays</strong> &mdash; 40% higher completion rate when captions are present
+                                    (silent
+                                    scrolling behavior).</li>
+                            </ul>
+                            <p style="margin:0;">Priya replies: <em>"Love it, build it."</em></p>
+                        </div>
+
+                        <h3>Step 3: The AI Builds the Workflow</h3>
+                        <div class="card">
+                            <p style="margin-bottom:12px;">The agent generates a complete node workflow on the canvas.
+                                Here
+                                is
+                                exactly what gets created and <strong>why each node type is chosen</strong>:</p>
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Scene</th>
+                                        <th>Node Type</th>
+                                        <th>Why This Type</th>
+                                        <th>What It Produces</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td><strong>Hook (0&ndash;3s)</strong><br><span
+                                                style="color:var(--text-muted); font-size:11px;">"Tired of looking
+                                                tired?"</span></td>
+                                        <td><code>imageGen</code> &rarr; <code>videoGen</code></td>
+                                        <td>Needs a realistic close-up of skin with specific lighting. AI video model
+                                            (Veo
+                                            3.1) generates the subtle skin texture and camera drift that makes it feel
+                                            cinematic, not stock.</td>
+                                        <td>4s AI-generated video clip: close-up face, dull skin, cold blue-ish
+                                            lighting,
+                                            slow camera push-in.</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Agitation (3&ndash;6s)</strong><br><span
+                                                style="color:var(--text-muted); font-size:11px;">"Nothing actually
+                                                works."</span></td>
+                                        <td><strong>Remotion only</strong></td>
+                                        <td>Quick-cut montage with bold kinetic typography. About pace, rhythm, and
+                                            emotional text. Remotion excels: animated text slamming in, "rejected" stamp
+                                            effect, fast crossfade transitions. A video model would be wasteful.</td>
+                                        <td>3s Remotion clip: fast text animations ("Tried everything.", "Still dull.",
+                                            "Nothing works.") with brand-colored backgrounds.</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Transformation (6&ndash;9s)</strong><br><span
+                                                style="color:var(--text-muted); font-size:11px;">"Until GlowBerry
+                                                Vitamin
+                                                C."</span></td>
+                                        <td><code>videoGen</code> + <strong>Remotion overlay</strong></td>
+                                        <td>The "money shot." AI-generated radiant skin with golden-hour lighting
+                                            (impossible with motion graphics). Product bottle + text overlay composed
+                                            via
+                                            Remotion on top. Hybrid: AI for the visual, Remotion for precise placement.
+                                        </td>
+                                        <td>3s: AI video background (glowing skin) + Remotion layer (product slides in,
+                                            text
+                                            fades up with spring animation).</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>CTA (9&ndash;12s)</strong><br><span
+                                                style="color:var(--text-muted); font-size:11px;">"Your glow starts
+                                                today."</span></td>
+                                        <td><strong>Remotion only</strong></td>
+                                        <td>Product hero, price badge, animated CTA button, brand logo. 100% motion
+                                            graphics. Product image from user upload is centered, price tag animates in.
+                                            No
+                                            AI generation needed. Pixel-perfect.</td>
+                                        <td>3s Remotion clip: product on gradient (#F5A623), animated price ("$29"),
+                                            pulsing
+                                            "Shop Now", logo.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            <div class="callout" style="margin-top:16px;">
+                                <p><strong>Key insight:</strong> 2 of 4 scenes are pure Remotion (zero AI video cost,
+                                    instant render). Only scenes needing photorealism use the AI model. Total cost:
+                                    ~$0.30&ndash;$0.60. Total time: ~90 seconds.</p>
+                            </div>
+                        </div>
+
+                        <h3>Step 4: One-Click Generate</h3>
+                        <div class="card">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Order</th>
+                                        <th>Node</th>
+                                        <th>Time</th>
+                                        <th>What Happens</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>1&ndash;2</td>
+                                        <td>Text + Upload</td>
+                                        <td>instant</td>
+                                        <td>Scene descriptions locked. Product photo URL resolved.</td>
+                                    </tr>
+                                    <tr>
+                                        <td>3&ndash;4</td>
+                                        <td>imageGen (x2)</td>
+                                        <td>~8s</td>
+                                        <td>Imagen 4 generates both start frames (dull skin + radiant skin) in parallel.
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td>5&ndash;6</td>
+                                        <td>videoGen (x2)</td>
+                                        <td>~30s</td>
+                                        <td>Veo 3.1 generates both 4s video clips in parallel. Nodes light up green.
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td>7</td>
+                                        <td>audioGen</td>
+                                        <td>~5s</td>
+                                        <td>ElevenLabs voiceover from combined text. Parallel with video gen.</td>
+                                    </tr>
+                                    <tr>
+                                        <td>8&ndash;9</td>
+                                        <td>editorAgent (x2)</td>
+                                        <td>~2s each</td>
+                                        <td>Generates Remotion TSX for Agitation + CTA scenes. Pure code gen, no API.
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td>10</td>
+                                        <td>Final Editor</td>
+                                        <td>~5s</td>
+                                        <td>Stitches 4 scenes + audio. Crossfades. Renders in browser via WebCodecs.
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            <div style="display:flex; gap:14px; margin-top:16px;">
+                                <div class="card-sm" style="flex:1;">
+                                    <div class="card-icon icon-green"><i class="fa-solid fa-clock"></i></div>
+                                    <h4>~90 seconds</h4>
+                                    <p>Total wall-clock time with parallel execution.</p>
+                                </div>
+                                <div class="card-sm" style="flex:1;">
+                                    <div class="card-icon icon-amber"><i class="fa-solid fa-coins"></i></div>
+                                    <h4>~$0.30&ndash;$0.60</h4>
+                                    <p>vs $200+ freelancer. 2 of 4 scenes have zero API cost.</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <h3>Why This Video Will Perform</h3>
+                        <div class="card">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Creative Decision</th>
+                                        <th>Data Point</th>
+                                        <th>Source</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>Face in first 3 seconds</td>
+                                        <td>35% higher viewer retention</td>
+                                        <td>Zebracat / Instagram analytics</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Problem &rarr; Solution structure</td>
+                                        <td>Highest-converting e-commerce ad format</td>
+                                        <td>trytheseads.com, influee.co</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Under 15 seconds</td>
+                                        <td>72% avg completion rate (vs 46% for longer)</td>
+                                        <td>Zebracat, Instagram analytics</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Bold text overlays / captions</td>
+                                        <td>40% higher completion rate</td>
+                                        <td>driveeditor.com, Instagram data</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Before/after transformation</td>
+                                        <td>Drives highest save rate on Reels</td>
+                                        <td>invideo.io, vidico.com</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                    </div>
+                </details>
+
+                <!-- ═══════════════════ STORY 2: SHIPFAST ═══════════════════ -->
+                <details class="accordion">
+                    <summary class="accordion-trigger">
+                        <div class="acc-meta">
+                            <span class="acc-badge" style="background:var(--blue-bg); color:var(--blue);">SaaS</span>
+                            Story 2: ShipFast — Dev Tool Product Launch Video (LinkedIn + Twitter)
+                        </div>
+                        <i class="fa-solid fa-chevron-down acc-icon"></i>
+                    </summary>
+                    <div class="accordion-body">
+
+                        <div class="callout" style="margin-top:16px;">
+                            <p><strong>Scenario:</strong> Arjun is a solo indie developer who built "ShipFast" &mdash;
+                                an
+                                open-source CLI tool that deploys Next.js apps to AWS in one command. He is launching on
+                                Product Hunt tomorrow and needs a 30-second product launch video for LinkedIn and
+                                Twitter.
+                                He has: a GitHub repo, a landing page (shipfast.dev), terminal screenshots, and zero
+                                video
+                                editing experience.</p>
+                        </div>
+
+                        <h3>Step 1: The Prompt</h3>
+                        <div class="card">
+                            <p style="margin-bottom:8px;"><strong>What Arjun types:</strong></p>
+                            <div
+                                style="background:var(--bg-accent); border:1px solid var(--border); border-radius:8px; padding:14px 18px; font-size:13px; color:var(--text); font-family:'JetBrains Mono',monospace; margin-bottom:16px;">
+                                "30 second product launch video for ShipFast, shipfast.dev, it's a CLI tool that deploys
+                                Next.js to AWS in one command, for LinkedIn and Twitter"
+                            </div>
+                            <p style="margin-bottom:0;"><strong>Behind the scenes:</strong></p>
+                            <ol class="num-list" style="margin-top:8px;">
+                                <li>Agent scrapes <code>shipfast.dev</code> via Firecrawl. Extracts: tagline ("Ship to
+                                    AWS
+                                    in 12 seconds"), features (zero-config, auto-SSL, preview URLs), brand colors
+                                    (#0F172A
+                                    dark navy + #38BDF8 sky blue), GitHub stars count, pricing (free/open-source).</li>
+                                <li>Agent detects "LinkedIn + Twitter" &rarr; sets aspect ratio to 16:9 (landscape for
+                                    feed). Also notes it should produce a 1:1 square variant for Twitter cards.</li>
+                                <li>Agent identifies this as a <strong>SaaS product demo</strong> &mdash; the optimal
+                                    format
+                                    is "Pain &rarr; Demo &rarr; Proof &rarr; CTA" (AIDA model). LinkedIn videos get 5x
+                                    more
+                                    reach than text posts in 2025.</li>
+                                <li>Agent brainstorms first. Key decision: this is a <strong>developer tool</strong>.
+                                    Developers hate polished marketing videos &mdash; they want to see the terminal, the
+                                    actual command, real output. The agent calibrates tone accordingly.</li>
+                            </ol>
+                        </div>
+
+                        <h3>Step 2: The Brainstorm</h3>
+                        <div class="card">
+                            <div
+                                style="background:var(--bg-accent); border:1px solid var(--border); border-radius:8px; padding:16px 18px; font-size:13px; color:var(--text-secondary); margin-bottom:16px; line-height:1.8;">
+                                <span style="font-weight:600; color:var(--text);">Kureita Agent:</span><br>
+                                I scraped shipfast.dev &mdash; "Ship to AWS in 12 seconds" is a strong hook. Here's my
+                                take
+                                for a LinkedIn/Twitter launch video:<br><br>
+                                <strong style="color:var(--text);">Format:</strong> Pain &rarr; Live Demo &rarr; Social
+                                Proof &rarr; CTA (30 seconds)<br>
+                                <strong style="color:var(--text);">Tone:</strong> Developer-authentic. No corporate
+                                polish.
+                                Terminal-first visuals. Monospace typography.<br><br>
+                                <strong style="color:var(--text);">Proposed scenes:</strong><br>
+                                1. <strong>Hook (0&ndash;5s):</strong> Dark screen. Typing animation:
+                                <code>git push &rarr; wait 20 minutes &rarr; deploy failed</code>. Text fades in:
+                                "Deploying
+                                shouldn't feel like this." &mdash; every developer relates to this pain.<br>
+                                2. <strong>Demo (5&ndash;18s):</strong> Clean terminal recording. User types
+                                <code>npx shipfast deploy</code>. Real-time output shows: detecting framework, bundling,
+                                uploading, provisioning SSL, done. Timer counts up to "12.4 seconds." The URL appears:
+                                <code>https://myapp.shipfast.dev</code>. Browser opens showing the live site.<br>
+                                3. <strong>Proof (18&ndash;24s):</strong> Animated counter: "2,400+ GitHub stars", "180+
+                                deploys today." Brief flash of 3 developer testimonial tweets.<br>
+                                4. <strong>CTA (24&ndash;30s):</strong> ShipFast logo reveal. Text: "Open source. Free
+                                forever." GitHub link. "Star us on GitHub" button animation.<br><br>
+                                Important: for dev tools, authenticity beats production value. The demo scene should
+                                feel
+                                like a real terminal, not a polished mockup.<br><br>
+                                Build this?
+                            </div>
+                            <p>Arjun replies: <em>"Perfect. But add 'works with Turborepo' somewhere in the demo."</em>
+                            </p>
+                            <p style="margin:0;">Agent acknowledges and adjusts the terminal output to include Turborepo
+                                detection.</p>
+                        </div>
+
+                        <h3>Step 3: The AI Builds the Workflow</h3>
+                        <div class="card">
+                            <p style="margin-bottom:12px;">This is a fundamentally different workflow from GlowBerry.
+                                <strong>Nearly every scene is Remotion motion graphics.</strong> Developer tool videos
+                                do not need AI-generated photorealism &mdash; they need crisp typography, terminal
+                                simulations, and data animations.
+                            </p>
+
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Scene</th>
+                                        <th>Node Type</th>
+                                        <th>Why This Type</th>
+                                        <th>What It Produces</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td><strong>Hook (0&ndash;5s)</strong><br><span
+                                                style="color:var(--text-muted); font-size:11px;">"Deploying shouldn't
+                                                feel
+                                                like this."</span></td>
+                                        <td><strong>Remotion only</strong></td>
+                                        <td>Terminal typing animation with a fake error message. This is pure kinetic
+                                            typography &mdash; monospace font, blinking cursor, red error text, then a
+                                            fade
+                                            to white bold text. Remotion's <code>useCurrentFrame()</code> gives
+                                            frame-perfect control over typing speed. No AI needed.</td>
+                                        <td>5s: Dark terminal bg, typing animation of a failed deploy, text slam:
+                                            "Deploying
+                                            shouldn't feel like this."</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Demo (5&ndash;18s)</strong><br><span
+                                                style="color:var(--text-muted); font-size:11px;">The actual product in
+                                                action</span></td>
+                                        <td><strong>Remotion only</strong> (terminal simulation + browser mockup)</td>
+                                        <td>The entire demo is a programmatic terminal simulation built in Remotion.
+                                            Each
+                                            line of output appears with realistic timing. A live counter ticks up. Then
+                                            a
+                                            browser window animates open showing a mockup of the deployed site. This is
+                                            Remotion's strongest use case: data-driven, deterministic animation that
+                                            would
+                                            be impossible to get right with AI video gen.</td>
+                                        <td>13s: Terminal sim shows <code>npx shipfast deploy</code>, line-by-line
+                                            output
+                                            with progress bars, timer reaching "12.4s", browser mockup opening.</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Proof (18&ndash;24s)</strong><br><span
+                                                style="color:var(--text-muted); font-size:11px;">Social proof and
+                                                credibility</span></td>
+                                        <td><strong>Remotion</strong> + <code>imageGen</code> for tweet cards</td>
+                                        <td>The GitHub stars counter and deploy count are Remotion spring animations
+                                            (numbers counting up with satisfying easing). The developer tweet
+                                            screenshots
+                                            could be real screenshots (via <code>mediaUpload</code>) or AI-generated
+                                            realistic tweet cards via <code>imageGen</code> for the demo version.</td>
+                                        <td>6s: Animated counters ("2,400+ stars", "180+ deploys"), 3 tweet cards
+                                            sliding in
+                                            with staggered timing.</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>CTA (24&ndash;30s)</strong><br><span
+                                                style="color:var(--text-muted); font-size:11px;">"Open source. Free
+                                                forever."</span></td>
+                                        <td><strong>Remotion only</strong></td>
+                                        <td>Logo reveal with a subtle particle effect (code characters floating up).
+                                            "Open
+                                            source. Free forever." in clean sans-serif. GitHub URL with a star button
+                                            that
+                                            pulses. Brand colors (#0F172A, #38BDF8). This is motion graphics showcase
+                                            territory.</td>
+                                        <td>6s: Logo animation, text reveal, GitHub CTA button with hover effect
+                                            simulation.
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+
+                            <div class="callout-green callout" style="margin-top:16px;">
+                                <p><strong>Notice the difference:</strong> The GlowBerry video used AI video generation
+                                    for 2 of 4 scenes (photorealistic skin). The ShipFast video uses <strong>zero AI
+                                        video
+                                        generation</strong> &mdash; it is 100% Remotion motion graphics. The AI Agent
+                                    intelligently determined that a developer tool launch video needs terminal
+                                    simulations and data animations, not cinematic footage. This means: zero Veo 3.1
+                                    cost, rendering in under 10 seconds total, and pixel-perfect output.</p>
+                            </div>
+                        </div>
+
+                        <h3>Step 4: One-Click Generate</h3>
+                        <div class="card">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Order</th>
+                                        <th>Node</th>
+                                        <th>Time</th>
+                                        <th>What Happens</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>1</td>
+                                        <td>Text nodes</td>
+                                        <td>instant</td>
+                                        <td>Scene scripts and terminal commands locked in.</td>
+                                    </tr>
+                                    <tr>
+                                        <td>2</td>
+                                        <td>mediaUpload</td>
+                                        <td>instant</td>
+                                        <td>Product logo and optional tweet screenshots loaded.</td>
+                                    </tr>
+                                    <tr>
+                                        <td>3</td>
+                                        <td>imageGen (tweet cards)</td>
+                                        <td>~8s</td>
+                                        <td>Optional: generates realistic tweet card images if no real screenshots
+                                            provided.
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td>4&ndash;7</td>
+                                        <td>editorAgent (x4)</td>
+                                        <td>~2s each</td>
+                                        <td>LLM generates Remotion TSX for each scene. Terminal typing, counter
+                                            animations,
+                                            logo reveal.</td>
+                                    </tr>
+                                    <tr>
+                                        <td>8</td>
+                                        <td>audioGen</td>
+                                        <td>~3s</td>
+                                        <td>Optional ambient music (lo-fi coding beats) or no audio (many dev videos are
+                                            silent).</td>
+                                    </tr>
+                                    <tr>
+                                        <td>9</td>
+                                        <td>Final Editor</td>
+                                        <td>~3s</td>
+                                        <td>Stitches scenes. Hard cuts (no crossfades &mdash; dev aesthetic). Renders
+                                            via
+                                            WebCodecs.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            <div style="display:flex; gap:14px; margin-top:16px;">
+                                <div class="card-sm" style="flex:1;">
+                                    <div class="card-icon icon-green"><i class="fa-solid fa-clock"></i></div>
+                                    <h4>~20 seconds</h4>
+                                    <p>Total render time. No AI video model wait. Pure motion graphics.</p>
+                                </div>
+                                <div class="card-sm" style="flex:1;">
+                                    <div class="card-icon icon-amber"><i class="fa-solid fa-coins"></i></div>
+                                    <h4>~$0.02&ndash;$0.05</h4>
+                                    <p>Only LLM calls for code gen + optional image gen. Near-zero cost.</p>
+                                </div>
+                                <div class="card-sm" style="flex:1;">
+                                    <div class="card-icon icon-blue"><i class="fa-solid fa-display"></i></div>
+                                    <h4>2 formats</h4>
+                                    <p>16:9 for LinkedIn feed + 1:1 square for Twitter card. Same workflow.</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <h3>Why This Video Will Perform on LinkedIn/Twitter</h3>
+                        <div class="card">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Creative Decision</th>
+                                        <th>Data Point</th>
+                                        <th>Source</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>Lead with developer pain (failed deploy)</td>
+                                        <td>Problem-focused hooks are the top-performing format for SaaS</td>
+                                        <td>scrollmotion.site, videopulse.io</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Show the actual terminal, not a mockup</td>
+                                        <td>Developer communities reject polished marketing; authenticity drives 3x
+                                            engagement</td>
+                                        <td>Reddit r/webdev, Indie Hackers, venturevideos.com</td>
+                                    </tr>
+                                    <tr>
+                                        <td>30-second length</td>
+                                        <td>LinkedIn videos under 30s get highest completion. Twitter autoplay cuts off
+                                            at
+                                            2:20 but under-30s dominates feed</td>
+                                        <td>LinkedIn internal data, scrollmotion.site</td>
+                                    </tr>
+                                    <tr>
+                                        <td>GitHub stars counter animation</td>
+                                        <td>Social proof counters increase CTA click-through by 14&ndash;28%</td>
+                                        <td>demodazzle.com, contentbeta.com</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Subtitled / text-heavy (silent-friendly)</td>
+                                        <td>85% of LinkedIn feed video is watched without sound</td>
+                                        <td>LinkedIn internal data</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Video on LinkedIn vs text post</td>
+                                        <td>5x more exposure for video content in 2025</td>
+                                        <td>LinkedIn algorithm studies</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                    </div>
+                </details>
+
+                <!-- ── RENDERING PHILOSOPHY ── -->
+                <h3>Rendering Philosophy: AI Video vs Remotion Motion Graphics</h3>
+                <div class="card">
+                    <p style="margin-bottom:16px;">Not every frame of a good video needs to come from an AI video model.
+                        The two stories above demonstrate this clearly. Here is the decision framework:</p>
+
+                    <div class="two-col" style="margin-bottom:16px;">
+                        <div class="card-sm" style="border-left:3px solid var(--accent);">
+                            <h4 style="margin-bottom:8px;">Use AI Video Generation When:</h4>
+                            <ul class="check-list">
+                                <li><span class="li-icon"><i class="fa-solid fa-check"></i></span>Photorealistic humans,
+                                    faces, skin, or natural environments</li>
+                                <li><span class="li-icon"><i class="fa-solid fa-check"></i></span>Natural camera
+                                    movement
+                                    (push-in, dolly, pan)</li>
+                                <li><span class="li-icon"><i class="fa-solid fa-check"></i></span>Physically impossible
+                                    visuals (golden-hour glow, product floating)</li>
+                                <li><span class="li-icon"><i class="fa-solid fa-check"></i></span>Background /
+                                    establishing
+                                    shots setting mood</li>
+                            </ul>
+                        </div>
+                        <div class="card-sm" style="border-left:3px solid var(--green);">
+                            <h4 style="margin-bottom:8px;">Use Remotion Motion Graphics When:</h4>
+                            <ul class="check-list">
+                                <li><span class="li-icon"><i class="fa-solid fa-check"></i></span>Text animations,
+                                    kinetic
+                                    typography, terminal simulations</li>
+                                <li><span class="li-icon"><i class="fa-solid fa-check"></i></span>Product images with
+                                    price
+                                    tags, badges, CTAs</li>
+                                <li><span class="li-icon"><i class="fa-solid fa-check"></i></span>Data visualizations,
+                                    counters, progress bars</li>
+                                <li><span class="li-icon"><i class="fa-solid fa-check"></i></span>Brand elements: logo
+                                    reveals, color transitions</li>
+                                <li><span class="li-icon"><i class="fa-solid fa-check"></i></span>UI mockups,
+                                    browser/device
+                                    frames, screen recordings</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="callout-green callout">
+                        <p><strong>The right tool for the right scene.</strong> GlowBerry (skincare) needed photorealism
+                            for skin close-ups &mdash; 2 of 4 scenes used AI video. ShipFast (dev tool) needed terminal
+                            precision &mdash; 0 of 4 scenes needed AI video. The AI Agent must make this decision
+                            per-scene,
+                            not per-video. The best results are always a deliberate hybrid, and the node canvas makes
+                            this
+                            explicit.</p>
+                    </div>
+                </div>
+            </div>
+            <hr class="divider">
+
+            <!-- ═══════════════════════════════════════════ FOOTER ═══════════════════════════════════════════ -->
+            <div style="text-align:center; padding: 32px 0;">
+                <p style="font-size:11px; color:var(--text-muted); letter-spacing:0.5px;">KUREITA &mdash; INTERNAL
+                    STRATEGY
+                    DOCUMENT &mdash; FEBRUARY 2026</p>
+                <p style="font-size:11px; color:var(--text-muted); margin-top:4px;">Sources: Reddit (r/aivideo,
+                    r/ecommerce,
+                    r/remotion), Grand View Research, Fortune Business Insights, overlap.ai, community forums</p>
+            </div>
+
+        </main>
+
+    </div>
+</body>
+
+</html>

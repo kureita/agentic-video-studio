@@ -101,6 +101,7 @@ export const AudioGenNode = memo(({ id, selected, data }: NodeProps) => {
             onRun={() => runNode(id)}
             onClear={output ? () => clearNodeOutput(id) : undefined}
             isRunning={isRunning}
+            executionStatus={data.executionStatus as "queued" | "running" | "completed" | "failed" | null}
         >
             <div className="relative bg-muted/30 group/audio transition-all duration-300 ease-in-out overflow-hidden w-[320px]">
 

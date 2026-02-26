@@ -72,7 +72,7 @@ class NodeRunner:
                 return await self._run_vision_node(node_data, inputs, nodes)
             
             elif node_type == "editorAgent":
-                return await self._run_editor_agent_node(node_data, inputs, nodes, node_id=node_id)
+                return await self._run_editor_agent_node(node_data, inputs, nodes, node_id=node_id, edges=edges, outputs=outputs)
             
             elif node_type == "mediaUpload":
                 return await self._run_media_upload_node(node_data, inputs)
@@ -250,7 +250,7 @@ class NodeRunner:
             prompt = "Variation of this image"
         
         # Get generation parameters
-        model = data.get("model", "Imagen 4")
+        model = data.get("model", "FLUX Schnell")
         ratio = data.get("ratio", "1:1")
         count = data.get("count", 1)
         
@@ -493,104 +493,85 @@ class NodeRunner:
         inputs: Dict[str, Any],
         nodes: List[Dict[str, Any]],
     ) -> Dict[str, Any]:
-        """Vision node - uses Gemini model as a chat model to process text, images, and videos."""
+        """Vision node - uses GPT-4o mini to process text and images."""
         import httpx
-        from google import genai
-        from google.genai import types
+        import base64
+        from openai import AsyncOpenAI
         from app.core.config import settings
-        
+
         # Get instruction from node data
         raw_instruction = data.get("instruction", "")
-        
+
         # Resolve references
         instruction = self._resolve_prompt_references(raw_instruction, nodes)
-        
+
         # Get inputs
         text_input = inputs.get("text", "")
         ref_images = inputs.get("ref_images", [])
         ref_videos = inputs.get("ref_videos", [])
-        
+
         if not instruction:
             return {
                 "success": False,
                 "error": "No instruction provided",
             }
-        
+
         # Normalize to lists
         if isinstance(ref_images, str):
             ref_images = [ref_images] if ref_images else []
         if isinstance(ref_videos, str):
             ref_videos = [ref_videos] if ref_videos else []
-        
+
         try:
-            # Initialize Gemini client
-            client = genai.Client(api_key=settings.gemini_api_key)
-            
-            # Build content list - use strings for text, Part for binary
-            contents = []
-            
-            # Add instruction as text
-            if text_input:
-                contents.append(f"Context: {text_input}\n\nInstruction: {instruction}")
-            else:
-                contents.append(instruction)
-            
-            # Add images
+            client = AsyncOpenAI(api_key=settings.openai_api_key)
+
+            # Build user message content
+            user_content = []
+
+            # Text part
+            prompt_text = f"Context:\n{text_input}\n\nInstruction:\n{instruction}" if text_input else instruction
+            user_content.append({"type": "text", "text": prompt_text})
+
+            # Attach reference images as base64 data URIs
             async with httpx.AsyncClient() as http_client:
                 for img_url in ref_images:
                     if img_url:
                         try:
                             print(f"[Vision] Fetching image: {img_url[:80]}...")
-                            response = await http_client.get(img_url, timeout=30.0)
-                            if response.status_code == 200:
-                                content_type = response.headers.get("content-type", "image/jpeg")
-                                mime_type = content_type.split(";")[0].strip()
-                                # Ensure valid mime type
-                                if not mime_type.startswith("image/"):
-                                    mime_type = "image/jpeg"
-                                contents.append(types.Part.from_bytes(data=response.content, mime_type=mime_type))
+                            resp = await http_client.get(img_url, timeout=30.0)
+                            if resp.status_code == 200:
+                                content_type = resp.headers.get("content-type", "image/jpeg").split(";")[0].strip()
+                                if not content_type.startswith("image/"):
+                                    content_type = "image/jpeg"
+                                b64 = base64.b64encode(resp.content).decode()
+                                user_content.append({
+                                    "type": "image_url",
+                                    "image_url": {"url": f"data:{content_type};base64,{b64}", "detail": "low"},
+                                })
                             else:
-                                print(f"[Vision] Failed to fetch image: {response.status_code}")
+                                print(f"[Vision] Failed to fetch image: {resp.status_code}")
                         except Exception as e:
                             print(f"[Vision] Error fetching image: {e}")
-                
-                # Add videos (Gemini supports video frames)
-                for vid_url in ref_videos:
-                    if vid_url:
-                        try:
-                            print(f"[Vision] Fetching video: {vid_url[:80]}...")
-                            response = await http_client.get(vid_url, timeout=60.0)
-                            if response.status_code == 200:
-                                content_type = response.headers.get("content-type", "video/mp4")
-                                mime_type = content_type.split(";")[0].strip()
-                                if not mime_type.startswith("video/"):
-                                    mime_type = "video/mp4"
-                                contents.append(types.Part.from_bytes(data=response.content, mime_type=mime_type))
-                            else:
-                                print(f"[Vision] Failed to fetch video: {response.status_code}")
-                        except Exception as e:
-                            print(f"[Vision] Error fetching video: {e}")
-            
-            print(f"[Vision] Sending request with {len(contents)} parts to Gemini...")
-            
-            # Call Gemini 2.0 Flash (multimodal)
-            response = client.models.generate_content(
-                model="gemini-2.0-flash",
-                contents=contents,
-                config=types.GenerateContentConfig(
-                    temperature=0.7,
-                    max_output_tokens=2048,
-                ),
+
+                # Note: GPT-4o mini doesn't support raw video — skip video inputs
+                if ref_videos:
+                    print(f"[Vision] Skipping {len(ref_videos)} video input(s) — not supported by GPT-4o mini")
+
+            print(f"[Vision] Sending request to GPT-5 mini ({len(user_content)} content parts)...")
+
+            response = await client.chat.completions.create(
+                model="gpt-5-mini",
+                messages=[{"role": "user", "content": user_content}],
             )
-            
-            output_text = response.text
+
+            output_text = response.choices[0].message.content or ""
             print(f"[Vision] Response: {output_text[:100]}...")
-            
+
             return {
                 "success": True,
                 "output": output_text,
             }
-            
+
         except Exception as e:
             print(f"[Vision] Error: {e}")
             return {
@@ -604,8 +585,16 @@ class NodeRunner:
         inputs: Dict[str, Any],
         nodes: List[Dict[str, Any]],
         node_id: str = "unknown",
+        edges: Optional[List[Dict[str, Any]]] = None,
+        outputs: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Editor Agent node - generates Remotion TSX composition code for client-side rendering."""
+        """Editor Agent node - generates Remotion TSX composition code for client-side rendering.
+        
+        Supports three modes:
+        - 'compositor': when upstream editorAgent nodes are connected (stitches scenes)
+        - 'scene': when node has instruction but no upstream editorAgent nodes (standalone scene)
+        - None: default monolithic mode (backward compatible)
+        """
         # Get instruction from node data
         raw_instruction = data.get("instruction", "")
         
@@ -635,13 +624,59 @@ class NodeRunner:
                 "error": "No instruction provided",
             }
         
-        if not ref_videos and not ref_images:
+        # ── Detect mode ──────────────────────────────────────────────────
+        mode = None
+        upstream_scenes = []
+        edges = edges or []
+        outputs = outputs or {}
+        
+        # Check if any upstream nodes are also editorAgent type
+        upstream_editor_ids = []
+        for edge in edges:
+            if edge.get("target") == node_id:
+                source_id = edge.get("source")
+                source_node = next((n for n in nodes if n["id"] == source_id), None)
+                if source_node and source_node.get("type") == "editorAgent":
+                    upstream_editor_ids.append(source_id)
+        
+        if upstream_editor_ids:
+            # COMPOSITOR MODE: this node receives scene outputs from other editorAgent nodes
+            mode = "compositor"
+            for uid in upstream_editor_ids:
+                scene_code = outputs.get(uid, "")
+                if scene_code:
+                    # Try to extract scene config from the code
+                    import re
+                    duration_match = re.search(r'sceneDurationInFrames\s*=\s*(\d+)', scene_code)
+                    scene_duration = int(duration_match.group(1)) if duration_match else 90
+                    
+                    name_match = re.search(r'export\s+function\s+(\w+)', scene_code)
+                    scene_label = name_match.group(1) if name_match else f"Scene_{uid[:6]}"
+                    
+                    upstream_scenes.append({
+                        "code": scene_code,
+                        "durationFrames": scene_duration,
+                        "label": scene_label,
+                        "nodeId": uid,
+                    })
+            
+            print(f"[NodeRunner] Editor Agent COMPOSITOR mode: {len(upstream_scenes)} upstream scenes")
+        elif not ref_videos and not ref_images:
+            # SCENE MODE: no media inputs, Remotion-only scene (text overlays, animations, etc.)
+            mode = "scene"
+            print(f"[NodeRunner] Editor Agent SCENE mode (no media inputs)")
+        else:
+            # DEFAULT MODE: has media inputs, backward-compatible monolithic generation
+            print(f"[NodeRunner] Editor Agent DEFAULT mode: videos={len(ref_videos)}, images={len(ref_images)}")
+        
+        # For default mode, still require media inputs
+        if mode is None and not ref_videos and not ref_images:
             return {
                 "success": False,
                 "error": "No video or image inputs provided. Connect videos or images to edit.",
             }
         
-        print(f"[NodeRunner] Editor Agent: instruction='{instruction[:50]}...', videos={len(ref_videos)}, images={len(ref_images)}, has_audio={bool(audio)}")
+        print(f"[NodeRunner] Editor Agent (mode={mode}): instruction='{instruction[:50]}...', videos={len(ref_videos)}, images={len(ref_images)}, has_audio={bool(audio)}")
         
         try:
             result = await self.editor_agent.edit_video(
@@ -651,14 +686,32 @@ class NodeRunner:
                 audio=audio,
                 text_input=text_input,
                 ref_images=ref_images,
+                mode=mode,
+                upstream_scenes=upstream_scenes if mode == "compositor" else None,
             )
             
             if result.get("success"):
-                # Return the TSX composition code as the output string
-                # The frontend will compile + render it client-side
+                # For scene mode, include scene metadata in a JSON wrapper
+                # so the frontend can distinguish scene vs compositor output
+                output_data = result.get("code", "")
+                
+                if mode == "scene" and result.get("sceneConfig"):
+                    import json
+                    output_data = json.dumps({
+                        "type": "scene",
+                        "code": result.get("code", ""),
+                        "sceneConfig": result.get("sceneConfig"),
+                    })
+                elif mode == "compositor":
+                    import json
+                    output_data = json.dumps({
+                        "type": "compositor",
+                        "code": result.get("code", ""),
+                    })
+                
                 return {
                     "success": True,
-                    "output": result.get("code", ""),
+                    "output": output_data,
                 }
             else:
                 return {

@@ -23,6 +23,7 @@ interface NodeWrapperProps {
     onRun?: () => void;
     onClear?: () => void;
     isRunning?: boolean;
+    executionStatus?: "queued" | "running" | "completed" | "failed" | "skipped" | null;
     inputBaseOffset?: number;
     contentClassName?: string;
     style?: React.CSSProperties;
@@ -48,13 +49,40 @@ export const NodeWrapper = memo(({
     onRun,
     onClear,
     isRunning,
+    executionStatus,
     contentClassName,
     style,
     inputBaseOffset = 75,
 }: NodeWrapperProps) => {
 
+    // Execution status styles
+    const executionBorderClass = executionStatus === "completed"
+        ? "border-green-500/60 shadow-[0_0_20px_-5px_rgba(34,197,94,0.3)]"
+        : executionStatus === "running"
+            ? "border-amber-500/60 shadow-[0_0_20px_-5px_rgba(245,158,11,0.3)] animate-pulse"
+            : executionStatus === "failed"
+                ? "border-red-500/60 shadow-[0_0_20px_-5px_rgba(239,68,68,0.3)]"
+                : executionStatus === "queued"
+                    ? "border-border/60"
+                    : "";
+
     return (
         <div className="relative group/node">
+            {/* Execution Status Badge */}
+            {executionStatus && executionStatus !== "queued" && (
+                <div className={cn(
+                    "absolute -top-10 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium whitespace-nowrap z-50 transition-all duration-300",
+                    executionStatus === "running" && "bg-amber-500/10 text-amber-500 border border-amber-500/20",
+                    executionStatus === "completed" && "bg-green-500/10 text-green-500 border border-green-500/20",
+                    executionStatus === "failed" && "bg-red-500/10 text-red-500 border border-red-500/20",
+                )}>
+                    {executionStatus === "running" && <Loader2 className="w-2.5 h-2.5 animate-spin" />}
+                    {executionStatus === "completed" && <div className="w-2 h-2 rounded-full bg-green-500" />}
+                    {executionStatus === "failed" && <div className="w-2 h-2 rounded-full bg-red-500" />}
+                    {executionStatus.charAt(0).toUpperCase() + executionStatus.slice(1)}
+                </div>
+            )}
+
             {/* Title - Positioned Above */}
             <div className="absolute -top-6 left-0 px-1">
                 <span className="text-xs font-bold text-muted-foreground/80 tracking-tight uppercase">{title}</span>
@@ -63,7 +91,7 @@ export const NodeWrapper = memo(({
             {/* Action Bar (Visible on Selection) */}
             <div className={cn(
                 "absolute -top-10 right-0 flex items-center gap-1 bg-background/80 backdrop-blur-md border border-border/50 rounded-full shadow-xl p-0.5 transition-all duration-200 z-50 scale-90 origin-right",
-                selected ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2 pointer-events-none"
+                selected && !isRunning && executionStatus !== "running" && executionStatus !== "queued" ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2 pointer-events-none"
             )}>
                 {onRun && (
                     <Button
@@ -116,9 +144,11 @@ export const NodeWrapper = memo(({
             <div
                 className={cn(
                     "min-w-[300px] rounded-[20px] bg-card border-[3px] transition-all duration-300 overflow-hidden",
-                    selected
-                        ? "border-primary/20 shadow-[0_0_40px_-10px_hsl(var(--primary)/0.2)] ring-1 ring-primary/40"
-                        : "border-border/40 shadow-sm hover:border-border/80",
+                    executionBorderClass || (
+                        selected
+                            ? "border-primary/20 shadow-[0_0_40px_-10px_hsl(var(--primary)/0.2)] ring-1 ring-primary/40"
+                            : "border-border/40 shadow-sm hover:border-border/80"
+                    ),
                     isRunning && "ring-2 ring-primary/30 ring-offset-2 ring-offset-background"
                 )}
                 style={style}

@@ -12,20 +12,39 @@ export const EditorAgentNode = memo(({ id, selected, data }: NodeProps) => {
 
     const isRunning = runningNodeId === id;
 
-    // The output from the backend is the TSX composition code (string)
-    const compositionCode = (outputs[id] as string | undefined) || (data.output as string | undefined) || null;
+    // The output from the backend — could be raw TSX or JSON-wrapped scene/compositor
+    const rawOutput = (outputs[id] as string | undefined) || (data.output as string | undefined) || null;
+
+    // Parse scene/compositor metadata from JSON output
+    const parsedOutput = useMemo(() => {
+        if (!rawOutput) return null;
+        try {
+            const parsed = JSON.parse(rawOutput);
+            if (parsed.type === 'scene' || parsed.type === 'compositor') {
+                return parsed as { type: 'scene' | 'compositor'; code: string; sceneConfig?: { durationFrames: number; label: string } };
+            }
+        } catch {
+            // Not JSON — raw TSX (default/legacy mode)
+        }
+        return { type: 'default' as const, code: rawOutput };
+    }, [rawOutput]);
+
+    const compositionCode = parsedOutput?.code || null;
+    const outputMode = parsedOutput?.type || null;
+    const isScene = outputMode === 'scene';
+    const isCompositor = outputMode === 'compositor';
 
     // Client-side render hook
     const { state: renderState, renderFromCode, cancel, download, clear: clearRender } = useClientRender();
 
-    // Auto-render when new code arrives
+    // Auto-render when new code arrives — but NOT for scene-only nodes
     const lastRenderedCodeRef = useRef<string | null>(null);
     useEffect(() => {
-        if (compositionCode && compositionCode !== lastRenderedCodeRef.current && !renderState.isRendering) {
+        if (compositionCode && !isScene && compositionCode !== lastRenderedCodeRef.current && !renderState.isRendering) {
             lastRenderedCodeRef.current = compositionCode;
             renderFromCode(compositionCode);
         }
-    }, [compositionCode, renderState.isRendering, renderFromCode]);
+    }, [compositionCode, isScene, renderState.isRendering, renderFromCode]);
 
     // Manual re-render
     const handleReRender = useCallback(async () => {
@@ -109,7 +128,7 @@ export const EditorAgentNode = memo(({ id, selected, data }: NodeProps) => {
                 state.nodes
                     .filter(n => n.type === 'editorAgent')
                     .findIndex(n => n.id === id) + 1
-            )}`}
+            )}${isScene ? ' (Scene)' : isCompositor ? ' (Final)' : ''}`}
             icon={<Clapperboard className="w-4 h-4" />}
             selected={selected}
             inputs={[
@@ -129,6 +148,7 @@ export const EditorAgentNode = memo(({ id, selected, data }: NodeProps) => {
                 lastRenderedCodeRef.current = null;
             } : undefined}
             isRunning={isRunning}
+            executionStatus={data.executionStatus as "queued" | "running" | "completed" | "failed" | null}
         >
             <div className="relative bg-muted/30 group/editor transition-all duration-300 ease-in-out overflow-hidden w-[400px]">
 
@@ -173,6 +193,26 @@ export const EditorAgentNode = memo(({ id, selected, data }: NodeProps) => {
                                     <Download className="w-3.5 h-3.5" />
                                 </button>
                             </div>
+                        </div>
+                    ) : isScene && compositionCode ? (
+                        /* Scene preview — no render, just show code info */
+                        <div className="flex flex-col items-center justify-center text-center">
+                            <div className="w-12 h-12 rounded-full bg-purple-500/10 flex items-center justify-center mb-3">
+                                <Code2 className="w-6 h-6 text-purple-500" />
+                            </div>
+                            <p className="text-xs font-medium text-muted-foreground">Scene Component Ready</p>
+                            <p className="text-[10px] text-muted-foreground/60 mt-1">
+                                {parsedOutput?.type === 'scene' && parsedOutput.sceneConfig
+                                    ? `${parsedOutput.sceneConfig.label} · ${Math.round((parsedOutput.sceneConfig.durationFrames || 90) / 30)}s`
+                                    : 'Connect to a compositor to render'
+                                }
+                            </p>
+                            <button
+                                onClick={() => setShowCode(!showCode)}
+                                className="mt-2 px-3 py-1 text-[10px] bg-white/10 rounded-full text-white/80 hover:bg-white/20 transition-colors"
+                            >
+                                {showCode ? 'Hide Code' : 'View Code'}
+                            </button>
                         </div>
                     ) : (isCompiling || isRendering) ? (
                         <div className="flex flex-col items-center justify-center text-center">

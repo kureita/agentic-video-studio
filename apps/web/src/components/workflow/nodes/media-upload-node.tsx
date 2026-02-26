@@ -142,6 +142,7 @@ export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
             onRun={() => runNode(id)}
             onClear={output ? handleClear : undefined}
             isRunning={isRunning}
+            executionStatus={data.executionStatus as "queued" | "running" | "completed" | "failed" | null}
             style={{ width: nodeWidth, height: nodeHeight }}
         >
             <div className="h-full flex flex-col">

@@ -3,11 +3,11 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useCallback, useRef } from "react";
-import { Plus, MoreHorizontal, Clock, Trash2, Pencil, Loader2, ArrowRight } from "lucide-react";
+import { Plus, MoreHorizontal, Clock, Trash2, Pencil, Loader2, ArrowRight, Sparkles, Film, AlertCircle } from "lucide-react";
 import { WorkflowPreview } from "@/components/workflow/workflow-preview";
 import { Button } from "@/components/ui/button";
 import { workflowApi, WorkflowListItem } from "@/lib/workflow-api";
-import { workflowTemplates, WorkflowTemplate } from "@/lib/templates"
+import { workflowInspirations, WorkflowInspiration } from "@/lib/templates"
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -66,7 +66,7 @@ export default function DashboardPage() {
         }
     }, [heroInput, isCreating, router]);
 
-    const createFromTemplate = useCallback(async (template: WorkflowTemplate) => {
+    const createFromTemplate = useCallback(async (template: WorkflowInspiration) => {
         if (creatingTemplateId) return;
 
         setCreatingTemplateId(template.id);
@@ -248,9 +248,35 @@ export default function DashboardPage() {
                                         className="block"
                                     >
                                         <div className="relative aspect-[4/3] rounded-lg border border-border/60 bg-card overflow-hidden transition-all duration-200 hover:border-border hover:shadow-sm hover:shadow-primary/5">
-                                            <div className="absolute inset-0 bg-[hsl(230,15%,8%)]">
-                                                <WorkflowPreview nodes={workflow.nodes} edges={workflow.edges} />
-                                            </div>
+                                            {/* Thumbnail or gradient placeholder */}
+                                            {workflow.thumbnail_url ? (
+                                                <img
+                                                    src={workflow.thumbnail_url}
+                                                    alt={workflow.name}
+                                                    className="absolute inset-0 w-full h-full object-cover"
+                                                />
+                                            ) : (
+                                                <div className="absolute inset-0 bg-gradient-to-br from-[hsl(230,15%,10%)] via-[hsl(250,20%,12%)] to-[hsl(270,15%,10%)]">
+                                                    <div className="absolute inset-0 flex items-center justify-center">
+                                                        <Film className="w-8 h-8 text-muted-foreground/20" />
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Status badge */}
+                                            {workflow.status && workflow.status !== 'draft' && (
+                                                <div className={cn(
+                                                    "absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded text-[10px] font-medium flex items-center gap-1 backdrop-blur-sm",
+                                                    workflow.status === 'ready' && "bg-green-500/20 text-green-400 border border-green-500/20",
+                                                    workflow.status === 'generating' && "bg-amber-500/20 text-amber-400 border border-amber-500/20",
+                                                    workflow.status === 'failed' && "bg-red-500/20 text-red-400 border border-red-500/20",
+                                                )}
+                                                >
+                                                    {workflow.status === 'ready' && <><Sparkles className="w-2.5 h-2.5" /> Ready</>}
+                                                    {workflow.status === 'generating' && <><Loader2 className="w-2.5 h-2.5 animate-spin" /> Generating</>}
+                                                    {workflow.status === 'failed' && <><AlertCircle className="w-2.5 h-2.5" /> Failed</>}
+                                                </div>
+                                            )}
 
                                             {workflow.node_count > 0 && (
                                                 <div className="absolute bottom-1.5 left-1.5 px-1.5 py-0.5 bg-background/70 backdrop-blur-sm rounded text-[10px] text-muted-foreground/80 font-medium">
@@ -354,12 +380,12 @@ export default function DashboardPage() {
                     <section>
                         <div className="mb-4">
                             <h2 className="text-sm font-semibold tracking-tight text-foreground/80">
-                                {hasWorkflows ? "Templates" : "Or start from a template"}
+                                {hasWorkflows ? "Inspirations" : "Or start from an inspiration"}
                             </h2>
                         </div>
 
                         <div className="grid grid-cols-2 md:gird-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                            {workflowTemplates.map((template) => (
+                            {workflowInspirations.map((template) => (
                                 <button
                                     key={template.id}
                                     onClick={() => createFromTemplate(template)}
@@ -395,7 +421,6 @@ export default function DashboardPage() {
                                         )}
                                     </div>
 
-                                    {/* Info */}
                                     <div className="mt-2.5 px-0.5">
                                         <h3 className="text-[13px] font-medium text-foreground/85 group-hover/tpl:text-foreground transition-colors">
                                             {template.name}
@@ -403,6 +428,11 @@ export default function DashboardPage() {
                                         <p className="text-[11px] text-muted-foreground/50 mt-0.5">
                                             {template.description}
                                         </p>
+                                        {template.insight && (
+                                            <p className="text-[10px] text-primary/60 mt-1 font-medium">
+                                                📊 {template.insight}
+                                            </p>
+                                        )}
                                     </div>
                                 </button>
                             ))}

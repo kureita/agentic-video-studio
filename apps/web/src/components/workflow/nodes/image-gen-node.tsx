@@ -8,11 +8,9 @@ import { HighlightedTextarea } from "@/components/workflow/nodes/highlighted-tex
 import { useWorkflowStore } from "@/lib/workflow-store";
 
 const MODEL_CONFIGS: Record<string, { inputs: { id: string, label: string, type: "text" | "image" | "video" | "audio", style?: any }[] }> = {
-    "Imagen 4": { inputs: [{ id: "prompt", label: "Prompt", type: "text", style: { bottom: '108px' } }, { id: "image", label: "Ref Image", type: "image", style: { bottom: '20px' } }] },
-    "Nano Banana Pro": { inputs: [{ id: "prompt", label: "Prompt", type: "text", style: { bottom: '108px' } }, { id: "image", label: "Ref Image", type: "image", style: { bottom: '20px' } }] },
-    "Kling Image": { inputs: [{ id: "prompt", label: "Prompt", type: "text", style: { bottom: '108px' } }, { id: "image", label: "Ref Image", type: "image", style: { bottom: '20px' } }] },
-    "SeedDream 4.0": { inputs: [{ id: "prompt", label: "Prompt", type: "text", style: { bottom: '108px' } }, { id: "image", label: "Ref Image", type: "image", style: { bottom: '20px' } }] },
-    "SeedDream 4.5": { inputs: [{ id: "prompt", label: "Prompt", type: "text", style: { bottom: '108px' } }, { id: "image", label: "Ref Image", type: "image", style: { bottom: '20px' } }] },
+    "FLUX Schnell": { inputs: [{ id: "prompt", label: "Prompt", type: "text", style: { bottom: '108px' } }, { id: "image", label: "Ref Image", type: "image", style: { bottom: '20px' } }] },
+    "Kling IMAGE 3.0": { inputs: [{ id: "prompt", label: "Prompt", type: "text", style: { bottom: '108px' } }, { id: "image", label: "Ref Image", type: "image", style: { bottom: '20px' } }] },
+    "Seedream 5.0 Lite": { inputs: [{ id: "prompt", label: "Prompt", type: "text", style: { bottom: '108px' } }, { id: "image", label: "Ref Image", type: "image", style: { bottom: '20px' } }] },
 };
 
 export const ImageGenNode = memo(({ id, selected, data }: NodeProps) => {
@@ -22,8 +20,8 @@ export const ImageGenNode = memo(({ id, selected, data }: NodeProps) => {
     const isRunning = runningNodeId === id;
     const output = (outputs[id] as string | undefined) || (data.output as string | undefined); // Use store output first, fallback to data.output
 
-    const currentModel = (typeof data.model === 'string' ? data.model : "Imagen 4");
-    const config = MODEL_CONFIGS[currentModel] || MODEL_CONFIGS["Imagen 4"];
+    const currentModel = (typeof data.model === 'string' ? data.model : "FLUX Schnell");
+    const config = MODEL_CONFIGS[currentModel] || MODEL_CONFIGS["FLUX Schnell"];
 
     const handleDownload = () => {
         if (output) {
@@ -151,6 +149,7 @@ export const ImageGenNode = memo(({ id, selected, data }: NodeProps) => {
             onRun={() => runNode(id)}
             onClear={output ? () => clearNodeOutput(id) : undefined}
             isRunning={isRunning}
+            executionStatus={data.executionStatus as "queued" | "running" | "completed" | "failed" | null}
         >
             <div
                 className="relative bg-muted/30 group/image transition-all duration-300 ease-in-out overflow-hidden"
@@ -301,11 +300,9 @@ export const ImageGenNode = memo(({ id, selected, data }: NodeProps) => {
                             value={currentModel}
                             onChange={(e) => updateNodeData(id, { model: e.target.value })}
                         >
-                            <option value="Imagen 4">Imagen 4</option>
-                            <option value="Nano Banana Pro">Nano Banana Pro</option>
-                            <option value="Kling Image">Kling Image</option>
-                            <option value="SeedDream 4.0">SeedDream 4.0</option>
-                            <option value="SeedDream 4.5">SeedDream 4.5</option>
+                            <option value="FLUX Schnell">FLUX Schnell ⚡</option>
+                            <option value="Kling IMAGE 3.0">Kling IMAGE 3.0</option>
+                            <option value="Seedream 5.0 Lite">Seedream 5.0 Lite</option>
                         </select>
                     </div>
 

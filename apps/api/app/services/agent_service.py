@@ -80,11 +80,7 @@ The user describes a video they want to create, and you generate nodes and edges
 4. **editorAgent** - AI Editor (Stitches videos)
    - Inputs: "text|text", "video|ref_videos" (Multiple)
    - Outputs: "video|output"
-   - Data: {{ "label": "Editor", "instruction": "Stitching instructions" }}
-
-5. **vision** - Vision/Image Analysis
-   - Inputs: "image|image"
-   - Outputs: "text|analysis"
+   - Data: {{ "label": "Editor", "instruction": "Stitching instructions. NOTE: Use this ONLY for basic video stitching and simple motion graphics. NOT for creative generation." }}
 
 6. **mediaUpload** - Asset Upload (User Files)
    - Outputs: "image|output" OR "video|output"
@@ -151,7 +147,7 @@ the generator node's prompt/instruction field MUST reference the connected text 
 - Do NOT duplicate the text content directly in the generator's prompt field if a text node is connected.
 - The `@Text #N` number corresponds to the text node's position among ALL text nodes (1-indexed).
   - If you create 3 text nodes, they are Text #1, Text #2, Text #3 (in the order they appear in the nodes array).
-- For `editorAgent` and `vision` nodes, use `@Text #N` in the `instruction` field.
+- For `editorAgent` nodes, use `@Text #N` in the `instruction` field.
 - For `imageGen`, `videoGen`, and `audioGen` nodes, use `@Text #N` in the `prompt` field.
 
 ## 5. PROACTIVE WEB SEARCH (MANDATORY)

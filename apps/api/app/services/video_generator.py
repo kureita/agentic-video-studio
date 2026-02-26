@@ -1,62 +1,62 @@
-"""Video Generator Service - Uses Google Veo 3.1 for video generation."""
+"""Video Generator Service - Uses Runware API for video generation."""
 
 import asyncio
-import base64
 import os
 import random
 import shutil
 import time
-import tempfile
+import httpx
 from pathlib import Path
 from typing import Optional, List
 
-import httpx
-from google import genai
-from google.genai import types
-
 from app.core.config import settings
 from app.core.dependencies import get_storage_service
+from app.services.runware_service import RunwareService
 
-
-def _veo_error_message(exc: Exception) -> str:
-    """Turn Veo API errors into a clear message for the user."""
-    msg = str(exc).lower()
-    if "invalid_argument" in msg or "use case is currently not supported" in msg:
-        return (
-            f"Veo error: {exc}\n\n"
-            "Veo video generation is in preview and may require specific allowlist access. "
-            "Ensure you are not requesting 'allow_all' for person generation unless you have specific child safety clearance. "
-            "Set USE_MOCK_VEO=true in .env to use mock mode (returns a sample video), "
-            "or request Veo access: https://ai.google.dev/gemini-api/docs/video"
-        )
-    return str(exc)
+_MODEL_MAP = {
+    # Frontend display name → Official Runware AIR ID (provider:model@version)
+    # Confirmed from: https://runware.ai/docs/providers/klingai
+    "Kling 3.0 Standard": "klingai:kling-video@3-standard",
+    "Kling 3.0 Pro":      "klingai:kling-video@3-pro",
+    # Confirmed from: https://runware.ai/docs/providers/klingai (KlingAI 2.1 Master)
+    "Kling 2.1 Master":   "klingai:5@3",
+    # Confirmed from: https://runware.ai/docs/providers/runway (Runway Gen-4.5)
+    "Runway Gen-4.5":     "runway:1@2",
+    # Confirmed from: https://runware.ai/docs/providers/alibaba (Wan2.6 Flash)
+    "Wan2.6 Flash":       "alibaba:wan@2.6-flash",
+    # Confirmed from: https://runware.ai/docs/providers/pixverse (PixVerse v5.6)
+    "PixVerse V5.6":      "pixverse:1@7",
+    # Confirmed from: https://runware.ai/docs/providers/klingai (KlingAI Lip-Sync)
+    "Kling Lip Sync":     "__lipsync__",   # Sentinel → uses klingai:7@1 via lipsync path
+    # Legacy names (no longer in dropdown, kept for backward compat)
+    "Veo":                "klingai:kling-video@3-standard",
+    "Veo 3.1":            "klingai:kling-video@3-standard",
+    "Veo 3.1 Fast":       "klingai:kling-video@3-standard",
+    "Kling":              "klingai:kling-video@3-standard",
+    "Kling V1.5":         "klingai:kling-video@3-standard",
+    "Kling V1.0":         "klingai:kling-video@3-standard",
+    "SeedDance 1.5 Pro":  "klingai:kling-video@3-standard",
+    "SeedDance 1.0 Pro":  "klingai:kling-video@3-standard",
+}
 
 
 class VideoGenerator:
-    """Generates video clips using Google Veo 3.1 (or mock mode for development)."""
+    """Generates video clips using Runware API (Kling, Runway, PixVerse, etc)."""
 
     def __init__(self):
         self.use_mock = settings.use_mock_veo
         self.storage = get_storage_service()
+        self.runware = RunwareService()
         
-        # Ensure output directory exists (still needed for mock/temp?)
         self.output_dir = Path("static/videos")
         self.output_dir.mkdir(parents=True, exist_ok=True)
         
         if self.use_mock:
-            print("[VideoGenerator] Running in MOCK mode - no API calls will be made")
-            self.client = None
+            print("[VideoGenerator] Running in MOCK mode - no API calls")
         else:
-            # Set API key in environment for SDK auto-pickup
-            if settings.google_ai_key:
-                os.environ["GEMINI_API_KEY"] = settings.google_ai_key
-            
-            # Client auto-picks GEMINI_API_KEY from environment
-            self.client = genai.Client()
-            print("[VideoGenerator] Running in PRODUCTION mode - using real Veo API")
+            print("[VideoGenerator] Running in PRODUCTION mode - using Runware API")
         
-        self.model = "veo-3.1-generate-preview"
-        self.fast_model = "veo-3.1-fast-generate-preview"
+        self.default_model = "klingai-video-3-0-standard"
 
     def _get_mock_video(self) -> Optional[Path]:
         """Get a random existing video from static/videos for mock mode."""
@@ -66,22 +66,15 @@ class VideoGenerator:
         return None
 
     async def _mock_generate(self, prompt: str, duration: int = 8) -> dict:
-        """
-        Mock video generation - simulates delay and returns existing video.
-        """
+        """Mock video generation."""
         print(f"[VideoGenerator] MOCK: Simulating generation for prompt: {prompt[:80]}...")
         
-        # Simulate generation delay (5-15 seconds instead of minutes)
-        delay = random.uniform(5, 15)
-        for i in range(int(delay)):
-            print(f"[VideoGenerator] MOCK: Generating... ({i+1}/{int(delay)}s)")
-            await asyncio.sleep(1)
+        delay = random.uniform(5, 10)
+        await asyncio.sleep(delay)
         
-        # Get an existing mock video or create a placeholder
         mock_source = self._get_mock_video()
         
         if mock_source:
-            # Copy the mock video with a new filename
             filename = f"generated_{int(time.time())}.mp4"
             new_path = self.output_dir / filename
             shutil.copy(mock_source, new_path)
@@ -93,51 +86,50 @@ class VideoGenerator:
                 "success": True,
                 "video_url": video_url,
                 "duration": duration,
-                "model": "mock-veo-3.1",
+                "model": "mock",
                 "mock": True,
             }
         else:
-            # No mock videos available
-            print("[VideoGenerator] MOCK: No existing videos to use as mock")
             return {
                 "success": False,
-                "error": "No mock videos available in static/videos. Add an .mp4 file there.",
+                "error": "No mock videos available in static/videos.",
                 "mock": True,
             }
 
-    async def _fetch_image_to_temp(self, url: str) -> Optional[str]:
-        """Fetch image from URL and save to temporary file, return temp path."""
-        if not url:
-            return None
-        
+    async def _fetch_and_upload(self, url: str) -> Optional[str]:
+        """Fetch file from URL and save to StorageService, returning the storage URL."""
+        if not url: return None
         try:
-            # If it's already a local file path, return it
-            if os.path.exists(url):
-                return url
-            
-            # Download from URL
             async with httpx.AsyncClient() as client:
-                response = await client.get(url, timeout=30.0)
+                response = await client.get(url, timeout=300.0)
                 if response.status_code == 200:
-                    # Create temp file with appropriate extension
-                    suffix = ".png" if url.lower().endswith(".png") else ".jpg"
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-                        tmp.write(response.content)
-                        temp_path = tmp.name
-                    
-                    print(f"[VideoGenerator] Downloaded image to temp file: {temp_path}")
-                    return temp_path
-                
-                print(f"[VideoGenerator] Failed to fetch image {url}: status {response.status_code}")
+                    filename = f"generated_video_{int(time.time())}.mp4"
+                    storage_url = await self.storage.upload_file(response.content, filename, "video/mp4")
+                    return storage_url
         except Exception as e:
-            print(f"[VideoGenerator] Error fetching image {url}: {e}")
-        
-        return None
+            print(f"[VideoGenerator] Error fetching video {url}: {e}")
+        return url # fallback to runware url
+
+    def _get_model(self, model_name: Optional[str]) -> str:
+        """Map frontend model display name to Runware internal ID.
+        Returns '__lipsync__' sentinel for Kling Lip Sync so callers can route correctly.
+        """
+        if not model_name:
+            return self.default_model
+        # Exact match first
+        if model_name in _MODEL_MAP:
+            return _MODEL_MAP[model_name]
+        # Substring fallback for any legacy names
+        for key, val in _MODEL_MAP.items():
+            if key in model_name or model_name in key:
+                return val
+        return self.default_model
+
 
     async def generate_clip(
         self,
         prompt: str,
-        duration: int = 8,
+        duration: int = 5,
         use_fast_model: bool = False,
         resolution: str = "720p",
         aspect_ratio: str = "16:9",
@@ -145,370 +137,129 @@ class VideoGenerator:
         model_name: Optional[str] = None,
         audio_url: Optional[str] = None,
     ) -> dict:
-        """
-        Generate a video clip from a text prompt.
-        
-        Args:
-            prompt: Detailed description of the video to generate
-            duration: Duration in seconds (4, 6, or 8 for Veo 3.1)
-            use_fast_model: Use the faster model for quicker generation
-            resolution: "720p" or "1080p" (1080p only supports 8s duration)
-            aspect_ratio: "16:9" or "9:16"
-            negative_prompt: Text describing what NOT to include
-            
-        Returns:
-            Dictionary with video URL and metadata
-        """
-        # Handle Kling models
-        if model_name and "Kling" in model_name:
-            if self.use_mock:
-                return await self._mock_generate(f"[Kling {model_name}] {prompt}", duration)
-            else:
-                return await self._kling_generate(prompt=prompt, model=model_name, duration=duration, image_url=None, audio_url=audio_url)
-        
-        # Handle Byteplus (SeedDance) models
-        if model_name and "SeedDance" in model_name:
-            if self.use_mock:
-                return await self._mock_generate(f"[BytePlus {model_name}] {prompt}", duration)
-            else:
-                return await self._byteplus_generate(prompt=prompt, model=model_name, duration=duration, audio_url=audio_url)
-
-        # Use mock mode if enabled
+        """Generate a video clip from a text prompt."""
         if self.use_mock:
-            return await self._mock_generate(f"[Veo] {prompt}", duration)
+            return await self._mock_generate(f"[Text-to-Vid] {prompt}", duration)
         
-        model = self.fast_model if use_fast_model else self.model
+        target_model = self._get_model(model_name)
         
-        # Validate duration
-        valid_durations = [4, 6, 8]
-        duration = min(duration, 8)
-        if duration not in valid_durations:
-            duration = 8
-        
-        # 1080p only supports 8s duration
-        if resolution == "1080p" and duration != 8:
-            duration = 8
+        # Kling Lip Sync sentinel — lipsync requires an input video/image + audio, not text-to-video
+        if target_model == "__lipsync__":
+            return {"success": False, "error": "Kling Lip Sync requires a Start Image/Video and an Audio input. Please connect those inputs to the node."}
+            
+        print(f"[VideoGenerator] Generating video with {target_model}: {prompt[:100]}")
         
         try:
-            # Build config (duration_seconds: 4, 6, or 8; resolution: 720p or 1080p per Veo 3.1 API)
-            config = types.GenerateVideosConfig(
-                aspect_ratio=aspect_ratio,
-                person_generation="allow_adult",
-                duration_seconds=duration,
-                resolution=resolution,
-            )
-            
-            if negative_prompt:
-                config.negative_prompt = negative_prompt
-
-            # Start video generation
-            operation = self.client.models.generate_videos(
-                model=model,
+            result = await self.runware.generate_video(
                 prompt=prompt,
-                config=config,
+                model=target_model,
+                duration=duration,
+                aspect_ratio=aspect_ratio
             )
-
-            # Poll for completion (async)
-            result = await self._poll_operation(operation)
             
-            if result and result.generated_videos:
-                video = result.generated_videos[0]
+            # Optionally add lip-sync if audio_url provided and supported
+            if result.get("success") and audio_url:
+                print(f"[VideoGenerator] Proceeding to lipsync with audio: {audio_url}")
+                sync_resp = await self.runware.lipsync(
+                    video_url=result["video_url"],
+                    audio_url=audio_url
+                )
+                if sync_resp.get("success"):
+                    result["video_url"] = sync_resp["video_url"]
+                    
+            if result.get("success"):
+                final_url = await self._fetch_and_upload(result.get("video_url"))
+                result["video_url"] = final_url
                 
-                # Download and save the video
-                video_url = await self._save_video(video)
-                
-                return {
-                    "success": True,
-                    "video_url": video_url,
-                    "duration": duration,
-                    "model": model,
-                }
+            return result
             
-            return {
-                "success": False,
-                "error": "No video generated",
-            }
-
         except Exception as e:
-            err_msg = _veo_error_message(e)
             print(f"[VideoGenerator] Error: {e}")
-            return {
-                "success": False,
-                "error": err_msg,
-            }
-
-    async def _poll_operation(self, operation, timeout: int = 600, poll_interval: int = 10):
-        """
-        Poll the operation until complete or timeout.
-        """
-        start_time = time.time()
-        
-        while not operation.done:
-            if time.time() - start_time > timeout:
-                raise TimeoutError("Video generation timed out")
-            
-            print(f"[VideoGenerator] Waiting for video generation... ({int(time.time() - start_time)}s)")
-            await asyncio.sleep(poll_interval)
-            
-            # Refresh the operation object to get latest status
-            operation = self.client.operations.get(operation)
-        
-        return operation.response
-
-    async def _save_video(self, generated_video) -> Optional[str]:
-        """
-        Download the generated video and save to StorageService.
-        """
-        try:
-            # Download the video file from Google
-            # self.client.files.download(file=generated_video.video) 
-            # The SDK download method might write to a file or return bytes? 
-            # Looking at code: generated_video.video.save(path) suggests it handles saving.
-            # We probably need to save to a temp file first then upload.
-            
-            # Create a temp file
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp:
-                temp_path = Path(tmp.name)
-            
-            # Save to temp path using SDK
-            # Note: The original code called self.client.files.download() then .save().
-            # Depending on SDK version, .download() might just be a trigger or ensure it's available?
-            # We will follow the pattern:
-            # Check if we need to call download() - assumed yes based on existing code
-            try:
-                self.client.files.download(file=generated_video.video)
-            except Exception as e:
-                print(f"[VideoGenerator] Warning: ensure download failed or not needed: {e}")
-
-            generated_video.video.save(str(temp_path))
-            print(f"[VideoGenerator] Video saved to temp: {temp_path}")
-            
-            # Read bytes
-            with open(temp_path, "rb") as f:
-                video_data = f.read()
-            
-            # Remove temp file
-            os.remove(temp_path)
-            
-            # Upload
-            filename = f"generated_{int(time.time())}.mp4"
-            video_url = await self.storage.upload_file(video_data, filename, "video/mp4")
-            
-            return video_url
-            
-        except Exception as e:
-            print(f"[VideoGenerator] Video save error: {e}")
-            return None
+            return {"success": False, "error": str(e)}
 
     async def generate_from_image(
         self,
         prompt: str,
         image_path: str,
-        duration: int = 8,
+        duration: int = 5,
         resolution: str = "720p",
         aspect_ratio: str = "16:9",
         model_name: Optional[str] = None,
         audio_url: Optional[str] = None,
     ) -> dict:
         """Generate video using an image as the starting frame."""
-        
-        # Handle Kling models
-        if model_name and "Kling" in model_name:
-            if self.use_mock:
-                return await self._mock_generate(f"[Kling {model_name} img2vid] {prompt}", duration)
-            else:
-                return await self._kling_generate(prompt=prompt, model=model_name, duration=duration, image_url=image_path, audio_url=audio_url)
-                
-        # Handle Byteplus models
-        if model_name and "SeedDance" in model_name:
-            if self.use_mock:
-                return await self._mock_generate(f"[BytePlus {model_name} img2vid] {prompt}", duration)
-            else:
-                return await self._byteplus_generate(prompt=prompt, model=model_name, duration=duration, image_url=image_path, audio_url=audio_url)
-
         if self.use_mock:
             return await self._mock_generate(f"[Image-to-Video] {prompt}", duration)
-        
+            
+        target_model = self._get_model(model_name)
+        print(f"[VideoGenerator] Generating img-to-vid with {target_model}: {prompt[:100]}")
+
         try:
-            # Fetch image if it's a URL
-            local_path = await self._fetch_image_to_temp(image_path)
-            if not local_path:
-                return {"success": False, "error": "Failed to fetch start image"}
-            
-            # Read image as raw bytes
-            with open(local_path, 'rb') as f:
-                image_bytes = f.read()
-            
-            mime_type = "image/png" if local_path.lower().endswith(".png") else "image/jpeg"
-            
-            # Create Image object with correct fields
-            image = types.Image(
-                image_bytes=image_bytes,
-                mime_type=mime_type
-            )
-            
-            config = types.GenerateVideosConfig(
-                aspect_ratio=aspect_ratio,
-                person_generation="allow_adult",
-                duration_seconds=duration,
-                resolution=resolution,
-            )
-
-            operation = self.client.models.generate_videos(
-                model=self.fast_model,
+            # First frame provided
+            result = await self.runware.image_to_video(
+                image_url=image_path,
                 prompt=prompt,
-                image=image,
-                config=config,
+                model=target_model,
+                duration=duration,
             )
-
-            result = await self._poll_operation(operation)
             
-            if result and result.generated_videos:
-                video = result.generated_videos[0]
-                video_url = await self._save_video(video)
+            # Optionally add lip-sync
+            if result.get("success") and audio_url:
+                sync_resp = await self.runware.lipsync(
+                    video_url=result["video_url"],
+                    audio_url=audio_url
+                )
+                if sync_resp.get("success"):
+                    result["video_url"] = sync_resp["video_url"]
+
+            if result.get("success"):
+                final_url = await self._fetch_and_upload(result.get("video_url"))
+                result["video_url"] = final_url
                 
-                return {"success": True, "video_url": video_url, "duration": duration}
+            return result
             
-            return {"success": False, "error": "No video generated"}
-
         except Exception as e:
-            err_msg = _veo_error_message(e)
-            print(f"[VideoGenerator] Image-to-video error: {e}")
-            return {"success": False, "error": err_msg}
+            print(f"[VideoGenerator] Error: {e}")
+            return {"success": False, "error": str(e)}
 
     async def generate_with_reference_images(
         self,
         prompt: str,
         reference_images: List[str],
-        duration: int = 8,
+        duration: int = 5,
         aspect_ratio: str = "16:9",
         model_name: Optional[str] = None,
     ) -> dict:
-        """Generate video using reference images (Veo 3.1 only)."""
-        if self.use_mock:
-            return await self._mock_generate(f"[{model_name or 'Reference Images'}] {prompt}", duration)
+        """Generate video using reference images."""
+        if not reference_images:
+            return {"success": False, "error": "No reference images"}
         
-        try:
-            refs = []
-            for img_path in reference_images[:3]:
-                local_path = await self._fetch_image_to_temp(img_path)
-                if local_path:
-                    # Read image as raw bytes
-                    with open(local_path, 'rb') as f:
-                        img_bytes = f.read()
-                    
-                    mime_type = "image/png" if local_path.lower().endswith(".png") else "image/jpeg"
-                    
-                    # Create Image object
-                    image = types.Image(
-                        image_bytes=img_bytes,
-                        mime_type=mime_type
-                    )
-                    
-                    ref = types.VideoGenerationReferenceImage(
-                        image=image,
-                        reference_type="asset"
-                    )
-                    refs.append(ref)
-            
-            if not refs:
-                return {"success": False, "error": "Failed to fetch reference images"}
-            
-            config = types.GenerateVideosConfig(
-                reference_images=refs,
-                aspect_ratio=aspect_ratio,
-                person_generation="allow_adult",
-                duration_seconds=duration,
-            )
-
-            operation = self.client.models.generate_videos(
-                model=self.fast_model,
-                prompt=prompt,
-                config=config,
-            )
-
-            result = await self._poll_operation(operation)
-            
-            if result and result.generated_videos:
-                video = result.generated_videos[0]
-                video_url = await self._save_video(video)
-                
-                return {"success": True, "video_url": video_url}
-            
-            return {"success": False, "error": "No video generated"}
-
-        except Exception as e:
-            err_msg = _veo_error_message(e)
-            print(f"[VideoGenerator] Reference images error: {e}")
-            return {"success": False, "error": err_msg}
+        # We can just use the first image for image-to-video for now, 
+        # or map to a Runware model that accepts multiple images if any.
+        return await self.generate_from_image(
+            prompt=prompt,
+            image_path=reference_images[0],
+            duration=duration,
+            aspect_ratio=aspect_ratio,
+            model_name=model_name
+        )
 
     async def generate_with_interpolation(
         self,
         prompt: str,
         first_frame_path: str,
         last_frame_path: str,
-        duration: int = 8,
+        duration: int = 5,
         model_name: Optional[str] = None,
     ) -> dict:
-        """Generate video by specifying first and last frames (Veo 3.1 only)."""
-        if self.use_mock:
-            return await self._mock_generate(f"[{model_name or 'Interpolation'}] {prompt}", duration)
-        
-        try:
-            # Fetch images if they're URLs
-            first_local = await self._fetch_image_to_temp(first_frame_path)
-            last_local = await self._fetch_image_to_temp(last_frame_path)
-            
-            if not first_local or not last_local:
-                return {"success": False, "error": "Failed to fetch start or end image"}
-            
-            # Read first image as raw bytes
-            with open(first_local, 'rb') as f:
-                first_bytes = f.read()
-            first_mime = "image/png" if first_local.lower().endswith(".png") else "image/jpeg"
-            
-            # Read last image as raw bytes
-            with open(last_local, 'rb') as f:
-                last_bytes = f.read()
-            last_mime = "image/png" if last_local.lower().endswith(".png") else "image/jpeg"
-            
-            # Create Image objects with correct fields
-            first_image = types.Image(
-                image_bytes=first_bytes,
-                mime_type=first_mime
-            )
-            last_image = types.Image(
-                image_bytes=last_bytes,
-                mime_type=last_mime
-            )
-            
-            config = types.GenerateVideosConfig(
-                last_frame=last_image,
-                person_generation="allow_adult",
-                duration_seconds=duration,
-            )
-
-            operation = self.client.models.generate_videos(
-                model=self.fast_model,
-                prompt=prompt,
-                image=first_image,
-                config=config,
-            )
-
-            result = await self._poll_operation(operation)
-            
-            if result and result.generated_videos:
-                video = result.generated_videos[0]
-                video_url = await self._save_video(video)
-                
-                return {"success": True, "video_url": video_url}
-            
-            return {"success": False, "error": "No video generated"}
-
-        except Exception as e:
-            err_msg = _veo_error_message(e)
-            print(f"[VideoGenerator] Interpolation error: {e}")
-            return {"success": False, "error": err_msg}
+        """Generate video by specifying first and last frames."""
+        print("[VideoGenerator] Runware does not currently support explicit end-frame natively in standard tasks, using first frame.")
+        return await self.generate_from_image(
+            prompt=prompt,
+            image_path=first_frame_path,
+            duration=duration,
+            model_name=model_name
+        )
 
     async def extend_video(
         self,
@@ -516,81 +267,5 @@ class VideoGenerator:
         prompt: str,
         resolution: str = "720p",
     ) -> dict:
-        """Extend a previously generated Veo video (Veo 3.1 only)."""
-        if self.use_mock:
-            return await self._mock_generate(f"[Extension] {prompt}", 8)
-        
-        try:
-            config = types.GenerateVideosConfig(
-                number_of_videos=1,
-                resolution="720p",
-            )
-
-            operation = self.client.models.generate_videos(
-                model=self.model,
-                video=original_video,
-                prompt=prompt,
-                config=config,
-            )
-
-            result = await self._poll_operation(operation)
-            
-            if result and result.generated_videos:
-                video = result.generated_videos[0]
-                video_url = await self._save_video(video)
-                
-                return {"success": True, "video_url": video_url}
-            
-            return {"success": False, "error": "No video generated"}
-
-        except Exception as e:
-            err_msg = _veo_error_message(e)
-            print(f"[VideoGenerator] Extension error: {e}")
-            return {"success": False, "error": err_msg}
-
-    async def _kling_generate(self, prompt: str, model: str, duration: int, image_url: Optional[str] = None, audio_url: Optional[str] = None) -> dict:
-        """Integrate Kling API (Standard/Pro models, lip sync, motion control)."""
-        api_key = settings.kling_api_key
-        if not api_key:
-            return {"success": False, "error": "Kling API Key not configured in .env"}
-        
-        print(f"[VideoGenerator] Kling API request - model: {model}, prompt: '{prompt}', img: {bool(image_url)}, audio: {bool(audio_url)}")
-        
-        # In a full implementation, you'd generate a JWT token from KLING_API_KEY
-        # and submit a task to https://open.klingai.com/v1/standard/text2video
-        # then poll the task_id. This simulates that workflow.
-        
-        try:
-            # Simulated API call to Kling
-            async with httpx.AsyncClient() as client:
-                # We would POST to Kling here
-                # response = await client.post("https://open.klingai.com/v1/standard/text2video", headers={"Authorization": f"Bearer {token}"}, json={...})
-                # task_id = response.json()["data"]["task_id"]
-                pass
-                
-            # Simulate processing delay
-            await asyncio.sleep(2)
-            
-            # Since we can't fully mock an external async long-polling API without a real account,
-            # we fallback to mock generation if the true API call is just a placeholder.
-            return await self._mock_generate(f"[Kling {model} API] {prompt[:50]}...", duration)
-        except Exception as e:
-            print(f"[VideoGenerator] Kling API Error: {e}")
-            return {"success": False, "error": str(e)}
-
-    async def _byteplus_generate(self, prompt: str, model: str, duration: int, image_url: Optional[str] = None, audio_url: Optional[str] = None) -> dict:
-        """Integrate BytePlus API (SeedDance)."""
-        access_key = settings.byteplus_access_key
-        secret_key = settings.byteplus_secret_key
-        if not access_key or not secret_key:
-            return {"success": False, "error": "BytePlus Access Key or Secret Key not configured in .env"}
-            
-        print(f"[VideoGenerator] BytePlus API request - model: {model}, prompt: '{prompt}', img: {bool(image_url)}, audio: {bool(audio_url)}")
-        
-        try:
-            # We would POST to BytePlus OpenAPI here for SeedDance
-            await asyncio.sleep(2)
-            return await self._mock_generate(f"[BytePlus {model} API] {prompt[:50]}...", duration)
-        except Exception as e:
-            print(f"[VideoGenerator] BytePlus API Error: {e}")
-            return {"success": False, "error": str(e)}
+        """Extend a previously generated video."""
+        return {"success": False, "error": "Video extension not natively supported yet via wrapper"}

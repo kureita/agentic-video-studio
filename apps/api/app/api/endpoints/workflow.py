@@ -1,7 +1,9 @@
 """Workflow CRUD and Execution Endpoints."""
 
+import asyncio
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
+from uuid import uuid4
 
 from bson import ObjectId
 from fastapi import APIRouter, HTTPException, Depends
@@ -84,6 +86,8 @@ class WorkflowListItem(BaseModel):
     node_count: int = 0
     nodes: List[Dict[str, Any]] = []
     edges: List[Dict[str, Any]] = []
+    thumbnail_url: Optional[str] = None
+    status: str = "draft"  # draft | generating | ready | failed
 
 
 class RunNodeRequest(BaseModel):
@@ -102,6 +106,32 @@ class RunWorkflowResponse(BaseModel):
     success: bool
     outputs: Dict[str, Any] = {}
     errors: List[Dict[str, str]] = []
+
+
+# --- Async Run Models ---
+
+class NodeState(BaseModel):
+    """Status of a single node during async execution."""
+    status: str  # "queued", "running", "completed", "failed", "skipped"
+    started_at: Optional[str] = None
+    completed_at: Optional[str] = None
+    error: Optional[str] = None
+
+
+class RunWorkflowAsyncResponse(BaseModel):
+    """Response from starting an async workflow run."""
+    run_id: str
+    status: str = "running"
+
+
+class WorkflowRunStatus(BaseModel):
+    """Response from polling async workflow run status."""
+    run_id: str
+    status: str  # "running", "completed", "failed"
+    node_states: Dict[str, NodeState] = {}
+    outputs: Dict[str, Any] = {}
+    errors: List[Dict[str, str]] = []
+    progress: Dict[str, int] = {}  # {"current": 3, "total": 7}
 
 
 # ============================================
@@ -188,23 +218,66 @@ async def list_workflows(current_user: dict = Depends(get_current_user)):
     cursor = collection.find(query).sort("updated_at", -1)
     workflows = await cursor.to_list(length=100)
     
-    return [
-        WorkflowListItem(
-            id=str(w["_id"]),
-            name=w.get("name", "Untitled Workflow"),
-            updated_at=w.get("updated_at", datetime.now(timezone.utc)).isoformat(),
-            node_count=len(w.get("nodes", [])),
-            nodes=[
-                {"id": n.get("id"), "type": n.get("type"), "position": n.get("position", {})}
-                for n in w.get("nodes", [])
-            ],
-            edges=[
-                {"id": e.get("id"), "source": e.get("source"), "target": e.get("target")}
-                for e in w.get("edges", [])
-            ],
+    result = []
+    for w in workflows:
+        # ── Derive thumbnail_url ──
+        # Priority: first imageGen output → first mediaUpload output → None
+        thumbnail_url = None
+        outputs = w.get("outputs", {})
+        nodes_list = w.get("nodes", [])
+        
+        # Build a map of node_id → type for quick lookup
+        node_type_map = {n.get("id"): n.get("type") for n in nodes_list}
+        
+        # Look for imageGen outputs first (best thumbnails)
+        for node_id, output_val in outputs.items():
+            if node_type_map.get(node_id) == "imageGen" and isinstance(output_val, str) and output_val.startswith("http"):
+                thumbnail_url = output_val
+                break
+        
+        # Fallback to mediaUpload
+        if not thumbnail_url:
+            for node_id, output_val in outputs.items():
+                if node_type_map.get(node_id) == "mediaUpload" and isinstance(output_val, str) and output_val.startswith("http"):
+                    thumbnail_url = output_val
+                    break
+        
+        # ── Derive status ──
+        execution = w.get("execution", {})
+        exec_status = execution.get("status") if execution else None
+        
+        if exec_status == "running":
+            status = "generating"
+        elif exec_status == "failed":
+            status = "failed"
+        elif exec_status == "completed":
+            status = "ready"
+        elif any(outputs.values()):
+            # Has some outputs but no execution tracking → likely ran before polling was added
+            status = "ready"
+        else:
+            status = "draft"
+        
+        result.append(
+            WorkflowListItem(
+                id=str(w["_id"]),
+                name=w.get("name", "Untitled Workflow"),
+                updated_at=w.get("updated_at", datetime.now(timezone.utc)).isoformat(),
+                node_count=len(nodes_list),
+                nodes=[
+                    {"id": n.get("id"), "type": n.get("type"), "position": n.get("position", {})}
+                    for n in nodes_list
+                ],
+                edges=[
+                    {"id": e.get("id"), "source": e.get("source"), "target": e.get("target")}
+                    for e in w.get("edges", [])
+                ],
+                thumbnail_url=thumbnail_url,
+                status=status,
+            )
         )
-        for w in workflows
-    ]
+    
+    return result
 
 
 @router.get("/{workflow_id}", response_model=WorkflowResponse)
@@ -481,3 +554,240 @@ def get_topological_order(nodes: List[Dict], edges: List[Dict]) -> List[str]:
             result.append(node["id"])
     
     return result
+
+
+# ============================================
+# Async Workflow Execution (Polling-based)
+# ============================================
+
+async def _execute_workflow_async(workflow_id: str, run_id: str):
+    """
+    Background task: execute all nodes in topological order,
+    updating per-node status in MongoDB so the frontend can poll.
+    """
+    collection = get_workflows_collection()
+    oid = ObjectId(workflow_id)
+    
+    workflow = await collection.find_one({"_id": oid})
+    if not workflow:
+        return
+    
+    nodes = workflow.get("nodes", [])
+    edges = workflow.get("edges", [])
+    execution_order = get_topological_order(nodes, edges)
+    total = len(execution_order)
+    
+    # Initialize all node states as "queued"
+    node_states = {}
+    for nid in execution_order:
+        node = next((n for n in nodes if n["id"] == nid), None)
+        if node:
+            node_states[nid] = {
+                "status": "queued",
+                "type": node.get("type"),
+            }
+    
+    # Save initial execution state
+    await collection.update_one(
+        {"_id": oid},
+        {"$set": {
+            "execution": {
+                "run_id": run_id,
+                "status": "running",
+                "node_states": node_states,
+                "outputs": {},
+                "errors": [],
+                "progress": {"current": 0, "total": total},
+            }
+        }}
+    )
+    
+    runner = NodeRunner()
+    outputs: Dict[str, Any] = {}
+    errors: List[Dict[str, str]] = []
+    current = 0
+    
+    for node_id in execution_order:
+        node = next((n for n in nodes if n["id"] == node_id), None)
+        if not node:
+            continue
+        
+        # Mark node as "running"
+        now = datetime.now(timezone.utc).isoformat()
+        node_states[node_id]["status"] = "running"
+        node_states[node_id]["started_at"] = now
+        
+        await collection.update_one(
+            {"_id": oid},
+            {"$set": {
+                f"execution.node_states.{node_id}.status": "running",
+                f"execution.node_states.{node_id}.started_at": now,
+                "execution.progress.current": current,
+            }}
+        )
+        
+        print(f"[WorkflowAsync] Running node: {node_id} (type: {node.get('type')})")
+        
+        try:
+            result = await runner.run_node(
+                node=node,
+                nodes=nodes,
+                edges=edges,
+                outputs=outputs,
+            )
+            
+            completed_at = datetime.now(timezone.utc).isoformat()
+            
+            if result.get("success"):
+                outputs[node_id] = result.get("output")
+                node_states[node_id]["status"] = "completed"
+                node_states[node_id]["completed_at"] = completed_at
+                
+                await collection.update_one(
+                    {"_id": oid},
+                    {"$set": {
+                        f"execution.node_states.{node_id}.status": "completed",
+                        f"execution.node_states.{node_id}.completed_at": completed_at,
+                        f"execution.outputs.{node_id}": result.get("output"),
+                    }}
+                )
+            else:
+                error_msg = result.get("error", "Unknown error")
+                errors.append({"node_id": node_id, "error": error_msg})
+                node_states[node_id]["status"] = "failed"
+                node_states[node_id]["completed_at"] = completed_at
+                node_states[node_id]["error"] = error_msg
+                
+                await collection.update_one(
+                    {"_id": oid},
+                    {"$set": {
+                        f"execution.node_states.{node_id}.status": "failed",
+                        f"execution.node_states.{node_id}.completed_at": completed_at,
+                        f"execution.node_states.{node_id}.error": error_msg,
+                    },
+                    "$push": {
+                        "execution.errors": {"node_id": node_id, "error": error_msg},
+                    }}
+                )
+                
+        except Exception as e:
+            error_msg = str(e)
+            completed_at = datetime.now(timezone.utc).isoformat()
+            errors.append({"node_id": node_id, "error": error_msg})
+            node_states[node_id]["status"] = "failed"
+            node_states[node_id]["error"] = error_msg
+            
+            await collection.update_one(
+                {"_id": oid},
+                {"$set": {
+                    f"execution.node_states.{node_id}.status": "failed",
+                    f"execution.node_states.{node_id}.completed_at": completed_at,
+                    f"execution.node_states.{node_id}.error": error_msg,
+                },
+                "$push": {
+                    "execution.errors": {"node_id": node_id, "error": error_msg},
+                }}
+            )
+            
+            print(f"[WorkflowAsync] Node {node_id} exception: {e}")
+        
+        current += 1
+    
+    # Mark workflow execution as completed or failed
+    final_status = "failed" if errors else "completed"
+    
+    await collection.update_one(
+        {"_id": oid},
+        {"$set": {
+            "execution.status": final_status,
+            "execution.progress.current": total,
+            "outputs": outputs,
+            "updated_at": datetime.now(timezone.utc),
+        }}
+    )
+    
+    print(f"[WorkflowAsync] Workflow {workflow_id} {final_status}. "
+          f"Outputs: {len(outputs)}, Errors: {len(errors)}")
+
+
+@router.post("/{workflow_id}/run-async", response_model=RunWorkflowAsyncResponse)
+async def run_workflow_async(workflow_id: str, current_user: dict = Depends(get_current_user)):
+    """Start async workflow execution. Poll /run-status for progress."""
+    collection = get_workflows_collection()
+    
+    try:
+        oid = ObjectId(workflow_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid workflow ID")
+    
+    user_id = current_user.get("_id")
+    workflow = await collection.find_one({
+        "_id": oid,
+        "$or": [{"user_id": user_id}, {"user_id": {"$exists": False}}]
+    })
+    
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    
+    # Check if already running
+    execution = workflow.get("execution", {})
+    if execution.get("status") == "running":
+        return RunWorkflowAsyncResponse(
+            run_id=execution.get("run_id", ""),
+            status="running",
+        )
+    
+    # Generate run ID and launch background task
+    run_id = str(uuid4())
+    
+    print(f"[WorkflowAsync] Starting async run: {workflow_id} (run_id: {run_id})")
+    
+    asyncio.create_task(_execute_workflow_async(workflow_id, run_id))
+    
+    return RunWorkflowAsyncResponse(run_id=run_id, status="running")
+
+
+@router.get("/{workflow_id}/run-status", response_model=WorkflowRunStatus)
+async def get_run_status(workflow_id: str, current_user: dict = Depends(get_current_user)):
+    """Poll the current execution status of an async workflow run."""
+    collection = get_workflows_collection()
+    
+    try:
+        oid = ObjectId(workflow_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid workflow ID")
+    
+    user_id = current_user.get("_id")
+    workflow = await collection.find_one({
+        "_id": oid,
+        "$or": [{"user_id": user_id}, {"user_id": {"$exists": False}}]
+    })
+    
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    
+    execution = workflow.get("execution", {})
+    
+    if not execution:
+        raise HTTPException(status_code=404, detail="No active run found. Start one with POST /run-async")
+    
+    # Build node states from stored data
+    raw_states = execution.get("node_states", {})
+    node_states = {}
+    for nid, state in raw_states.items():
+        node_states[nid] = NodeState(
+            status=state.get("status", "queued"),
+            started_at=state.get("started_at"),
+            completed_at=state.get("completed_at"),
+            error=state.get("error"),
+        )
+    
+    return WorkflowRunStatus(
+        run_id=execution.get("run_id", ""),
+        status=execution.get("status", "running"),
+        node_states=node_states,
+        outputs=execution.get("outputs", {}),
+        errors=execution.get("errors", []),
+        progress=execution.get("progress", {}),
+    )
+
