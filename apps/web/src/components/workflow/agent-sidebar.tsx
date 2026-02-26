@@ -13,7 +13,6 @@ import {
     Brain,
     AtSign,
     ArrowUp,
-    Cpu,
     Image as ImageIcon,
     Video,
     Type,

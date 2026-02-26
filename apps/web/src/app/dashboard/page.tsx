@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useCallback, useRef } from "react";
 import { Plus, MoreHorizontal, Clock, Trash2, Pencil, Loader2, ArrowRight, Sparkles, Film, AlertCircle } from "lucide-react";
@@ -250,10 +251,12 @@ export default function DashboardPage() {
                                         <div className="relative aspect-[4/3] rounded-lg border border-border/60 bg-card overflow-hidden transition-all duration-200 hover:border-border hover:shadow-sm hover:shadow-primary/5">
                                             {/* Thumbnail or gradient placeholder */}
                                             {workflow.thumbnail_url ? (
-                                                <img
+                                                <Image
                                                     src={workflow.thumbnail_url}
                                                     alt={workflow.name}
                                                     className="absolute inset-0 w-full h-full object-cover"
+                                                    fill
+                                                    unoptimized
                                                 />
                                             ) : (
                                                 <div className="absolute inset-0 bg-gradient-to-br from-[hsl(230,15%,10%)] via-[hsl(250,20%,12%)] to-[hsl(270,15%,10%)]">

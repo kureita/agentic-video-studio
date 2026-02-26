@@ -12,7 +12,6 @@ import {
     MousePointer2,
     Play,
     Loader2,
-    Square,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";

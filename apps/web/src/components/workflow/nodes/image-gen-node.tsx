@@ -7,7 +7,7 @@ import { HighlightedTextarea } from "@/components/workflow/nodes/highlighted-tex
 
 import { useWorkflowStore } from "@/lib/workflow-store";
 
-const MODEL_CONFIGS: Record<string, { inputs: { id: string, label: string, type: "text" | "image" | "video" | "audio", style?: any }[] }> = {
+const MODEL_CONFIGS: Record<string, { inputs: { id: string, label: string, type: "text" | "image" | "video" | "audio", style?: React.CSSProperties }[] }> = {
     "FLUX Schnell": { inputs: [{ id: "prompt", label: "Prompt", type: "text", style: { bottom: '108px' } }, { id: "image", label: "Ref Image", type: "image", style: { bottom: '20px' } }] },
     "Kling IMAGE 3.0": { inputs: [{ id: "prompt", label: "Prompt", type: "text", style: { bottom: '108px' } }, { id: "image", label: "Ref Image", type: "image", style: { bottom: '20px' } }] },
     "Seedream 5.0 Lite": { inputs: [{ id: "prompt", label: "Prompt", type: "text", style: { bottom: '108px' } }, { id: "image", label: "Ref Image", type: "image", style: { bottom: '20px' } }] },

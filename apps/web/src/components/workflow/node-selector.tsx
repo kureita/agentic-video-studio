@@ -4,7 +4,6 @@ import {
     Type,
     Image as ImageIcon,
     Video,
-    Eye,
     Clapperboard,
     Upload,
     Music
