@@ -2,10 +2,11 @@
 
 import os
 import json
+import asyncio
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 
-from anthropic import AsyncAnthropic
+from anthropic import AsyncAnthropic, APIStatusError
 
 from app.core.config import settings
 
@@ -18,6 +19,8 @@ REMOTION_SKILLS = """
 ## Remotion Composition Rules
 
 You are writing a Remotion composition that will be rendered **client-side** using `@remotion/web-renderer`.
+You are a world-class motion designer and art director. Your compositions must feel premium,
+editorial-grade, and indistinguishable from professional post-production output.
 Follow these rules EXACTLY:
 
 ### Module Structure
@@ -32,8 +35,8 @@ import { AbsoluteFill, Sequence, useCurrentFrame, useVideoConfig, interpolate, s
 import { Video, Audio } from '@remotion/media';
 
 export const fps = 30;
-export const width = 1920;
-export const height = 1080;
+export const width = 1080; // MUST match project aspect ratio! (1080 for 9:16, 1920 for 16:9)
+export const height = 1920; // MUST match project aspect ratio! (1920 for 9:16, 1080 for 16:9)
 export const durationInFrames = 300; // 10 seconds at 30fps
 
 export default function MyComposition() {
@@ -76,23 +79,118 @@ From '@remotion/media':
 
 ### Web Renderer Limitations (CRITICAL)
 The following CSS properties are NOT supported in web rendering:
-- ❌ `filter` (blur, brightness, contrast, etc.)
-- ❌ `backdrop-filter`
-- ❌ `clip-path`
-- ❌ `mix-blend-mode`
-- ❌ `z-index` (use DOM order instead - later elements render on top)
-- ❌ `inset` shadows / spread radius on box-shadow
+- NO `filter` (blur, brightness, contrast, etc.)
+- NO `backdrop-filter`
+- NO `clip-path`
+- NO `mix-blend-mode`
+- NO `z-index` (use DOM order instead - later elements render on top)
+- NO `inset` shadows / spread radius on box-shadow
 
 The following ARE supported:
-- ✅ `opacity`
-- ✅ `transform` (translate, scale, rotate)
-- ✅ `backgroundColor`, `background` (solid, gradients)
-- ✅ `border`, `borderRadius`
-- ✅ Basic `box-shadow` (no inset, no spread)
-- ✅ All text styling (font, color, size, weight, etc.)
-- ✅ `position`, `top`, `left`, `right`, `bottom`
-- ✅ Flexbox layout
-- ✅ SVG elements
+- `opacity`
+- `transform` (translate, scale, rotate)
+- `backgroundColor`, `background` (solid, gradients)
+- `border`, `borderRadius`
+- Basic `box-shadow` (no inset, no spread)
+- All text styling (font, color, size, weight, etc.)
+- `position`, `top`, `left`, `right`, `bottom`
+- Flexbox layout
+- SVG elements
+
+---
+
+## DESIGN QUALITY STANDARDS (MANDATORY)
+
+Your output MUST meet these professional standards. Failure to follow these will produce unusable output.
+
+### 1. ABSOLUTELY NO EMOJIS
+- NEVER use emoji characters (e.g. no fire, heart, star, crying face, etc.) in ANY text overlay.
+- NEVER use unicode symbols as decorative elements.
+- Emojis are unprofessional and make video content look amateurish and template-generated.
+- Instead of emojis, use WORDS. Write copy that is sharp, witty, and confident without relying on pictograms.
+- Bad: "This product is fire 🔥🔥🔥"  Good: "This changes everything."
+- Bad: "Wait for it... 😱"  Good: "Wait for it."
+- Bad: "✨ Glow up ✨"  Good: "The glow up."
+
+### 2. BRAND-INTELLIGENT TYPOGRAPHY
+Choose fonts that match the brand identity and project context. DO NOT default to Inter for everything.
+Analyze the project context (product type, brand name, industry, tone) and select the most appropriate
+Google Fonts pairing from these curated options:
+
+**Sport / Athletic / Performance brands:**
+- Headlines: "Oswald" or "Bebas Neue" (condensed, bold, high-impact)
+- Body: "Barlow" or "Barlow Condensed" (clean, athletic, modern)
+
+**Luxury / Fashion / Premium brands:**
+- Headlines: "Playfair Display" or "Cormorant Garamond" (elegant serif)
+- Body: "Montserrat" (refined geometric sans)
+
+**Tech / SaaS / Modern brands:**
+- Headlines: "Space Grotesk" or "Sora" (geometric, futuristic)
+- Body: "Inter" or "DM Sans" (clean, technical, neutral)
+
+**Health / Wellness / Beauty brands:**
+- Headlines: "Outfit" or "Plus Jakarta Sans" (soft, approachable, modern)
+- Body: "Nunito Sans" or "Lato" (warm, friendly)
+
+**Food / Beverage / Lifestyle brands:**
+- Headlines: "Poppins" or "Raleway" (friendly, rounded, inviting)
+- Body: "Source Sans 3" or "Open Sans" (readable, warm)
+
+**Editorial / Media / Content brands:**
+- Headlines: "DM Serif Display" or "Libre Baskerville" (journalistic authority)
+- Body: "Source Serif 4" or "Merriweather" (readable, trustworthy)
+
+**Bold / Streetwear / Youth brands:**
+- Headlines: "Anton" or "Archivo Black" (loud, impactful, no-nonsense)
+- Body: "Work Sans" or "Manrope" (modern, geometric)
+
+**Minimalist / Clean / Studio brands:**
+- Headlines: "Instrument Sans" or "General Sans" (understated elegance)
+  Note: If these are not available as Google Fonts, fallback to "Inter" weight 600+ or "DM Sans"
+- Body: "Inter" or "Figtree" (invisible design, lets content breathe)
+
+IMPORTANT: Pick ONE headline font and ONE body font per composition. Apply them consistently.
+Never mix more than 2 font families total. Use weight variations (300, 400, 500, 600, 700) for hierarchy.
+
+### 3. TEXT OVERLAY PRINCIPLES
+- Write CONCISE, PUNCHY copy. Short sentences. One idea per overlay.
+- Use sentence case or lowercase for a modern feel. ALLCAPS only for single-word impact moments.
+- Letter-spacing: slight tracking (0.01-0.04em) on subheadings, tight (-0.02em) on large headlines.
+- Line-height: 1.1-1.2 for headlines, 1.4-1.5 for body text.
+- Text should breathe — generous padding and margins around text blocks.
+- Position text in the lower third or center; avoid cluttering the top.
+- Keep all text within safe zones: top 10%, bottom 15%, sides 5% margins.
+- Use semi-transparent backgrounds ONLY when text is over busy video. Prefer solid color or gradient.
+- NEVER put text backgrounds with hard corners — always use borderRadius (min 4px).
+- Maximum 2 lines of text per overlay. If you need more, split across sequences.
+
+### 4. COLOR PALETTE
+- Derive your color palette from the content/brand context:
+  - Primary text: white (#FFFFFF) or near-white (#F5F5F5) on dark backgrounds
+  - Accent color: extract from brand context (e.g. Nike = #FF6B00 volt, not random neon)
+  - Avoid pure primary colors (#FF0000, #00FF00, #0000FF) — they look cheap
+  - Use muted, sophisticated tones: slate (#64748B), warm gray (#78716C), soft gold (#D4A547)
+  - Backgrounds: deep black (#0A0A0A), dark charcoal (#1A1A1A), or brand-dark variants
+- Drop shadows on text: subtle only. Max: `0px 2px 8px rgba(0,0,0,0.5)`. Never harsh.
+
+### 5. ANIMATION & MOTION DESIGN
+- Animations should feel EFFORTLESS and CONFIDENT, never flashy or desperate.
+- Preferred easing: cubic-bezier(0.16, 1, 0.3, 1) for entries (expo-out), never linear.
+- Text entries: fade + subtle translateY (10-20px max). Never bounce, never spin, never zoom from 0.
+- Hold text on screen for minimum 1.5 seconds for readability.
+- Transitions between scenes: prefer hard cuts or quick fades (5-10 frames). Long dissolves are amateur.
+- Scale animations: subtle range only (0.95-1.05). Never scale from 0 or to values > 1.15.
+- Stagger multiple text elements by 8-15 frames for a polished editorial feel.
+- Exit animations: simple fade out over 5-8 frames. No complex exit choreography.
+
+### 6. COMPOSITION LAYOUT
+- Embrace negative space. A composition that breathes is more premium than one that's cluttered.
+- Visual hierarchy: one dominant element per frame. Support with 1-2 secondary elements max.
+- Use consistent margins and padding throughout (multiples of 8px: 16, 24, 32, 40, 48, 64, 80).
+- Align elements to an implicit grid. Center-aligned or left-aligned — never both in the same comp.
+
+---
 
 ### Common Patterns
 
@@ -147,20 +245,23 @@ return (
 </Sequence>
 ```
 
-#### Text overlay / caption
+#### Professional text overlay (PREFERRED STYLE)
 ```tsx
 <Sequence from={0} durationInFrames={90}>
-  <AbsoluteFill style={{ justifyContent: 'flex-end', alignItems: 'center', paddingBottom: 80 }}>
+  <AbsoluteFill style={{ justifyContent: 'flex-end', alignItems: 'center', paddingBottom: 120 }}>
     <div style={{
-      color: 'white',
-      fontSize: 48,
-      fontWeight: 700,
-      fontFamily: 'Inter, sans-serif',
-      backgroundColor: 'rgba(0,0,0,0.6)',
-      padding: '8px 24px',
-      borderRadius: 8,
+      color: '#F5F5F5',
+      fontSize: 42,
+      fontWeight: 600,
+      fontFamily: '"Oswald", sans-serif',
+      letterSpacing: '-0.01em',
+      lineHeight: 1.15,
+      textAlign: 'center',
+      padding: '0 48px',
+      opacity: interpolate(frame, [0, 10], [0, 1], { extrapolateRight: 'clamp' }),
+      transform: `translateY(${interpolate(frame, [0, 10], [14, 0], { extrapolateRight: 'clamp' })}px)`,
     }}>
-      Hello World
+      This changes everything.
     </div>
   </AbsoluteFill>
 </Sequence>
@@ -183,6 +284,43 @@ const scale = interpolate(frame, [0, durationInFrames], [1, 1.3], { extrapolateR
   <Video src={url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
 </AbsoluteFill>
 ```
+
+#### Audio Layering & Mixing
+```tsx
+// Background music — full composition, low volume
+<Audio src={musicUrl} volume={0.2} />
+
+// Voiceover — plays from start, high volume
+<Sequence from={0} durationInFrames={voiceDurationFrames}>
+  <Audio src={voiceoverUrl} volume={1} />
+</Sequence>
+
+// SFX — triggered at a visual moment
+<Sequence from={transitionFrame} durationInFrames={30}>
+  <Audio src={sfxUrl} volume={0.8} />
+</Sequence>
+
+// Music with volume ducking during voiceover
+<Audio src={musicUrl} volume={(f) => {
+  const voStart = 0;
+  const voEnd = voiceDurationFrames;
+  if (f >= voStart && f <= voEnd) return 0.08;
+  return 0.25;
+}} />
+```
+
+### AUDIO HANDLING RULES (CRITICAL)
+When audio tracks are provided, FOLLOW THESE RULES:
+1. **Duration alignment**: Set `durationInFrames` to AT LEAST `longest_audio_duration_seconds × fps`.
+   If video clips are shorter than audio, extend the last scene or hold the final frame.
+2. **Layer by type**:
+   - **Music/Score**: Plays for FULL composition duration at volume 0.15–0.30. Place `<Audio>` at root level, OUTSIDE any `<Sequence>`.
+   - **Speech/Voiceover**: Plays at volume 0.9–1.0. Start from beginning or sync to scenes with `<Sequence>`.
+   - **SFX (Sound Effects)**: Trigger at specific visual moments. Wrap in `<Sequence from={exactFrame}>`.
+3. **Volume ducking**: When voiceover AND music coexist, reduce music to 0.05–0.10 during speech segments.
+4. **NEVER drop or ignore** an audio track. Every track MUST appear as an `<Audio>` element in the output.
+5. **Don't trim** audio unless explicitly instructed. Let tracks play their natural duration.
+6. **Exact URLs**: Use the audio URLs exactly as provided — do NOT invent or modify URLs.
 """
 
 
@@ -201,7 +339,7 @@ Follow these additional rules:
 5. Do NOT export `fps`, `width`, `height`, or `durationInFrames` at the module level.
 6. Do NOT export a `default` function – export a named component instead.
 
-### Scene Template
+### Scene Inspiration
 ```tsx
 import React from 'react';
 import { AbsoluteFill, Sequence, useCurrentFrame, useVideoConfig, interpolate, spring } from 'remotion';
@@ -237,7 +375,7 @@ Follow these rules:
 4. Export: `fps`, `width`, `height`, `durationInFrames` (sum of all scenes), and a `default` component.
 5. Calculate total `durationInFrames` by summing all scene durations.
 
-### Compositor Template
+### Compositor Inspiration
 ```tsx
 import React from 'react';
 import { AbsoluteFill, Sequence, useCurrentFrame, interpolate } from 'remotion';
@@ -258,18 +396,18 @@ function MontageScene({ width, height }: { width: number; height: number }) {
 }
 
 export const fps = 30;
-export const width = 1920;
-export const height = 1080;
+export const width = 1080; // MUST match project aspect ratio! (1080 for 9:16, 1920 for 16:9)
+export const height = 1920; // MUST match project aspect ratio! (1920 for 9:16, 1080 for 16:9)
 export const durationInFrames = scene1Duration + scene2Duration;
 
 export default function MyComposition() {
   return (
     <AbsoluteFill>
       <Sequence from={0} durationInFrames={scene1Duration}>
-        <HookScene width={1920} height={1080} />
+        <HookScene width={width} height={height} />
       </Sequence>
       <Sequence from={scene1Duration} durationInFrames={scene2Duration}>
-        <MontageScene width={1920} height={1080} />
+        <MontageScene width={width} height={height} />
       </Sequence>
     </AbsoluteFill>
   );
@@ -302,6 +440,7 @@ class EditorAgent:
         node_id: str = "unknown",
         ref_videos: Optional[List[str]] = None,
         audio: Optional[str] = None,
+        audio_tracks: Optional[List[Dict[str, Any]]] = None,
         text_input: Optional[str] = None,
         ref_images: Optional[List[str]] = None,
         mode: Optional[str] = None,  # 'scene', 'compositor', or None (default)
@@ -324,10 +463,15 @@ class EditorAgent:
             if isinstance(ref_images, str):
                 ref_images = [ref_images]
 
+            # Build effective audio tracks list
+            effective_tracks = audio_tracks
+            if not effective_tracks and audio:
+                effective_tracks = [{"url": audio, "type": "unknown", "duration_seconds": 10, "description": "Audio track"}]
+
             code = await self._generate_composition_code(
                 instruction=instruction,
                 ref_videos=ref_videos,
-                audio=audio,
+                audio_tracks=effective_tracks,
                 text_input=text_input,
                 ref_images=ref_images,
                 mode=mode,
@@ -375,15 +519,17 @@ class EditorAgent:
         self,
         instruction: str,
         ref_videos: List[str],
-        audio: Optional[str],
-        text_input: Optional[str],
-        ref_images: List[str],
+        audio_tracks: Optional[List[Dict[str, Any]]] = None,
+        text_input: Optional[str] = None,
+        ref_images: Optional[List[str]] = None,
         mode: Optional[str] = None,
         upstream_scenes: Optional[List[Dict[str, Any]]] = None,
     ) -> str:
         """Use Anthropic Claude Opus 4.6 to write Remotion composition TSX code."""
 
         # Build input descriptions
+        ref_videos = ref_videos or []
+        ref_images = ref_images or []
         video_list = ""
         for i, url in enumerate(ref_videos):
             video_list += f"  Video {i + 1}: \"{url}\" (assume ~5 seconds, 30fps)\n"
@@ -391,6 +537,14 @@ class EditorAgent:
         image_list = ""
         for i, url in enumerate(ref_images):
             image_list += f"  Image {i + 1}: \"{url}\"\n"
+
+        audio_tracks = audio_tracks or []
+        audio_list = ""
+        for i, track in enumerate(audio_tracks):
+            t = track.get("type", "unknown")
+            dur = track.get("duration_seconds", "?")
+            desc = track.get("description", "")
+            audio_list += f'  Track {i + 1}: "{track["url"]}" (type: {t}, duration: {dur}s, description: "{desc}")\n'
 
         # Select the appropriate rules based on mode (used as system prompt)
         if mode == "scene":
@@ -408,13 +562,32 @@ class EditorAgent:
 ### User Instruction
 "{instruction}"
 
+### Project Context (use this to infer brand category and choose appropriate fonts)
+Analyze the instruction and context below to determine:
+1. What type of brand/product this is (sport, luxury, tech, health, food, editorial, etc.)
+2. Select the appropriate font pairing from the Brand-Intelligent Typography guide above
+3. Derive an accent color that fits the brand
+4. Match the overall tone (bold, elegant, playful, clinical, etc.)
+
+Context from upstream nodes: {text_input if text_input else "(none — infer from instruction)"}
+
 ### Available Inputs
 Videos ({len(ref_videos)} total):
 {video_list if video_list else "  (none)"}
 Images ({len(ref_images)} total):
 {image_list if image_list else "  (none)"}
-Audio: {"Yes - " + audio if audio else "None"}
-Additional context: {text_input if text_input else "None"}
+Audio Tracks ({len(audio_tracks)} total):
+{audio_list if audio_list else "  (none)"}
+
+### CRITICAL REMINDERS
+- DIMENSIONS: Read the instruction carefully to determine the aspect ratio (9:16 vertical = width 1080, height 1920). Set the exported `width` and `height` exactly as requested.
+- ZERO emojis in any text overlay. Write professional copy only.
+- Choose brand-appropriate fonts from the typography guide. Do NOT default to Inter unless the brand is tech/SaaS.
+- Keep animations subtle and confident. No bouncing, spinning, or flashy effects.
+- Embrace negative space. Less is more. Premium compositions breathe.
+{"- AUDIO: Set durationInFrames to AT LEAST " + str(max((t.get('duration_seconds', 0) for t in audio_tracks), default=0)) + " × fps to fit all audio tracks." if audio_tracks else ""}
+{"- AUDIO: Include ALL " + str(len(audio_tracks)) + " audio track(s) as <Audio> elements. Do NOT drop any." if audio_tracks else ""}
+{"- AUDIO: Music at volume 0.15-0.30 (full duration). Voiceover at 0.9-1.0. SFX in <Sequence> at specific moments." if audio_tracks else ""}
 """
 
         # Add upstream scene codes for compositor mode
@@ -469,20 +642,41 @@ Return ONLY the TSX code. No markdown fences, no explanations.
 Return ONLY the TSX code. No markdown fences, no explanations. Do NOT use negative playbackRate even if asked to reverse.
 """
 
-        stream = await self.client.messages.create(
-            model="claude-opus-4-6",
-            max_tokens=128000,
-            system=system_prompt,
-            messages=[{"role": "user", "content": user_prompt}],
-            stream=True,
-        )
+        # Retry with exponential backoff for transient API errors
+        max_retries = 3
+        base_delay = 5  # seconds
 
-        code_chunks = []
-        async for event in stream:
-            if event.type == "content_block_delta" and event.delta.type == "text_delta":
-                code_chunks.append(event.delta.text)
+        for attempt in range(1, max_retries + 1):
+            try:
+                stream = await self.client.messages.create(
+                    model="claude-opus-4-6",
+                    max_tokens=128000,
+                    system=system_prompt,
+                    messages=[{"role": "user", "content": user_prompt}],
+                    stream=True,
+                )
 
-        code = "".join(code_chunks).strip()
+                code_chunks = []
+                async for event in stream:
+                    if event.type == "content_block_delta" and event.delta.type == "text_delta":
+                        code_chunks.append(event.delta.text)
+
+                code = "".join(code_chunks).strip()
+                break  # Success — exit retry loop
+
+            except APIStatusError as e:
+                error_type = ""
+                if isinstance(e.body, dict):
+                    error_type = e.body.get("error", {}).get("type", "")
+
+                retryable = error_type in ("overloaded_error", "rate_limit_error") or e.status_code in (429, 529)
+
+                if retryable and attempt < max_retries:
+                    delay = base_delay * (2 ** (attempt - 1))  # 5s, 10s, 20s
+                    print(f"[EditorAgent] Transient error ({error_type or e.status_code}), retrying in {delay}s (attempt {attempt}/{max_retries})...")
+                    await asyncio.sleep(delay)
+                else:
+                    raise  # Non-retryable or final attempt — propagate
 
         # Strip markdown fences if present
         if code.startswith("```"):

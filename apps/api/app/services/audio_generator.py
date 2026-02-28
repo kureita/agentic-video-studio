@@ -1,4 +1,4 @@
-"""Audio Generator Service - Uses Runware API for text-to-speech."""
+"""Audio Generator Service - Uses Runware API for speech, music, and sound effects."""
 
 import asyncio
 import os
@@ -23,7 +23,7 @@ _MODEL_MAP = {
 }
 
 class AudioGenerator:
-    """Generates audio using Runware API (minimax, etc)."""
+    """Generates audio using Runware API (speech, music, and sound effects)."""
 
     def __init__(self):
         use_mock_audio = os.getenv("USE_MOCK_AUDIO", "").lower() == "true"
@@ -136,7 +136,7 @@ class AudioGenerator:
             async with httpx.AsyncClient() as client:
                 response = await client.get(url, timeout=120.0)
                 if response.status_code == 200:
-                    filename = f"speech_{int(time.time())}.mp3"
+                    filename = f"audio_{int(time.time())}_{random.randint(1000, 9999)}.mp3"
                     storage_url = await self.storage.upload_file(response.content, filename, "audio/mpeg")
                     return storage_url
         except Exception as e:
@@ -184,6 +184,66 @@ class AudioGenerator:
             print(f"[AudioGenerator] Error: {e}")
             return {"success": False, "error": str(e)}
 
+    async def generate_music(
+        self,
+        prompt: str,
+        duration: int = 15,
+    ) -> dict:
+        """Generate music from a text prompt describing genre, style, mood, etc."""
+        if self.use_mock:
+            return await self._mock_generate(prompt, "music")
+        
+        if not prompt or not prompt.strip():
+            return {"success": False, "error": "No prompt provided for music generation"}
+        
+        try:
+            print(f"[AudioGenerator] Generating music: {prompt[:100]}..., duration: {duration}s")
+            
+            result = await self.runware.generate_music(
+                prompt=prompt,
+                duration=duration,
+            )
+            
+            if result.get("success"):
+                final_url = await self._fetch_and_upload(result.get("audio_url"))
+                result["audio_url"] = final_url
+                
+            return result
+
+        except Exception as e:
+            print(f"[AudioGenerator] Music generation error: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def generate_sfx(
+        self,
+        prompt: str,
+        duration: int = 10,
+    ) -> dict:
+        """Generate sound effects from a text prompt describing the sound."""
+        if self.use_mock:
+            return await self._mock_generate(prompt, "sfx")
+        
+        if not prompt or not prompt.strip():
+            return {"success": False, "error": "No prompt provided for sound effects generation"}
+        
+        try:
+            print(f"[AudioGenerator] Generating SFX: {prompt[:100]}..., duration: {duration}s")
+            
+            result = await self.runware.generate_sound_effects(
+                prompt=prompt,
+                duration=duration,
+            )
+            
+            if result.get("success"):
+                final_url = await self._fetch_and_upload(result.get("audio_url"))
+                result["audio_url"] = final_url
+                
+            return result
+
+        except Exception as e:
+            print(f"[AudioGenerator] SFX generation error: {e}")
+            return {"success": False, "error": str(e)}
+
     async def generate_multiple(
         self,
         texts: list[str],
@@ -196,3 +256,4 @@ class AudioGenerator:
             result = await self.generate_speech(text=text, voice=voice)
             results.append(result)
         return results
+

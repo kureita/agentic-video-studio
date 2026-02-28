@@ -1,7 +1,7 @@
 import React, { memo } from "react";
 import Image from "next/image";
 import { NodeProps, useReactFlow } from "@xyflow/react";
-import { Image as ImageIcon, Minus, Plus, ChevronDown, Square, Loader2, Download } from "lucide-react";
+import { Image as ImageIcon, Minus, Plus, ChevronDown, Square, Loader2, Download, Upload } from "lucide-react";
 import { NodeWrapper } from "@/components/workflow/node-wrapper";
 import { HighlightedTextarea } from "@/components/workflow/nodes/highlighted-textarea";
 
@@ -15,7 +15,23 @@ const MODEL_CONFIGS: Record<string, { inputs: { id: string, label: string, type:
 
 export const ImageGenNode = memo(({ id, selected, data }: NodeProps) => {
     const { deleteElements, updateNodeData } = useReactFlow();
-    const { runNode, clearNodeOutput, outputs, runningNodeId } = useWorkflowStore();
+    const { runNode, clearNodeOutput, outputs, runningNodeId, setNodeOutput } = useWorkflowStore();
+
+    const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+    const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const result = e.target?.result as string;
+            if (result) {
+                setNodeOutput(id, result);
+            }
+        };
+        reader.readAsDataURL(file);
+    };
 
     const isRunning = runningNodeId === id;
     const output = (outputs[id] as string | undefined) || (data.output as string | undefined); // Use store output first, fallback to data.output
@@ -323,6 +339,22 @@ export const ImageGenNode = memo(({ id, selected, data }: NodeProps) => {
                             <option value="3:4">3:4</option>
                         </select>
                     </div>
+
+                    {/* Upload Pill */}
+                    <button
+                        onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
+                        className="h-7 w-7 flex items-center justify-center bg-black/60 backdrop-blur-md border border-white/10 rounded-full text-white/90 hover:bg-black/70 transition-colors flex-shrink-0 cursor-pointer"
+                        title="Upload Image"
+                    >
+                        <Upload className="w-3 h-3" />
+                    </button>
+                    <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/*"
+                        onChange={handleFileSelect}
+                        className="hidden"
+                    />
                 </div>
 
 

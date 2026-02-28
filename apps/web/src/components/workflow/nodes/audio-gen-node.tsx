@@ -1,21 +1,53 @@
 import React, { memo } from "react";
 import { NodeProps, useReactFlow } from "@xyflow/react";
-import { Music, Loader2, Download, ChevronDown } from "lucide-react";
+import { Music, Loader2, Download, ChevronDown, Mic, Sparkles, Volume2, Upload } from "lucide-react";
 import { NodeWrapper } from "@/components/workflow/node-wrapper";
 import { useWorkflowStore } from "@/lib/workflow-store";
 
+type AudioType = "speech" | "music" | "sfx";
+
+const AUDIO_TYPE_OPTIONS: { value: AudioType; label: string; icon: React.ReactNode; description: string }[] = [
+    { value: "speech", label: "Speech", icon: <Mic className="w-3 h-3" />, description: "Text-to-speech with voice selection" },
+    { value: "music", label: "Music", icon: <Sparkles className="w-3 h-3" />, description: "Generate music from a description" },
+    { value: "sfx", label: "Sound FX", icon: <Volume2 className="w-3 h-3" />, description: "Generate sound effects" },
+];
+
+const PLACEHOLDER_MAP: Record<AudioType, string> = {
+    speech: "Enter text to convert to speech...",
+    music: "Describe the music — genre, mood, instruments, tempo, structure...",
+    sfx: "Describe the sound effect — whoosh, impact, ambience, foley...",
+};
+
 export const AudioGenNode = memo(({ id, selected, data }: NodeProps) => {
     const { deleteElements, updateNodeData } = useReactFlow();
-    const { runNode, clearNodeOutput, outputs, runningNodeId } = useWorkflowStore();
+    const { runNode, clearNodeOutput, outputs, runningNodeId, setNodeOutput } = useWorkflowStore();
+
+    const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+    const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const result = e.target?.result as string;
+            if (result) {
+                setNodeOutput(id, result);
+            }
+        };
+        reader.readAsDataURL(file);
+    };
 
     const isRunning = runningNodeId === id;
     const output = (outputs[id] as string | undefined) || (data.output as string | undefined);
+
+    const audioType: AudioType = (typeof data.audioType === "string" ? data.audioType : "speech") as AudioType;
 
     const handleDownload = () => {
         if (output) {
             const link = document.createElement('a');
             link.href = output;
-            link.download = `generated-audio-${Date.now()}.mp3`;
+            link.download = `generated-${audioType}-${Date.now()}.mp3`;
             link.target = '_blank';
             link.click();
         }
@@ -82,6 +114,8 @@ export const AudioGenNode = memo(({ id, selected, data }: NodeProps) => {
         }
     };
 
+    const currentTypeOption = AUDIO_TYPE_OPTIONS.find(o => o.value === audioType) || AUDIO_TYPE_OPTIONS[0];
+
     return (
         <NodeWrapper
             title={`Audio Generator #${useWorkflowStore((state) =>
@@ -129,11 +163,13 @@ export const AudioGenNode = memo(({ id, selected, data }: NodeProps) => {
                             <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-3 text-primary">
                                 <Loader2 className="w-6 h-6 animate-spin" />
                             </div>
-                            <p className="text-xs font-medium text-muted-foreground">Generating audio...</p>
+                            <p className="text-xs font-medium text-muted-foreground">
+                                Generating {audioType === "music" ? "music" : audioType === "sfx" ? "sound effect" : "speech"}...
+                            </p>
                         </div>
                     ) : (
                         <div className="flex items-center justify-center text-muted-foreground/50">
-                            <Music className="w-8 h-8" />
+                            {audioType === "music" ? <Sparkles className="w-8 h-8" /> : audioType === "sfx" ? <Volume2 className="w-8 h-8" /> : <Mic className="w-8 h-8" />}
                         </div>
                     )}
                 </div>
@@ -172,7 +208,7 @@ export const AudioGenNode = memo(({ id, selected, data }: NodeProps) => {
                     <textarea
                         ref={textareaRef}
                         className="w-full min-h-[100px] bg-transparent border-none px-4 py-3 text-sm font-medium placeholder:text-white/50 focus-visible:outline-none resize-none overflow-y-auto leading-relaxed text-white nodrag nowheel"
-                        placeholder="Enter text to convert to speech..."
+                        placeholder={PLACEHOLDER_MAP[audioType]}
                         value={typeof data.prompt === 'string' ? data.prompt : ''}
                         onChange={handleTextChange}
                         onKeyDown={(e) => e.stopPropagation()}
@@ -180,27 +216,82 @@ export const AudioGenNode = memo(({ id, selected, data }: NodeProps) => {
 
                     {/* Controls Bar */}
                     <div className="px-3 pb-3 flex items-center gap-2">
-                        {/* Voice Selector */}
-                        <div className="relative h-7 flex items-center gap-1.5 bg-black/40 backdrop-blur-sm border border-white/10 rounded-full px-3 text-white/90 hover:bg-black/60 transition-colors flex-grow">
-                            <Music className="w-3 h-3 text-white/70" />
-                            <span className="text-[10px] font-medium truncate">{typeof data.voice === 'string' ? data.voice : "Rachel"}</span>
+                        {/* Audio Type Selector */}
+                        <div className="relative h-7 flex items-center gap-1.5 bg-black/40 backdrop-blur-sm border border-white/10 rounded-full px-3 text-white/90 hover:bg-black/60 transition-colors">
+                            {currentTypeOption.icon}
+                            <span className="text-[10px] font-medium">{currentTypeOption.label}</span>
                             <ChevronDown className="w-2.5 h-2.5 text-white/50 flex-shrink-0" />
                             <select
                                 className="absolute inset-0 opacity-0 cursor-pointer"
-                                value={typeof data.voice === 'string' ? data.voice : "Rachel"}
-                                onChange={(e) => updateNodeData(id, { voice: e.target.value })}
+                                value={audioType}
+                                onChange={(e) => updateNodeData(id, { audioType: e.target.value })}
                             >
-                                <option value="Rachel">Rachel</option>
-                                <option value="Adam">Adam</option>
-                                <option value="Antoni">Antoni</option>
-                                <option value="Arnold">Arnold</option>
-                                <option value="Bella">Bella</option>
-                                <option value="Domi">Domi</option>
-                                <option value="Elli">Elli</option>
-                                <option value="Josh">Josh</option>
-                                <option value="Sam">Sam</option>
+                                {AUDIO_TYPE_OPTIONS.map((opt) => (
+                                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                ))}
                             </select>
                         </div>
+
+                        {/* Voice Selector (only visible for speech type) */}
+                        {audioType === "speech" && (
+                            <div className="relative h-7 flex items-center gap-1.5 bg-black/40 backdrop-blur-sm border border-white/10 rounded-full px-3 text-white/90 hover:bg-black/60 transition-colors flex-grow">
+                                <Mic className="w-3 h-3 text-white/70" />
+                                <span className="text-[10px] font-medium truncate">{typeof data.voice === 'string' ? data.voice : "Rachel"}</span>
+                                <ChevronDown className="w-2.5 h-2.5 text-white/50 flex-shrink-0" />
+                                <select
+                                    className="absolute inset-0 opacity-0 cursor-pointer"
+                                    value={typeof data.voice === 'string' ? data.voice : "Rachel"}
+                                    onChange={(e) => updateNodeData(id, { voice: e.target.value })}
+                                >
+                                    <option value="Rachel">Rachel</option>
+                                    <option value="Adam">Adam</option>
+                                    <option value="Antoni">Antoni</option>
+                                    <option value="Arnold">Arnold</option>
+                                    <option value="Bella">Bella</option>
+                                    <option value="Domi">Domi</option>
+                                    <option value="Elli">Elli</option>
+                                    <option value="Josh">Josh</option>
+                                    <option value="Sam">Sam</option>
+                                </select>
+                            </div>
+                        )}
+
+                        {/* Duration Selector (visible for music and sfx types) */}
+                        {(audioType === "music" || audioType === "sfx") && (
+                            <div className="relative h-7 flex items-center gap-1.5 bg-black/40 backdrop-blur-sm border border-white/10 rounded-full px-3 text-white/90 hover:bg-black/60 transition-colors flex-grow">
+                                <span className="text-[10px] font-medium truncate">
+                                    {typeof data.duration === 'number' ? `${data.duration}s` : "10s"}
+                                </span>
+                                <ChevronDown className="w-2.5 h-2.5 text-white/50 flex-shrink-0" />
+                                <select
+                                    className="absolute inset-0 opacity-0 cursor-pointer"
+                                    value={typeof data.duration === 'number' ? data.duration : 10}
+                                    onChange={(e) => updateNodeData(id, { duration: parseInt(e.target.value) })}
+                                >
+                                    <option value={10}>10s</option>
+                                    <option value={15}>15s</option>
+                                    <option value={20}>20s</option>
+                                    <option value={30}>30s</option>
+                                    <option value={60}>60s</option>
+                                </select>
+                            </div>
+                        )}
+
+                        {/* Upload Pill */}
+                        <button
+                            onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
+                            className="h-7 w-7 flex flex-shrink-0 items-center justify-center bg-black/40 backdrop-blur-sm border border-white/10 rounded-full text-white/90 hover:bg-black/60 transition-colors cursor-pointer"
+                            title="Upload Audio"
+                        >
+                            <Upload className="w-3 h-3" />
+                        </button>
+                        <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept="audio/*"
+                            onChange={handleFileSelect}
+                            className="hidden"
+                        />
                     </div>
                 </div>
             </div>

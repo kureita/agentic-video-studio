@@ -371,13 +371,27 @@ class RunwareService:
             "model": model
         }
 
-    async def generate_music(self, prompt: str, length: int = 30, model: str = "music-gen-model") -> dict:
-        """Generate music based on a prompt."""
+    async def generate_music(self, prompt: str, duration: int = 30, model: str = "elevenlabs:1@1") -> dict:
+        """Generate music from a text prompt using ElevenLabs Music v1 via Runware.
+        AIR ID: elevenlabs:1@1 — Eleven Music v1
+        Supports detailed prompts describing genre, style, instruments, structure, and mood.
+        Duration must be between 10-300 seconds (Runware constraint).
+        """
+        # Clamp duration to Runware's allowed range: 10-300 seconds
+        duration = max(10, min(300, duration))
+        
         task = {
             "taskType": "audioInference",
-            "prompt": prompt,
-            "duration": length,
-            "model": model
+            "model": model,
+            "positivePrompt": prompt,
+            "duration": duration,
+            "numberResults": 1,
+            "outputFormat": "MP3",
+            "outputType": "URL",
+            "audioSettings": {
+                "sampleRate": 22050,
+                "bitrate": 32,
+            },
         }
         
         resp = await self._post([task])
@@ -393,10 +407,56 @@ class RunwareService:
             
         audio_url = data.get("audioURL")
         if not audio_url:
-            return {"success": False, "error": "No audio URL in response"}
+            return {"success": False, "error": "No audio URL in music generation response"}
             
         return {
             "success": True,
             "audio_url": audio_url,
-            "model": model
+            "prompt": prompt,
+            "model": model,
+        }
+
+    async def generate_sound_effects(self, prompt: str, duration: int = 10, model: str = "elevenlabs:1@1") -> dict:
+        """Generate sound effects from a text prompt using ElevenLabs via Runware.
+        AIR ID: elevenlabs:1@1 — same model handles both music and SFX based on prompt.
+        Supports ambient sounds, impacts, whooshes, foley, and other audio textures.
+        Duration must be between 10-300 seconds (Runware constraint).
+        """
+        # Clamp duration to Runware's allowed range: 10-300 seconds
+        duration = max(10, min(300, duration))
+        
+        task = {
+            "taskType": "audioInference",
+            "model": model,
+            "positivePrompt": prompt,
+            "duration": duration,
+            "numberResults": 1,
+            "outputFormat": "MP3",
+            "outputType": "URL",
+            "audioSettings": {
+                "sampleRate": 22050,
+                "bitrate": 32,
+            },
+        }
+        
+        resp = await self._post([task])
+        if not resp["success"]:
+            return resp
+            
+        data = resp.get("data", {})
+        if "audioURL" not in data and "taskUUID" in data:
+            poll_resp = await self._poll_task_completion(data["taskUUID"])
+            if not poll_resp["success"]:
+                return poll_resp
+            data = poll_resp.get("data", {})
+            
+        audio_url = data.get("audioURL")
+        if not audio_url:
+            return {"success": False, "error": "No audio URL in sound effects response"}
+            
+        return {
+            "success": True,
+            "audio_url": audio_url,
+            "prompt": prompt,
+            "model": model,
         }

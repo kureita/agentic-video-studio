@@ -129,7 +129,7 @@ class NodeRunner:
                     source_output = outputs[source_id]
                     
                     # For inputs that can accept multiple connections, collect into list
-                    if target_input_name in ["ref_videos", "ref_images"]:
+                    if target_input_name in ["ref_videos", "ref_images", "audio"]:
                         if target_input_name not in inputs:
                             inputs[target_input_name] = []
                         # Append to list if not already there
@@ -224,7 +224,7 @@ class NodeRunner:
     ) -> Dict[str, Any]:
         """Generate image using the ImageGenerator service."""
         # Get prompt from node data (typed) or inputs (connected)
-        # Favor typed prompt if it exists, allowing for template usage
+        # Favor typed prompt if it exists, allowing for inspiration usage
         raw_prompt = data.get("prompt", "")
         if not raw_prompt:
             raw_prompt = inputs.get("prompt", "")
@@ -297,8 +297,17 @@ class NodeRunner:
         inputs: Dict[str, Any],
         nodes: List[Dict[str, Any]],
     ) -> Dict[str, Any]:
-        """Generate audio using the AudioGenerator service."""
-        # Get text from node data (typed) or inputs (connected)
+        """Generate audio using the AudioGenerator service.
+        
+        Supports three audio types:
+        - 'speech' (default): Text-to-speech with voice selection
+        - 'music': AI-generated music from a descriptive prompt
+        - 'sfx': AI-generated sound effects from a descriptive prompt
+        """
+        # Get audio type from node data (defaults to "speech" for backward compat)
+        audio_type = data.get("audioType", "speech")
+        
+        # Get text/prompt from node data (typed) or inputs (connected)
         raw_text = data.get("prompt", "")
         if not raw_text:
             raw_text = inputs.get("prompt", "")
@@ -309,19 +318,39 @@ class NodeRunner:
         if not text or not text.strip():
             return {
                 "success": False,
-                "error": "No text provided for speech generation",
+                "error": f"No text/prompt provided for {audio_type} generation",
             }
         
-        # Get voice parameter
-        voice = data.get("voice", "Rachel")
-        
-        print(f"[NodeRunner] Generating audio: text='{text[:50]}...', voice={voice}")
+        print(f"[NodeRunner] Generating audio: type='{audio_type}', text='{text[:50]}...'")
         
         try:
-            result = await self.audio_generator.generate_speech(
-                text=text,
-                voice=voice,
-            )
+            if audio_type == "music":
+                # Get duration from node data (default 15s for music)
+                duration = data.get("duration", 15)
+                if isinstance(duration, str):
+                    duration = int(duration.replace("s", "").strip()) if duration.replace("s", "").strip().isdigit() else 15
+                
+                result = await self.audio_generator.generate_music(
+                    prompt=text,
+                    duration=duration,
+                )
+            elif audio_type == "sfx":
+                # Get duration from node data (default 5s for SFX)
+                duration = data.get("duration", 5)
+                if isinstance(duration, str):
+                    duration = int(duration.replace("s", "").strip()) if duration.replace("s", "").strip().isdigit() else 5
+                
+                result = await self.audio_generator.generate_sfx(
+                    prompt=text,
+                    duration=duration,
+                )
+            else:
+                # Default: speech (TTS)
+                voice = data.get("voice", "Rachel")
+                result = await self.audio_generator.generate_speech(
+                    text=text,
+                    voice=voice,
+                )
             
             if result.get("success"):
                 return {
@@ -331,12 +360,12 @@ class NodeRunner:
             else:
                 return {
                     "success": False,
-                    "error": result.get("error", "Audio generation failed"),
+                    "error": result.get("error", f"{audio_type.capitalize()} generation failed"),
                 }
         except Exception as e:
             return {
                 "success": False,
-                "error": f"Audio Generator Error: {str(e)}",
+                "error": f"Audio Generator Error ({audio_type}): {str(e)}",
             }
 
     async def _run_video_gen_node(
@@ -358,6 +387,8 @@ class NodeRunner:
         reference_images = inputs.get("reference_images")
         reference_video = inputs.get("reference_video")
         audio_input = inputs.get("audio")
+        if isinstance(audio_input, list):
+            audio_input = audio_input[0] if audio_input else None
         
         # Build prompt
         if not prompt and not start_image and not reference_images and not reference_video:
@@ -603,7 +634,7 @@ class NodeRunner:
         
         # Get inputs
         text_input = inputs.get("text", "")
-        audio = inputs.get("audio")
+        raw_audio = inputs.get("audio", [])
         ref_images = inputs.get("ref_images", [])
         ref_videos = inputs.get("ref_videos", [])
         
@@ -669,21 +700,64 @@ class NodeRunner:
             # DEFAULT MODE: has media inputs, backward-compatible monolithic generation
             print(f"[NodeRunner] Editor Agent DEFAULT mode: videos={len(ref_videos)}, images={len(ref_images)}")
         
-        # For default mode, still require media inputs
-        if mode is None and not ref_videos and not ref_images:
-            return {
-                "success": False,
-                "error": "No video or image inputs provided. Connect videos or images to edit.",
-            }
-        
-        print(f"[NodeRunner] Editor Agent (mode={mode}): instruction='{instruction[:50]}...', videos={len(ref_videos)}, images={len(ref_images)}, has_audio={bool(audio)}")
+        # Normalize audio to list
+        if isinstance(raw_audio, str):
+            raw_audio = [raw_audio] if raw_audio else []
+        elif not isinstance(raw_audio, list):
+            raw_audio = []
+
+        # Build rich audio track metadata by tracing back to source nodes
+        audio_tracks = []
+        audio_source_map = {}  # url -> source_node_id
+        for edge in edges:
+            if edge.get("target") == node_id:
+                target_handle = edge.get("targetHandle", "")
+                handle_name = target_handle.split("|")[-1] if "|" in target_handle else target_handle
+                if handle_name == "audio":
+                    source_id = edge.get("source")
+                    source_url = outputs.get(source_id, "")
+                    if source_url:
+                        audio_source_map[source_url] = source_id
+
+        for url in raw_audio:
+            source_id = audio_source_map.get(url)
+            source_node = next((n for n in nodes if n["id"] == source_id), None) if source_id else None
+
+            audio_type = "unknown"
+            duration_seconds = 10
+            description = ""
+
+            if source_node:
+                source_data = source_node.get("data", {})
+                audio_type = source_data.get("audioType", "speech")
+                duration_val = source_data.get("duration", None)
+                if duration_val is not None:
+                    if isinstance(duration_val, str):
+                        duration_seconds = int(duration_val.replace("s", "").strip()) if duration_val.replace("s", "").strip().isdigit() else 10
+                    else:
+                        duration_seconds = int(duration_val)
+                else:
+                    # For speech, estimate from text length (~2.5 words/sec)
+                    prompt_text = source_data.get("prompt", "")
+                    word_count = len(prompt_text.split()) if prompt_text else 0
+                    duration_seconds = max(3, round(word_count / 2.5)) if word_count > 0 else 10
+                description = (source_data.get("prompt", "") or "")[:100]
+
+            audio_tracks.append({
+                "url": url,
+                "type": audio_type,
+                "duration_seconds": duration_seconds,
+                "description": description or f"{audio_type} track",
+            })
+
+        print(f"[NodeRunner] Editor Agent (mode={mode}): instruction='{instruction[:50]}...', videos={len(ref_videos)}, images={len(ref_images)}, audio_tracks={len(audio_tracks)}")
         
         try:
             result = await self.editor_agent.edit_video(
                 instruction=instruction,
                 node_id=node_id,
                 ref_videos=ref_videos,
-                audio=audio,
+                audio_tracks=audio_tracks,
                 text_input=text_input,
                 ref_images=ref_images,
                 mode=mode,

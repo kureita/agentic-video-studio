@@ -85,7 +85,7 @@ After the stack deploys, go to the **AWS Lambda Console** → find `kureita-api-
 | `ELEVENLABS_API_KEY` | *(your key)* |
 | `CORS_ORIGINS` | `https://app.kureita.com` |
 
-> **Alternatively**, add these to the `template.yaml` under `Globals.Function.Environment.Variables` (but keep real secrets out of source control — use AWS Systems Manager Parameter Store or Secrets Manager).
+> **Alternatively**, add these to the `inspiration.yaml` under `Globals.Function.Environment.Variables` (but keep real secrets out of source control — use AWS Systems Manager Parameter Store or Secrets Manager).
 
 ### Step 6 — Point DNS to API Gateway
 
@@ -95,7 +95,7 @@ After deploy, SAM outputs the API Gateway domain. Add a **CNAME** record:
 app-api.kureita.com → <API-Gateway-domain-from-output>.execute-api.ap-south-1.amazonaws.com
 ```
 
-If you set up the custom domain via the SAM template, you'll get a different target from the `ApiDomainName` resource. Check:
+If you set up the custom domain via the SAM inspiration, you'll get a different target from the `ApiDomainName` resource. Check:
 
 ```bash
 aws apigatewayv2 get-domain-name --domain-name app-api.kureita.com --region ap-south-1
@@ -219,4 +219,4 @@ curl https://app.kureita.com
 | API returns 504 (timeout) | API Gateway has 29s limit — long gen calls need async pattern |
 | Web shows "Network error" | Check `NEXT_PUBLIC_API_URL` env var in Amplify, rebuild |
 | CORS errors | Verify `CORS_ORIGINS` in Lambda env includes `https://app.kureita.com` |
-| S3 upload fails | Check Lambda IAM role has S3 access (SAM template handles this) |
+| S3 upload fails | Check Lambda IAM role has S3 access (SAM inspiration handles this) |

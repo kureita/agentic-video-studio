@@ -1,6 +1,6 @@
 import { memo, useState, useRef, useMemo, useCallback, useEffect, ChangeEvent } from "react";
 import { NodeProps, useReactFlow } from "@xyflow/react";
-import { Clapperboard, Loader2, Download, Play, Code2, AlertTriangle, X } from "lucide-react";
+import { Clapperboard, Loader2, Download, Play, Code2, AlertTriangle, X, ChevronDown } from "lucide-react";
 import { NodeWrapper } from "@/components/workflow/node-wrapper";
 import { HighlightedTextarea } from "@/components/workflow/nodes/highlighted-textarea";
 import { useWorkflowStore } from "@/lib/workflow-store";
@@ -122,6 +122,23 @@ export const EditorAgentNode = memo(({ id, selected, data }: NodeProps) => {
     const isRendering = renderState.phase === "rendering";
     const hasError = renderState.phase === "error";
 
+    const ratio = (data.ratio as string) || "16:9";
+
+    const getLayout = (r: string) => {
+        const [w, h] = r.split(':').map(Number);
+
+        if (!w || !h || w > h) {
+            return { width: 400, videoHeight: 400 * (9 / 16) }; // Default / Landscape (400x225)
+        } else if (w === h) {
+            return { width: 320, videoHeight: 320 }; // Square (320x320)
+        } else {
+            // Portrait: minimum width is 300px based on NodeWrapper, scale height accordingly
+            return { width: 300, videoHeight: 300 * (h / w) }; // e.g. 9:16 -> 300x533
+        }
+    };
+
+    const layout = getLayout(ratio);
+
     return (
         <NodeWrapper
             title={`Editor Agent #${useWorkflowStore((state) =>
@@ -150,10 +167,20 @@ export const EditorAgentNode = memo(({ id, selected, data }: NodeProps) => {
             isRunning={isRunning}
             executionStatus={data.executionStatus as "queued" | "running" | "completed" | "failed" | null}
         >
-            <div className="relative bg-muted/30 group/editor transition-all duration-300 ease-in-out overflow-hidden w-[400px]">
+            <div
+                className="relative bg-muted/30 group/editor transition-all duration-300 ease-in-out overflow-hidden"
+                style={{
+                    width: layout.width
+                }}
+            >
 
                 {/* Top Section: Rendered Video */}
-                <div className="relative h-[225px] flex items-center justify-center bg-black">
+                <div
+                    className="relative flex items-center justify-center bg-black"
+                    style={{
+                        height: layout.videoHeight
+                    }}
+                >
                     {hasVideo ? (
                         <div className="relative w-full h-full">
                             <video
@@ -327,12 +354,30 @@ export const EditorAgentNode = memo(({ id, selected, data }: NodeProps) => {
                     {/* Text Input */}
                     <HighlightedTextarea
                         textareaRef={textareaRef}
-                        className="w-full min-h-[120px] bg-transparent border-none px-4 py-3 text-sm font-medium placeholder:text-white/50 focus-visible:outline-none resize-none overflow-y-auto leading-relaxed text-white nodrag nowheel"
+                        className="w-full min-h-[120px] bg-transparent border-none px-4 py-3 pb-8 text-sm font-medium placeholder:text-white/50 focus-visible:outline-none resize-none overflow-y-auto leading-relaxed text-white nodrag nowheel"
                         placeholder="Describe the editing task (e.g., stitch videos, add transitions, apply effects)..."
                         value={typeof data.instruction === 'string' ? data.instruction : ''}
                         onChange={handleTextChange}
                         onKeyDown={(e) => e.stopPropagation()}
                     />
+
+                    {/* Controls Bar */}
+                    <div className="absolute bottom-2 right-2 flex items-center gap-1 opacity-100 transition-all duration-300 z-20">
+                        {/* Ratio Pill */}
+                        <div className="relative h-6 flex items-center gap-1.5 bg-black/60 backdrop-blur-md border border-white/10 rounded-full px-2 text-white/90 hover:bg-black/70 transition-colors flex-shrink-0">
+                            <span className="text-[10px] font-medium">{typeof data.ratio === 'string' ? data.ratio : "16:9"}</span>
+                            <ChevronDown className="w-2.5 h-2.5 text-white/50 flex-shrink-0" />
+                            <select
+                                className="absolute inset-0 opacity-0 cursor-pointer"
+                                value={typeof data.ratio === 'string' ? data.ratio : "16:9"}
+                                onChange={(e) => updateNodeData(id, { ratio: e.target.value })}
+                            >
+                                <option value="16:9">16:9</option>
+                                <option value="9:16">9:16</option>
+                                <option value="1:1">1:1</option>
+                            </select>
+                        </div>
+                    </div>
                 </div>
             </div>
         </NodeWrapper>

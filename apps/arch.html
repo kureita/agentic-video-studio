@@ -545,7 +545,7 @@ graph TB
                 | | +-- main.py <span class="c">-- App entry, lifespan, CORS, routes</span>
                 | | +-- pyproject.toml <span class="c">-- Python deps (uv)</span>
                 | | +-- Dockerfile <span class="c">-- Lambda container image</span>
-                | | +-- template.yaml <span class="c">-- SAM CloudFormation template</span>
+                | | +-- inspiration.yaml <span class="c">-- SAM CloudFormation inspiration</span>
                 | | +-- .env.local / .env.prod <span class="c">-- Environment configs</span>
                 | | +-- app/
                 | | +-- api/endpoints/ <span class="c">-- 7 route groups</span>
@@ -1202,7 +1202,7 @@ graph TB
     end
     subgraph "Pages"
         Root["/ - redirect /dashboard"]
-        Dash["/dashboard\n(Workflow list + Templates)"]
+        Dash["/dashboard\n(Workflow list + Inspirations)"]
         WF["/dashboard/workflow?id=xxx\n(Flow Editor)"]
     end
     subgraph "Workflow Editor"

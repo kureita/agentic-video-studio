@@ -8,7 +8,7 @@ import { Plus, MoreHorizontal, Clock, Trash2, Pencil, Loader2, ArrowRight, Spark
 import { WorkflowPreview } from "@/components/workflow/workflow-preview";
 import { Button } from "@/components/ui/button";
 import { workflowApi, WorkflowListItem } from "@/lib/workflow-api";
-import { workflowInspirations, WorkflowInspiration } from "@/lib/templates"
+import { workflowInspirations, WorkflowInspiration } from "@/lib/inspirations"
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -24,7 +24,7 @@ export default function DashboardPage() {
     // Hero input state
     const [heroInput, setHeroInput] = useState("");
     const [isCreating, setIsCreating] = useState(false);
-    const [creatingTemplateId, setCreatingTemplateId] = useState<string | null>(null);
+    const [creatingInspirationId, setCreatingInspirationId] = useState<string | null>(null);
     const heroInputRef = useRef<HTMLInputElement>(null);
 
     // Fetch workflows on mount
@@ -67,28 +67,28 @@ export default function DashboardPage() {
         }
     }, [heroInput, isCreating, router]);
 
-    const createFromTemplate = useCallback(async (template: WorkflowInspiration) => {
-        if (creatingTemplateId) return;
+    const createFromInspiration = useCallback(async (inspiration: WorkflowInspiration) => {
+        if (creatingInspirationId) return;
 
-        setCreatingTemplateId(template.id);
+        setCreatingInspirationId(inspiration.id);
         try {
             // create the workflow
-            const createResponse = await workflowApi.create(template.name);
+            const createResponse = await workflowApi.create(inspiration.name);
             const newWorkflow = createResponse.data;
 
-            // populate with template nodes and edges
+            // populate with inspiration nodes and edges
             await workflowApi.update(newWorkflow.id, {
-                nodes: template.nodes,
-                edges: template.edges,
+                nodes: inspiration.nodes,
+                edges: inspiration.edges,
             });
 
             router.push(`/dashboard/workflow?id=${newWorkflow.id}`);
         } catch (err) {
             console.error("Failed to create workflow:", err);
             toast.error("Failed to create workflow");
-            setCreatingTemplateId(null);
+            setCreatingInspirationId(null);
         }
-    }, [creatingTemplateId, router]);
+    }, [creatingInspirationId, router]);
 
     const createNewWorkflow = useCallback(async () => {
         try {
@@ -378,7 +378,7 @@ export default function DashboardPage() {
                     </section>
                 )}
 
-                {/* ─── Templates Section ─── */}
+                {/* ─── Inspirations Section ─── */}
                 {!isLoading && (
                     <section>
                         <div className="mb-4">
@@ -388,11 +388,11 @@ export default function DashboardPage() {
                         </div>
 
                         <div className="grid grid-cols-2 md:gird-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                            {workflowInspirations.map((template) => (
+                            {workflowInspirations.map((inspiration) => (
                                 <button
-                                    key={template.id}
-                                    onClick={() => createFromTemplate(template)}
-                                    disabled={!!creatingTemplateId}
+                                    key={inspiration.id}
+                                    onClick={() => createFromInspiration(inspiration)}
+                                    disabled={!!creatingInspirationId}
                                     className="group/tpl text-left transition-all duration-200 focus:outline-none disabled:opacity-70"
                                 >
                                     {/* Thumbnail */}
@@ -401,15 +401,15 @@ export default function DashboardPage() {
                                         "border-border/40 bg-[hsl(230,15%,8%)]",
                                         "group-hover/tpl:border-border/80 group-hover/tpl:shadow-md group-hover/tpl:shadow-primary/5",
                                         "group-focus-visible/tpl:border-primary/40 group-focus-visible/tpl:ring-1 group-focus-visible/tpl:ring-primary/20",
-                                        creatingTemplateId === template.id && "border-primary/40"
+                                        creatingInspirationId === inspiration.id && "border-primary/40"
                                     )}>
                                         <WorkflowPreview
-                                            nodes={template.nodes.map(n => ({
+                                            nodes={inspiration.nodes.map(n => ({
                                                 id: n.id,
                                                 type: n.type,
                                                 position: n.position,
                                             }))}
-                                            edges={template.edges.map(e => ({
+                                            edges={inspiration.edges.map(e => ({
                                                 id: e.id,
                                                 source: e.source,
                                                 target: e.target,
@@ -417,7 +417,7 @@ export default function DashboardPage() {
                                         />
 
                                         {/* Loading overlay */}
-                                        {creatingTemplateId === template.id && (
+                                        {creatingInspirationId === inspiration.id && (
                                             <div className="absolute inset-0 bg-background/60 backdrop-blur-sm flex items-center justify-center">
                                                 <Loader2 className="w-5 h-5 animate-spin text-primary" />
                                             </div>
@@ -426,14 +426,14 @@ export default function DashboardPage() {
 
                                     <div className="mt-2.5 px-0.5">
                                         <h3 className="text-[13px] font-medium text-foreground/85 group-hover/tpl:text-foreground transition-colors">
-                                            {template.name}
+                                            {inspiration.name}
                                         </h3>
                                         <p className="text-[11px] text-muted-foreground/50 mt-0.5">
-                                            {template.description}
+                                            {inspiration.description}
                                         </p>
-                                        {template.insight && (
+                                        {inspiration.insight && (
                                             <p className="text-[10px] text-primary/60 mt-1 font-medium">
-                                                📊 {template.insight}
+                                                📊 {inspiration.insight}
                                             </p>
                                         )}
                                     </div>

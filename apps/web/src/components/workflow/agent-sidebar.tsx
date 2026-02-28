@@ -692,7 +692,7 @@ function CursorInput({
 
                         {/* Submit button */}
                         <button
-                            onClick={onSubmit}
+                            onClick={() => onSubmit()}
                             disabled={(!value.trim() && pendingAttachments.length === 0) || isLoading}
                             className={cn(
                                 "p-1.5 rounded-lg transition-all duration-200 cursor-pointer",
@@ -812,10 +812,10 @@ export function AgentSidebar() {
             ]
             : chatHistory;
 
-    const handleSubmit = async (overrideMessage?: string) => {
+    const handleSubmit = async (overrideMessage?: string | unknown) => {
         let userMessage: string;
 
-        if (overrideMessage) {
+        if (overrideMessage && typeof overrideMessage === 'string') {
             // Auto-prompt: use the override directly
             userMessage = overrideMessage;
         } else {

@@ -1,0 +1,1649 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nike Pegasus — Production Workflow</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: 'base',
+            themeVariables: {
+                primaryColor: '#f5f5f5',
+                primaryTextColor: '#0a0a0a',
+                primaryBorderColor: '#cccccc',
+                lineColor: '#999999',
+                secondaryColor: '#fafafa',
+                tertiaryColor: '#f0f0f0',
+                fontFamily: 'Inter, sans-serif',
+                fontSize: '13px',
+                edgeLabelBackground: '#ffffff'
+            },
+            flowchart: {
+                htmlLabels: true,
+                curve: 'basis',
+                nodeSpacing: 30,
+                rankSpacing: 50,
+                padding: 12
+            }
+        });
+    </script>
+    <style>
+        *,
+        *::before,
+        *::after {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --black: #0a0a0a;
+            --gray-900: #1a1a1a;
+            --gray-800: #2a2a2a;
+            --gray-700: #444444;
+            --gray-600: #555555;
+            --gray-500: #777777;
+            --gray-400: #999999;
+            --gray-300: #bbbbbb;
+            --gray-200: #d5d5d5;
+            --gray-100: #e8e8e8;
+            --gray-50: #f5f5f5;
+            --white: #ffffff;
+            --font-body: 'Inter', -apple-system, sans-serif;
+            --font-mono: 'JetBrains Mono', 'Consolas', monospace;
+        }
+
+        html {
+            font-size: 15px;
+            scroll-behavior: smooth;
+        }
+
+        body {
+            font-family: var(--font-body);
+            color: var(--gray-900);
+            background: var(--white);
+            line-height: 1.65;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .container {
+            max-width: 860px;
+            margin: 0 auto;
+            padding: 0 2rem;
+        }
+
+        /* ---- HEADER ---- */
+        header {
+            padding: 4.5rem 0 3.5rem;
+            border-bottom: 1px solid var(--gray-100);
+        }
+
+        header .overline {
+            font-size: 0.7rem;
+            font-weight: 600;
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            color: var(--gray-400);
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        header h1 {
+            font-size: 2.1rem;
+            font-weight: 700;
+            letter-spacing: -0.03em;
+            line-height: 1.2;
+            color: var(--black);
+            margin-bottom: 0.5rem;
+        }
+
+        header .subtitle {
+            font-size: 1.05rem;
+            color: var(--gray-600);
+            font-weight: 400;
+            max-width: 560px;
+            line-height: 1.6;
+        }
+
+        .meta-strip {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1.8rem;
+            margin-top: 2rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid var(--gray-100);
+        }
+
+        .meta-item {
+            display: flex;
+            flex-direction: column;
+            gap: 0.2rem;
+        }
+
+        .meta-item .label {
+            font-size: 0.65rem;
+            font-weight: 600;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: var(--gray-400);
+        }
+
+        .meta-item .value {
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: var(--gray-800);
+        }
+
+        /* ---- SECTIONS ---- */
+        section {
+            padding: 3.5rem 0;
+            border-bottom: 1px solid var(--gray-100);
+        }
+
+        section:last-of-type {
+            border-bottom: none;
+        }
+
+        .section-header {
+            display: flex;
+            align-items: baseline;
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .section-number {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            font-weight: 500;
+            color: var(--gray-300);
+            flex-shrink: 0;
+            min-width: 2rem;
+        }
+
+        .section-header h2 {
+            font-size: 1.15rem;
+            font-weight: 600;
+            letter-spacing: -0.01em;
+            color: var(--black);
+        }
+
+        .section-desc {
+            color: var(--gray-600);
+            font-size: 0.88rem;
+            margin-bottom: 2rem;
+            padding-left: 3rem;
+            max-width: 620px;
+        }
+
+        /* ---- CONCEPT ---- */
+        .concept-block {
+            background: var(--gray-50);
+            border: 1px solid var(--gray-100);
+            border-radius: 6px;
+            padding: 2rem;
+            margin-left: 3rem;
+        }
+
+        .concept-block h3 {
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: var(--black);
+            margin-bottom: 1.2rem;
+        }
+
+        .beat-list {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 0.8rem;
+        }
+
+        .beat-list li {
+            display: flex;
+            gap: 0.75rem;
+            font-size: 0.85rem;
+            color: var(--gray-700);
+            line-height: 1.55;
+        }
+
+        .beat-tc {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            font-weight: 500;
+            color: var(--gray-400);
+            flex-shrink: 0;
+            min-width: 5.5rem;
+            padding-top: 0.1rem;
+        }
+
+        /* ---- FLOW DIAGRAM ---- */
+        .diagram-wrap {
+            margin-left: 3rem;
+            background: var(--gray-50);
+            border: 1px solid var(--gray-100);
+            border-radius: 6px;
+            padding: 2rem 1.5rem;
+            overflow-x: auto;
+        }
+
+        .diagram-wrap .mermaid {
+            display: flex;
+            justify-content: center;
+        }
+
+        .diagram-wrap .mermaid svg {
+            max-width: 100%;
+            height: auto;
+        }
+
+        .diagram-legend {
+            display: flex;
+            gap: 1.5rem;
+            margin-top: 1.2rem;
+            margin-left: 3rem;
+            flex-wrap: wrap;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            font-size: 0.7rem;
+            font-weight: 500;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--gray-500);
+        }
+
+        .legend-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .legend-dot.img {
+            background: var(--gray-800);
+        }
+
+        .legend-dot.vid {
+            background: var(--gray-500);
+        }
+
+        .legend-dot.aud {
+            background: var(--gray-300);
+        }
+
+        .legend-dot.edt {
+            background: var(--black);
+        }
+
+        /* ---- NODE CARDS ---- */
+        .node-group {
+            margin-left: 3rem;
+            margin-bottom: 2.5rem;
+        }
+
+        .node-group:last-child {
+            margin-bottom: 0;
+        }
+
+        .node-group-header {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            margin-bottom: 1.2rem;
+        }
+
+        .node-group-header i {
+            width: 16px;
+            height: 16px;
+            color: var(--gray-500);
+        }
+
+        .node-group-header h3 {
+            font-size: 0.8rem;
+            font-weight: 600;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: var(--gray-700);
+        }
+
+        .node-card {
+            background: var(--white);
+            border: 1px solid var(--gray-100);
+            border-radius: 6px;
+            padding: 1.5rem 1.8rem;
+            margin-bottom: 1rem;
+            position: relative;
+            transition: border-color 0.15s ease;
+        }
+
+        .node-card:hover {
+            border-color: var(--gray-200);
+        }
+
+        .node-card::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 12px;
+            bottom: 12px;
+            width: 3px;
+            border-radius: 3px;
+        }
+
+        .node-card.type-img::before {
+            background: var(--gray-800);
+        }
+
+        .node-card.type-vid::before {
+            background: var(--gray-500);
+        }
+
+        .node-card.type-aud::before {
+            background: var(--gray-300);
+        }
+
+        .node-card.type-edt::before {
+            background: var(--black);
+        }
+
+        .node-card-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 0.8rem;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+
+        .node-id {
+            font-family: var(--font-mono);
+            font-size: 0.72rem;
+            font-weight: 500;
+            color: var(--gray-400);
+            background: var(--gray-50);
+            padding: 0.15rem 0.5rem;
+            border-radius: 3px;
+            border: 1px solid var(--gray-100);
+        }
+
+        .node-title {
+            font-size: 0.92rem;
+            font-weight: 600;
+            color: var(--black);
+            flex: 1;
+            margin-left: 0.7rem;
+        }
+
+        .node-badge {
+            font-size: 0.62rem;
+            font-weight: 600;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            padding: 0.2rem 0.55rem;
+            border-radius: 3px;
+            border: 1px solid;
+        }
+
+        .node-badge.img {
+            color: var(--gray-700);
+            border-color: var(--gray-300);
+            background: var(--gray-50);
+        }
+
+        .node-badge.vid {
+            color: var(--gray-600);
+            border-color: var(--gray-300);
+            background: var(--gray-50);
+        }
+
+        .node-badge.aud {
+            color: var(--gray-500);
+            border-color: var(--gray-200);
+            background: var(--gray-50);
+        }
+
+        .node-meta-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1.2rem;
+            margin-bottom: 1rem;
+            padding-bottom: 0.8rem;
+            border-bottom: 1px solid var(--gray-100);
+        }
+
+        .node-meta {
+            font-size: 0.75rem;
+            color: var(--gray-500);
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+        }
+
+        .node-meta i {
+            width: 13px;
+            height: 13px;
+        }
+
+        .node-meta strong {
+            font-weight: 600;
+            color: var(--gray-700);
+        }
+
+        .prompt-label {
+            font-size: 0.65rem;
+            font-weight: 600;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: var(--gray-400);
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+        }
+
+        .prompt-label i {
+            width: 12px;
+            height: 12px;
+        }
+
+        .prompt-block {
+            font-family: var(--font-mono);
+            font-size: 0.78rem;
+            line-height: 1.7;
+            color: var(--gray-700);
+            background: var(--gray-50);
+            border: 1px solid var(--gray-100);
+            border-radius: 4px;
+            padding: 1rem 1.2rem;
+            margin-bottom: 1rem;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .node-deps {
+            font-size: 0.75rem;
+            color: var(--gray-500);
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+            margin-top: 0.3rem;
+        }
+
+        .node-deps i {
+            width: 13px;
+            height: 13px;
+        }
+
+        .dep-tag {
+            font-family: var(--font-mono);
+            font-size: 0.68rem;
+            background: var(--gray-50);
+            border: 1px solid var(--gray-100);
+            padding: 0.1rem 0.4rem;
+            border-radius: 3px;
+            color: var(--gray-600);
+        }
+
+        .node-note {
+            font-size: 0.78rem;
+            color: var(--gray-500);
+            font-style: italic;
+            margin-top: 0.7rem;
+            padding-top: 0.7rem;
+            border-top: 1px dashed var(--gray-100);
+        }
+
+        /* ---- EDITOR SECTION ---- */
+        .editor-directive {
+            margin-left: 3rem;
+            background: var(--gray-900);
+            border-radius: 6px;
+            padding: 2rem;
+            overflow-x: auto;
+        }
+
+        .editor-directive pre {
+            font-family: var(--font-mono);
+            font-size: 0.76rem;
+            line-height: 1.75;
+            color: #d4d4d4;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .editor-directive .comment {
+            color: #6a9955;
+        }
+
+        .editor-directive .key {
+            color: #9cdcfe;
+        }
+
+        .editor-directive .value {
+            color: #ce9178;
+        }
+
+        .editor-directive .heading {
+            color: #dcdcaa;
+            font-weight: 600;
+        }
+
+        .editor-directive .divider {
+            color: #555555;
+        }
+
+        .editor-directive .accent {
+            color: #c586c0;
+        }
+
+        /* ---- OUTPUT SPECS ---- */
+        .specs-table {
+            margin-left: 3rem;
+            width: calc(100% - 3rem);
+            border-collapse: collapse;
+        }
+
+        .specs-table th,
+        .specs-table td {
+            text-align: left;
+            padding: 0.7rem 1rem;
+            font-size: 0.82rem;
+            border-bottom: 1px solid var(--gray-100);
+        }
+
+        .specs-table th {
+            font-weight: 600;
+            color: var(--gray-500);
+            font-size: 0.68rem;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            background: var(--gray-50);
+        }
+
+        .specs-table td {
+            color: var(--gray-800);
+        }
+
+        .specs-table td:first-child {
+            font-weight: 500;
+            color: var(--gray-700);
+        }
+
+        .specs-table td code {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            background: var(--gray-50);
+            padding: 0.1rem 0.4rem;
+            border-radius: 3px;
+            border: 1px solid var(--gray-100);
+        }
+
+        /* ---- FOOTER ---- */
+        footer {
+            padding: 2.5rem 0;
+            text-align: center;
+            color: var(--gray-400);
+            font-size: 0.72rem;
+            letter-spacing: 0.05em;
+        }
+
+        /* ---- NAVIGATION ---- */
+        .toc {
+            margin-left: 3rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.3rem;
+        }
+
+        .toc a {
+            font-size: 0.82rem;
+            color: var(--gray-600);
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 0.7rem;
+            padding: 0.35rem 0;
+            transition: color 0.15s ease;
+        }
+
+        .toc a:hover {
+            color: var(--black);
+        }
+
+        .toc a .toc-num {
+            font-family: var(--font-mono);
+            font-size: 0.7rem;
+            color: var(--gray-300);
+            min-width: 1.8rem;
+        }
+
+        /* ---- RESPONSIVE ---- */
+        @media (max-width: 680px) {
+            .container {
+                padding: 0 1.2rem;
+            }
+
+            header {
+                padding: 2.5rem 0 2rem;
+            }
+
+            header h1 {
+                font-size: 1.5rem;
+            }
+
+            section {
+                padding: 2.5rem 0;
+            }
+
+            .node-group,
+            .concept-block,
+            .diagram-wrap,
+            .section-desc,
+            .editor-directive,
+            .toc {
+                margin-left: 0;
+            }
+
+            .specs-table {
+                margin-left: 0;
+                width: 100%;
+            }
+
+            .meta-strip {
+                gap: 1rem;
+            }
+
+            .node-card {
+                padding: 1.2rem;
+            }
+        }
+
+        /* ---- PRINT ---- */
+        @media print {
+            body {
+                font-size: 12px;
+            }
+
+            .container {
+                max-width: 100%;
+            }
+
+            section {
+                break-inside: avoid;
+            }
+
+            .node-card {
+                break-inside: avoid;
+            }
+
+            .editor-directive {
+                background: #f5f5f5;
+            }
+
+            .editor-directive pre {
+                color: #1a1a1a;
+            }
+        }
+    </style>
+
+
+</head>
+
+
+<body>
+    <div class="container">
+        <!-- ============================================ -->
+        <!-- HEADER -->
+        <!-- ============================================ -->
+        <header>
+            <div class="overline">
+                <i data-lucide="clapperboard" style="width:14px;height:14px;"></i>
+                Production Workflow Brief
+            </div>
+            <h1>The Shoe That Runs Without You</h1>
+            <p class="subtitle">AI-generated promotional video for Nike Pegasus. A sentient running shoe, tired of
+                waiting, takes matters into its own sole.</p>
+
+            <div class="meta-strip">
+                <div class="meta-item">
+                    <span class="label">Brand</span>
+                    <span class="value">Nike</span>
+                </div>
+                <div class="meta-item">
+                    <span class="label">Product</span>
+                    <span class="value">Pegasus Running Shoe</span>
+                </div>
+                <div class="meta-item">
+                    <span class="label">Format</span>
+                    <span class="value">9:16 Vertical</span>
+                </div>
+                <div class="meta-item">
+                    <span class="label">Duration</span>
+                    <span class="value">15 seconds</span>
+                </div>
+                <div class="meta-item">
+                    <span class="label">Resolution</span>
+                    <span class="value">1080 x 1920</span>
+                </div>
+                <div class="meta-item">
+                    <span class="label">Frame Rate</span>
+                    <span class="value">30 fps</span>
+                </div>
+                <div class="meta-item">
+                    <span class="label">Total Frames</span>
+                    <span class="value">450</span>
+                </div>
+                <div class="meta-item">
+                    <span class="label">Platform</span>
+                    <span class="value">TikTok / Reels / Shorts</span>
+                </div>
+            </div>
+
+
+        </header>
+        <!-- ============================================ -->
+        <!-- 01 CONTENTS -->
+        <!-- ============================================ -->
+        <section>
+            <div class="section-header">
+                <span class="section-number">01</span>
+                <h2>Contents</h2>
+            </div>
+            <nav class="toc">
+                <a href="#concept"><span class="toc-num">02</span> Creative Concept</a>
+                <a href="#flow"><span class="toc-num">03</span> Canvas Flow Diagram</a>
+                <a href="#images"><span class="toc-num">04</span> Image Nodes &mdash; Style Frames</a>
+                <a href="#videos"><span class="toc-num">05</span> Video Nodes &mdash; Scene Generation</a>
+                <a href="#audio"><span class="toc-num">06</span> Audio Nodes</a>
+                <a href="#editor"><span class="toc-num">07</span> Editor Agent &mdash; Remotion Directive</a>
+                <a href="#output"><span class="toc-num">08</span> Output Specifications</a>
+            </nav>
+        </section>
+        <!-- ============================================ -->
+        <!-- 02 CREATIVE CONCEPT -->
+        <!-- ============================================ -->
+        <section id="concept">
+            <div class="section-header">
+                <span class="section-number">02</span>
+                <h2>Creative Concept</h2>
+            </div>
+            <p class="section-desc">A lone Nike Pegasus sitting on a sidewalk gets tired of waiting for its owner. It
+                starts tapping impatiently, gets up, and sprints through the city on its own. Crosses a finish line.
+                Gets a medal. The AI-generated physics are intentionally imperfect &mdash; the jank is the joke. One
+                punchline: your shoes are more disciplined than you.</p>
+
+            <div class="concept-block">
+                <h3>Shot List &mdash; Beat Breakdown</h3>
+                <ul class="beat-list">
+                    <li>
+                        <span class="beat-tc">0:00 &ndash; 0:01</span>
+                        <span>Hook. Shoe alone on sidewalk. Text overlay sets the premise. Quiet, cinematic.</span>
+                    </li>
+                    <li>
+                        <span class="beat-tc">0:01 &ndash; 0:03</span>
+                        <span>Shoe taps impatiently. Lace rises like a tentacle. Tension builds. Comedic score fades
+                            in.</span>
+                    </li>
+                    <li>
+                        <span class="beat-tc">0:03 &ndash; 0:06</span>
+                        <span>Shoe lifts itself up and starts running. Wobbly, ridiculous form. Tracking shot follows it
+                            down the street.</span>
+                    </li>
+                    <li>
+                        <span class="beat-tc">0:06 &ndash; 0:10</span>
+                        <span>Full sprint through a crowd. Pedestrians confused. Speed ramps. Flash frames. Peak
+                            energy.</span>
+                    </li>
+                    <li>
+                        <span class="beat-tc">0:10 &ndash; 0:13</span>
+                        <span>Finish line. Tape breaks. Confetti. Medal drops. Hero moment. Absurdly triumphant.</span>
+                    </li>
+                    <li>
+                        <span class="beat-tc">0:13 &ndash; 0:15</span>
+                        <span>End card. Tagline fades in. Nike Pegasus. Swoosh. Out.</span>
+                    </li>
+                </ul>
+            </div>
+
+
+        </section>
+
+        <!-- ============================================ -->
+        <!-- 03 FLOW DIAGRAM -->
+        <!-- ============================================ -->
+        <section id="flow">
+            <div class="section-header">
+                <span class="section-number">03</span>
+                <h2>Canvas Flow Diagram</h2>
+            </div>
+            <p class="section-desc">Node graph representing the full asset pipeline. Image nodes produce style frames
+                that feed into video generation as references. All video and audio nodes converge into the editor for
+                final composition.</p>
+
+            <div class="diagram-wrap">
+                <pre class="mermaid">
+
+graph TB
+subgraph IMG ["IMAGE NODES"]
+direction TB
+IMG01["IMG-01\nShoe Hero Reference"]
+IMG02["IMG-02\nUrban Street Environment"]
+IMG03["IMG-03\nFinish Line Environment"]
+IMG04["IMG-04\nEnd Card Layout"]
+end
+
+subgraph VID ["VIDEO NODES"]
+direction TB
+VID01["VID-01\nHook: Shoe on Sidewalk"]
+VID02["VID-02\nImpatient Tap"]
+VID03["VID-03\nShoe Gets Up, Runs"]
+VID04["VID-04\nSprint Through Crowd"]
+VID05["VID-05\nFinish Line Victory"]
+VID06["VID-06\nEnd Card"]
+end
+
+subgraph AUD ["AUDIO NODES"]
+direction TB
+AUD01["AUD-01\nCity Ambient"]
+AUD02["AUD-02\nComedic Score"]
+AUD03["AUD-03\nVictory Fanfare"]
+AUD04["AUD-04\nSwoosh SFX"]
+end
+
+IMG01 --> VID01
+IMG01 --> VID02
+IMG01 --> VID03
+IMG02 --> VID01
+IMG02 --> VID03
+IMG02 --> VID04
+IMG03 --> VID05
+IMG04 --> VID06
+
+VID01 --> EDT
+VID02 --> EDT
+VID03 --> EDT
+VID04 --> EDT
+VID05 --> EDT
+VID06 --> EDT
+
+AUD01 --> EDT
+AUD02 --> EDT
+AUD03 --> EDT
+AUD04 --> EDT
+
+EDT["EDITOR NODE\nRemotion Composition"]
+EDT --> OUT["FINAL RENDER\n1080x1920 / 15s / H.264"]
+</pre>
+            </div>
+            <div class="diagram-legend">
+                <span class="legend-item"><span class="legend-dot img"></span> Image Node</span>
+                <span class="legend-item"><span class="legend-dot vid"></span> Video Node</span>
+                <span class="legend-item"><span class="legend-dot aud"></span> Audio Node</span>
+                <span class="legend-item"><span class="legend-dot edt"></span> Editor / Render</span>
+            </div>
+
+
+        </section>
+        <!-- ============================================ -->
+        <!-- 04 IMAGE NODES -->
+        <!-- ============================================ -->
+        <section id="images">
+            <div class="section-header">
+                <span class="section-number">04</span>
+                <h2>Image Nodes &mdash; Style Frames</h2>
+            </div>
+            <p class="section-desc">Style frame references generated before video production. These anchor visual
+                consistency across scenes and are passed as image references into downstream video nodes.</p>
+
+            <div class="node-group">
+                <div class="node-group-header">
+                    <i data-lucide="image"></i>
+                    <h3>Style Frame Generation</h3>
+                </div>
+
+                <!-- IMG-01 -->
+                <div class="node-card type-img">
+                    <div class="node-card-head">
+                        <span class="node-id">IMG-01</span>
+                        <span class="node-title">Shoe Hero Reference</span>
+                        <span class="node-badge img">Image</span>
+                    </div>
+                    <div class="node-meta-row">
+                        <span class="node-meta"><i data-lucide="ratio"></i> Aspect: <strong>9:16</strong></span>
+                        <span class="node-meta"><i data-lucide="ruler"></i> Resolution:
+                            <strong>1080x1920</strong></span>
+                        <span class="node-meta"><i data-lucide="palette"></i> Style: <strong>Commercial Product
+                                Photography</strong></span>
+                    </div>
+                    <div class="prompt-label"><i data-lucide="terminal"></i> Generation Prompt</div>
+                    <div class="prompt-block">Product photography, Nike Pegasus running shoe, matte gray and volt neon
+                        green colorway, three-quarter angle, sitting upright on raw concrete surface. Harsh directional
+                        sunlight from upper left, sharp cast shadow. Shallow depth of field, background falls to smooth
+                        bokeh. Clean minimal composition, no props, no people. Commercial editorial style, high detail,
+                        photorealistic. Vertical 9:16 frame.</div>
+                    <p class="node-note">This is the hero asset. Every video node featuring the shoe should maintain
+                        visual consistency with this reference &mdash; colorway, angle language, and surface texture.
+                    </p>
+                </div>
+
+                <!-- IMG-02 -->
+                <div class="node-card type-img">
+                    <div class="node-card-head">
+                        <span class="node-id">IMG-02</span>
+                        <span class="node-title">Urban Street Environment</span>
+                        <span class="node-badge img">Image</span>
+                    </div>
+                    <div class="node-meta-row">
+                        <span class="node-meta"><i data-lucide="ratio"></i> Aspect: <strong>9:16</strong></span>
+                        <span class="node-meta"><i data-lucide="ruler"></i> Resolution:
+                            <strong>1080x1920</strong></span>
+                        <span class="node-meta"><i data-lucide="palette"></i> Style: <strong>Cinematic Street
+                                Photography</strong></span>
+                    </div>
+                    <div class="prompt-label"><i data-lucide="terminal"></i> Generation Prompt</div>
+                    <div class="prompt-block">Empty city sidewalk, early morning golden hour. Wet concrete pavement with
+                        subtle reflections. Blurred pedestrians and storefronts in the background at f/1.8 depth of
+                        field. Desaturated cinematic color grading, lifted blacks, warm highlight tones. Wide
+                        establishing composition, low angle close to ground level. Urban street photography. No text, no
+                        logos. Vertical 9:16 frame.</div>
+                    <p class="node-note">Environment reference shared by VID-01, VID-03, and VID-04. The low angle and
+                        wet pavement sell the "shoe-level" perspective.</p>
+                </div>
+
+
+                <!-- IMG-03 -->
+                <div class="node-card type-img">
+                    <div class="node-card-head">
+                        <span class="node-id">IMG-03</span>
+                        <span class="node-title">Finish Line Environment</span>
+                        <span class="node-badge img">Image</span>
+                    </div>
+                    <div class="node-meta-row">
+                        <span class="node-meta"><i data-lucide="ratio"></i> Aspect: <strong>9:16</strong></span>
+                        <span class="node-meta"><i data-lucide="ruler"></i> Resolution:
+                            <strong>1080x1920</strong></span>
+                        <span class="node-meta"><i data-lucide="palette"></i> Style: <strong>Cinematic Sports
+                                Photography</strong></span>
+                    </div>
+                    <div class="prompt-label"><i data-lucide="terminal"></i> Generation Prompt</div>
+                    <div class="prompt-block">Marathon finish line, red and white tape stretched across an empty city
+                        road. Morning light, golden hour flare from behind. Confetti frozen mid-air. Crowd silhouettes
+                        in soft focus background, out of focus bokeh lights. Low angle hero shot looking slightly
+                        upward. Cinematic sports photography, triumphant atmosphere. Desaturated color palette with warm
+                        highlights. No people in foreground. Vertical 9:16 frame.</div>
+                </div>
+
+                <!-- IMG-04 -->
+                <div class="node-card type-img">
+                    <div class="node-card-head">
+                        <span class="node-id">IMG-04</span>
+                        <span class="node-title">End Card Layout</span>
+                        <span class="node-badge img">Image</span>
+                    </div>
+                    <div class="node-meta-row">
+                        <span class="node-meta"><i data-lucide="ratio"></i> Aspect: <strong>9:16</strong></span>
+                        <span class="node-meta"><i data-lucide="ruler"></i> Resolution:
+                            <strong>1080x1920</strong></span>
+                        <span class="node-meta"><i data-lucide="palette"></i> Style: <strong>Graphic Design /
+                                Typography</strong></span>
+                    </div>
+                    <div class="prompt-label"><i data-lucide="terminal"></i> Generation Prompt</div>
+                    <div class="prompt-block">Minimal graphic design layout on solid black background. Clean white
+                        sans-serif typography centered in frame. Upper text area at 40% height, logo area at 70% height.
+                        Pure black and white only, no color, no gradients. Editorial typography poster style. High
+                        contrast. Vertical 9:16 frame.</div>
+                    <p class="node-note">Used as spatial reference only. Actual text and swoosh logo are composited by
+                        the editor node in Remotion with proper font rendering and animation.</p>
+                </div>
+
+            </div>
+
+
+        </section>
+        <!-- ============================================ -->
+        <!-- 05 VIDEO NODES -->
+        <!-- ============================================ -->
+        <section id="videos">
+            <div class="section-header">
+                <span class="section-number">05</span>
+                <h2>Video Nodes &mdash; Scene Generation</h2>
+            </div>
+            <p class="section-desc">Each node generates a single scene clip. Reference images from Section 04 are fed in
+                as style/subject anchors. Clips are generated slightly longer than their final timeline duration to
+                allow trimming flexibility in the editor.</p>
+
+            <div class="node-group">
+                <div class="node-group-header">
+                    <i data-lucide="film"></i>
+                    <h3>Scene Clips</h3>
+                </div>
+
+                <!-- VID-01 -->
+                <div class="node-card type-vid">
+                    <div class="node-card-head">
+                        <span class="node-id">VID-01</span>
+                        <span class="node-title">Hook &mdash; Shoe on Sidewalk</span>
+                        <span class="node-badge vid">Video</span>
+                    </div>
+                    <div class="node-meta-row">
+                        <span class="node-meta"><i data-lucide="clock"></i> Timeline: <strong>0:00 &ndash;
+                                0:01</strong></span>
+                        <span class="node-meta"><i data-lucide="timer"></i> Gen Duration: <strong>3s</strong> (trim to
+                            1s)</span>
+                        <span class="node-meta"><i data-lucide="video"></i> Camera: <strong>Slow push-in</strong></span>
+                    </div>
+                    <div class="node-deps">
+                        <i data-lucide="git-merge"></i> References:
+                        <span class="dep-tag">IMG-01</span>
+                        <span class="dep-tag">IMG-02</span>
+                    </div>
+                    <div class="prompt-label" style="margin-top:1rem;"><i data-lucide="terminal"></i> Generation Prompt
+                    </div>
+                    <div class="prompt-block">A single Nike running shoe sitting upright, alone on a concrete city
+                        sidewalk. Early morning golden hour light. Slow cinematic push-in camera move toward the shoe.
+                        Shallow depth of field, urban environment softly blurred behind. The shoe is completely still.
+                        No people visible, no movement except camera. Quiet, contemplative mood. Commercial film
+                        quality, desaturated color grading, lifted blacks. 9:16 vertical, 3 seconds.</div>
+                    <p class="node-note">Generate at 3 seconds. The editor will use the best 1-second segment where the
+                        framing is tightest. The stillness here is critical &mdash; it makes the movement in VID-02 hit
+                        harder.</p>
+                </div>
+
+
+                <!-- VID-02 -->
+                <div class="node-card type-vid">
+                    <div class="node-card-head">
+                        <span class="node-id">VID-02</span>
+                        <span class="node-title">Impatient Tap</span>
+                        <span class="node-badge vid">Video</span>
+                    </div>
+                    <div class="node-meta-row">
+                        <span class="node-meta"><i data-lucide="clock"></i> Timeline: <strong>0:01 &ndash;
+                                0:03</strong></span>
+                        <span class="node-meta"><i data-lucide="timer"></i> Gen Duration: <strong>4s</strong> (trim to
+                            2s)</span>
+                        <span class="node-meta"><i data-lucide="video"></i> Camera: <strong>Static, low angle, slight
+                                zoom</strong></span>
+                    </div>
+                    <div class="node-deps">
+                        <i data-lucide="git-merge"></i> References:
+                        <span class="dep-tag">IMG-01</span>
+                    </div>
+                    <div class="prompt-label" style="margin-top:1rem;"><i data-lucide="terminal"></i> Generation Prompt
+                    </div>
+                    <div class="prompt-block">Close-up of a Nike running shoe on concrete. The shoe begins tapping its
+                        toe impatiently, as if a foot is inside but there is no foot, the shoe moves on its own. The
+                        shoelace slowly rises upward and sways like a living tentacle, searching the air. Slightly
+                        unnatural physics, the movement is organic but wrong. Low angle shot, shallow depth of field.
+                        Cinematic lighting, morning sun. The motion starts subtle and becomes increasingly agitated.
+                        Eerie yet comedic tone. 9:16 vertical, 4 seconds.</div>
+                    <p class="node-note">The lace movement is the key moment. AI physics will make it look slightly
+                        alien &mdash; do not attempt to correct this. If the generation produces extra visual artifacts
+                        on the shoe's surface, regenerate only if the shoe silhouette is unrecognizable.</p>
+                </div>
+
+                <!-- VID-03 -->
+                <div class="node-card type-vid">
+                    <div class="node-card-head">
+                        <span class="node-id">VID-03</span>
+                        <span class="node-title">Shoe Gets Up and Runs</span>
+                        <span class="node-badge vid">Video</span>
+                    </div>
+                    <div class="node-meta-row">
+                        <span class="node-meta"><i data-lucide="clock"></i> Timeline: <strong>0:03 &ndash;
+                                0:06</strong></span>
+                        <span class="node-meta"><i data-lucide="timer"></i> Gen Duration: <strong>5s</strong> (trim to
+                            3s)</span>
+                        <span class="node-meta"><i data-lucide="video"></i> Camera: <strong>Side tracking
+                                shot</strong></span>
+                    </div>
+                    <div class="node-deps">
+                        <i data-lucide="git-merge"></i> References:
+                        <span class="dep-tag">IMG-01</span>
+                        <span class="dep-tag">IMG-02</span>
+                    </div>
+                    <div class="prompt-label" style="margin-top:1rem;"><i data-lucide="terminal"></i> Generation Prompt
+                    </div>
+                    <div class="prompt-block">A single Nike running shoe lifts itself off the ground and begins running
+                        down a city sidewalk entirely on its own, no foot inside. The shoe wobbles, stumbles, and has
+                        terrible running form, bouncing unevenly and flopping side to side. Comedic and absurd motion.
+                        Side-angle tracking shot following the shoe at shoe-level as it moves left to right. Slight
+                        motion blur. Urban street with golden hour morning light, shallow depth of field on background.
+                        The shoe is determined despite looking ridiculous. Cinematic quality, desaturated tones. 9:16
+                        vertical, 5 seconds.</div>
+                    <p class="node-note">This is the comedic core of the video. The wobble and bad form are essential
+                        &mdash; this is where AI-generated physics become a creative asset. Generate 3-4 variations and
+                        select the one with the most personality in the shoe's "gait." The tracking camera should keep
+                        the shoe roughly centered.</p>
+                </div>
+
+                <!-- VID-04 -->
+                <div class="node-card type-vid">
+                    <div class="node-card-head">
+                        <span class="node-id">VID-04</span>
+                        <span class="node-title">Sprint Through Crowd</span>
+                        <span class="node-badge vid">Video</span>
+                    </div>
+                    <div class="node-meta-row">
+                        <span class="node-meta"><i data-lucide="clock"></i> Timeline: <strong>0:06 &ndash;
+                                0:10</strong></span>
+                        <span class="node-meta"><i data-lucide="timer"></i> Gen Duration: <strong>6s</strong> (trim to
+                            4s)</span>
+                        <span class="node-meta"><i data-lucide="video"></i> Camera: <strong>Dynamic low-angle
+                                tracking</strong></span>
+                    </div>
+                    <div class="node-deps">
+                        <i data-lucide="git-merge"></i> References:
+                        <span class="dep-tag">IMG-01</span>
+                        <span class="dep-tag">IMG-02</span>
+                    </div>
+                    <div class="prompt-label" style="margin-top:1rem;"><i data-lucide="terminal"></i> Generation Prompt
+                    </div>
+                    <div class="prompt-block">A Nike running shoe sprinting at high speed down a busy city sidewalk by
+                        itself, weaving between the legs of pedestrians. The pedestrians look down confused and startled
+                        as the shoe races past. Dynamic low-angle tracking shot following the shoe, camera close to the
+                        ground. Heavy motion blur on background elements, shoe stays sharp. Action movie energy, fast
+                        and kinetic. The shoe dodges obstacles and cuts between people. Urban environment, warm golden
+                        light, cinematic film grain. The scene feels chaotic and exhilarating. 9:16 vertical, 6 seconds.
+                    </div>
+                    <p class="node-note">Peak energy scene. The editor will apply speed ramping (80% slow at entry,
+                        accelerating to 120%) and single-frame white flash interrupts at the cut points. Generate with
+                        slightly more pedestrians than needed &mdash; the density sells the chaos.</p>
+                </div>
+
+                <!-- VID-05 -->
+                <div class="node-card type-vid">
+                    <div class="node-card-head">
+                        <span class="node-id">VID-05</span>
+                        <span class="node-title">Finish Line Victory</span>
+                        <span class="node-badge vid">Video</span>
+                    </div>
+                    <div class="node-meta-row">
+                        <span class="node-meta"><i data-lucide="clock"></i> Timeline: <strong>0:10 &ndash;
+                                0:13</strong></span>
+                        <span class="node-meta"><i data-lucide="timer"></i> Gen Duration: <strong>5s</strong> (trim to
+                            3s)</span>
+                        <span class="node-meta"><i data-lucide="video"></i> Camera: <strong>Low angle hero shot, slight
+                                slow-motion</strong></span>
+                    </div>
+                    <div class="node-deps">
+                        <i data-lucide="git-merge"></i> References:
+                        <span class="dep-tag">IMG-01</span>
+                        <span class="dep-tag">IMG-03</span>
+                    </div>
+                    <div class="prompt-label" style="margin-top:1rem;"><i data-lucide="terminal"></i> Generation Prompt
+                    </div>
+                    <div class="prompt-block">A Nike running shoe breaking through a marathon finish line tape, crossing
+                        the line triumphantly by itself, no runner. Slow motion. Confetti explodes from above and falls
+                        around the shoe. A gold medal on a ribbon drops from the sky and lands on top of the shoe. The
+                        shoe stands perfectly still after crossing, as if posing victoriously. Low angle hero shot
+                        looking up at the shoe, dramatic backlighting with golden lens flare. Crowd silhouettes cheering
+                        in soft focus background. Epic cinematic sports photography feel, triumphant and absurd. 9:16
+                        vertical, 5 seconds.</div>
+                    <p class="node-note">The medal landing is the punctuation mark. If AI fails to generate a convincing
+                        medal drop, the editor node will composite a medal graphic in Remotion with a physics-based drop
+                        animation as fallback.</p>
+                </div>
+
+
+                <!-- VID-06 -->
+                <div class="node-card type-vid">
+                    <div class="node-card-head">
+                        <span class="node-id">VID-06</span>
+                        <span class="node-title">End Card Background</span>
+                        <span class="node-badge vid">Video</span>
+                    </div>
+                    <div class="node-meta-row">
+                        <span class="node-meta"><i data-lucide="clock"></i> Timeline: <strong>0:13 &ndash;
+                                0:15</strong></span>
+                        <span class="node-meta"><i data-lucide="timer"></i> Gen Duration: <strong>3s</strong> (trim to
+                            2s)</span>
+                        <span class="node-meta"><i data-lucide="video"></i> Camera: <strong>Static</strong></span>
+                    </div>
+                    <div class="node-deps">
+                        <i data-lucide="git-merge"></i> References:
+                        <span class="dep-tag">IMG-04</span>
+                    </div>
+                    <div class="prompt-label" style="margin-top:1rem;"><i data-lucide="terminal"></i> Generation Prompt
+                    </div>
+                    <div class="prompt-block">Slow, subtle particle dust floating in a beam of light against a pure
+                        black background. Minimal, almost invisible movement. Tiny white and gold specks drifting
+                        downward very slowly. Cinematic, elegant, quiet. The particles are barely there, just enough to
+                        make the black feel alive. 9:16 vertical, 3 seconds.</div>
+                    <p class="node-note">This is a background texture layer only. All text, logo, and animations for the
+                        end card are handled by Remotion in the editor node. This just prevents a dead-flat black screen
+                        and adds subtle life behind the typography.</p>
+                </div>
+
+            </div>
+
+
+        </section>
+        <!-- ============================================ -->
+        <!-- 06 AUDIO NODES -->
+        <!-- ============================================ -->
+        <section id="audio">
+            <div class="section-header">
+                <span class="section-number">06</span>
+                <h2>Audio Nodes</h2>
+            </div>
+            <p class="section-desc">Four audio assets covering ambient sound, score, fanfare, and a branded sound
+                effect. The editor handles all mixing, volume automation, and sync. Each node generates raw audio at the
+                specified duration.</p>
+
+            <div class="node-group">
+                <div class="node-group-header">
+                    <i data-lucide="volume-2"></i>
+                    <h3>Audio Generation</h3>
+                </div>
+
+                <!-- AUD-01 -->
+                <div class="node-card type-aud">
+                    <div class="node-card-head">
+                        <span class="node-id">AUD-01</span>
+                        <span class="node-title">City Ambient</span>
+                        <span class="node-badge aud">Audio</span>
+                    </div>
+                    <div class="node-meta-row">
+                        <span class="node-meta"><i data-lucide="clock"></i> Duration: <strong>15 seconds</strong></span>
+                        <span class="node-meta"><i data-lucide="activity"></i> Role: <strong>Background
+                                bed</strong></span>
+                        <span class="node-meta"><i data-lucide="sliders-horizontal"></i> Mix level: <strong>-12dB to
+                                -14dB</strong></span>
+                    </div>
+                    <div class="prompt-label"><i data-lucide="terminal"></i> Generation Prompt</div>
+                    <div class="prompt-block">Quiet early morning city ambience. Distant traffic hum, no horns. Soft
+                        bird calls, occasional. Gentle urban atmosphere, realistic field recording style. Subtle and
+                        understated, designed to sit beneath music and sound effects without competing. Stereo, warm
+                        tone, no wind noise. 15 seconds, seamless loop-friendly.</div>
+                </div>
+
+                <!-- AUD-02 -->
+                <div class="node-card type-aud">
+                    <div class="node-card-head">
+                        <span class="node-id">AUD-02</span>
+                        <span class="node-title">Comedic Tension Score</span>
+                        <span class="node-badge aud">Audio</span>
+                    </div>
+                    <div class="node-meta-row">
+                        <span class="node-meta"><i data-lucide="clock"></i> Duration: <strong>12 seconds</strong></span>
+                        <span class="node-meta"><i data-lucide="activity"></i> Role: <strong>Underscore</strong></span>
+                        <span class="node-meta"><i data-lucide="sliders-horizontal"></i> Mix level: <strong>-8dB to -4dB
+                                (builds)</strong></span>
+                    </div>
+                    <div class="prompt-label"><i data-lucide="terminal"></i> Generation Prompt</div>
+                    <div class="prompt-block">Orchestral comedic underscore. Starts with quiet plucked pizzicato strings
+                        creating a sense of mischief and curiosity. Playful woodwind accents join at 3 seconds. The
+                        energy builds progressively, adding snare rolls and brass stabs. By 8 seconds the piece is at
+                        full chaotic energy, fast-paced and kinetic, like an action comedy chase scene. Think the tone
+                        of a Wes Anderson film score crossed with a heist movie trailer. Whimsical but cinematic. Ends
+                        abruptly at 12 seconds on a hard stop, no fade. Orchestral instruments only, no synths. 12
+                        seconds.</div>
+                    <p class="node-note">The hard stop at the end is intentional &mdash; it cuts to silence exactly when
+                        the finish line fanfare takes over. The editor aligns the score's peak energy with the sprint
+                        scene (VID-04).</p>
+                </div>
+
+
+                <!-- AUD-03 -->
+                <div class="node-card type-aud">
+                    <div class="node-card-head">
+                        <span class="node-id">AUD-03</span>
+                        <span class="node-title">Victory Fanfare</span>
+                        <span class="node-badge aud">Audio</span>
+                    </div>
+                    <div class="node-meta-row">
+                        <span class="node-meta"><i data-lucide="clock"></i> Duration: <strong>4 seconds</strong></span>
+                        <span class="node-meta"><i data-lucide="activity"></i> Role: <strong>Punctuation /
+                                transition</strong></span>
+                        <span class="node-meta"><i data-lucide="sliders-horizontal"></i> Mix level:
+                            <strong>-2dB</strong></span>
+                    </div>
+                    <div class="prompt-label"><i data-lucide="terminal"></i> Generation Prompt</div>
+                    <div class="prompt-block">Short epic orchestral victory fanfare. Bright brass section playing a
+                        triumphant 4-note ascending melody. Timpani hit on the downbeat. Cymbal crash. The tone is
+                        heroic but slightly over-the-top, as if celebrating something absurdly small with
+                        disproportionate grandeur. Think Olympic medal ceremony compressed into 3 seconds. Punchy, loud,
+                        then fading to silence over the final second. Orchestral only. 4 seconds.</div>
+                </div>
+
+                <!-- AUD-04 -->
+                <div class="node-card type-aud">
+                    <div class="node-card-head">
+                        <span class="node-id">AUD-04</span>
+                        <span class="node-title">Swoosh Sound Effect</span>
+                        <span class="node-badge aud">Audio</span>
+                    </div>
+                    <div class="node-meta-row">
+                        <span class="node-meta"><i data-lucide="clock"></i> Duration: <strong>1.5
+                                seconds</strong></span>
+                        <span class="node-meta"><i data-lucide="activity"></i> Role: <strong>Logo sting</strong></span>
+                        <span class="node-meta"><i data-lucide="sliders-horizontal"></i> Mix level:
+                            <strong>-3dB</strong></span>
+                    </div>
+                    <div class="prompt-label"><i data-lucide="terminal"></i> Generation Prompt</div>
+                    <div class="prompt-block">Clean sharp whoosh cutting through air, left to right pan, followed by a
+                        deep subtle bass drop impact. Modern sound design, punchy and tight. The whoosh is fast, under
+                        half a second, the bass hit resonates for another second then fades. Cinematic trailer style.
+                        1.5 seconds total.</div>
+                    <p class="node-note">Syncs to the Nike swoosh logo reveal on the end card. The editor triggers this
+                        at the exact frame the logo begins its scale-in animation.</p>
+                </div>
+
+            </div>
+
+
+        </section>
+
+
+        <!-- ============================================ -->
+        <!-- 07 EDITOR AGENT -->
+        <!-- ============================================ -->
+        <section id="editor">
+            <div class="section-header">
+                <span class="section-number">07</span>
+                <h2>Editor Agent &mdash; Remotion Directive</h2>
+            </div>
+            <p class="section-desc">The complete prompt passed to the editor agent. This instructs the LLM-powered
+                Remotion compositor on timeline assembly, text overlays, motion graphics, audio mixing, effects, and
+                export. This is the final node in the pipeline &mdash; it consumes all upstream outputs.</p>
+
+            <div class="editor-directive">
+                <pre><span class="comment">// ──────────────────────────────────────────────────────</span>
+
+<span class="comment">// EDITOR AGENT — REMOTION COMPOSITION DIRECTIVE</span>
+<span class="comment">// Project: Nike Pegasus — "The Shoe That Runs Without You"</span>
+<span class="comment">// ──────────────────────────────────────────────────────</span>
+
+<span class="heading">PROJECT CONFIGURATION</span>
+<span class="divider">────────────────────────────────────────────────────────</span>
+<span class="key">Canvas</span> <span class="value">1080 x 1920 (9:16 vertical)</span>
+<span class="key">Duration</span> <span class="value">15 seconds</span>
+<span class="key">Frame rate</span> <span class="value">30 fps</span>
+<span class="key">Total frames</span> <span class="value">450</span>
+<span class="key">Background</span> <span class="value">#000000 (solid black fallback)</span>
+<span class="key">Primary font</span> <span class="value">Inter (Google Fonts — load weights 400, 500, 600, 700)</span>
+<span class="key">Mono font</span> <span class="value">JetBrains Mono (fallback for any debug/technical overlays)</span>
+
+<span class="heading">INPUT ASSETS</span>
+<span class="divider">────────────────────────────────────────────────────────</span>
+<span class="key">VID-01</span> shoe_hook.mp4 ~3s Scene 1 — Shoe on sidewalk
+<span class="key">VID-02</span> shoe_tap.mp4 ~4s Scene 2 — Impatient tap
+<span class="key">VID-03</span> shoe_runs.mp4 ~5s Scene 3 — Shoe gets up, runs
+<span class="key">VID-04</span> shoe_sprint.mp4 ~6s Scene 4 — Sprint through crowd
+<span class="key">VID-05</span> shoe_finish.mp4 ~5s Scene 5 — Finish line
+<span class="key">VID-06</span> endcard_bg.mp4 ~3s Scene 6 — End card background
+<span class="key">AUD-01</span> city_ambient.wav 15s Ambient bed
+<span class="key">AUD-02</span> comedic_score.wav 12s Underscore
+<span class="key">AUD-03</span> victory_fanfare.wav 4s Finish sting
+<span class="key">AUD-04</span> swoosh_sfx.wav 1.5s Logo sound
+<span class="key">ASSET</span> nike_swoosh.svg Nike swoosh vector (white)
+
+<span class="heading">TIMELINE</span>
+<span class="divider">────────────────────────────────────────────────────────</span>
+
+<span class="accent">SCENE 1 — HOOK</span>
+<span class="key">Frames</span> 0 – 30 (0:00 – 0:01)
+<span class="key">Source</span> VID-01 — trim to best 1s segment (prefer tightest framing)
+<span class="key">Audio</span> AUD-01 at -12dB, fade in from silence over 10 frames
+<span class="key">Text overlay</span> “POV: You said you’d go running today”
+Font: Inter Bold, 44px
+Color: #FFFFFF
+Position: center horizontally, Y at 16% from top
+Drop shadow: 0px 2px 8px rgba(0,0,0,0.6)
+Animation:
+— Frames 0–8: opacity 0 → 1, translateY +12px → 0px (ease-out)
+— Frames 8–25: hold
+— Frames 25–30: opacity 1 → 0
+<span class="key">Transition</span> Hard cut to Scene 2
+
+
+<span class="accent">SCENE 2 — IMPATIENT TAP</span>
+<span class="key">Frames</span> 30 – 90 (0:01 – 0:03)
+<span class="key">Source</span> VID-02 — trim to best 2s segment with clear lace movement
+<span class="key">Audio</span> AUD-01 continues at -12dB
+AUD-02 begins at frame 30, fade in over 15 frames to -8dB
+<span class="key">Effect</span> Subtle slow zoom: scale 1.00 → 1.03 over 60 frames (ease-in-out)
+<span class="key">Text overlay</span> None
+<span class="key">Transition</span> Hard cut to Scene 3
+
+<span class="accent">SCENE 3 — SHOE RUNS</span>
+<span class="key">Frames</span> 90 – 180 (0:03 – 0:06)
+<span class="key">Source</span> VID-03 — trim to best 3s with visible wobble and forward motion
+<span class="key">Audio</span> AUD-02 builds from -8dB to -6dB over this segment
+AUD-01 at -14dB (pushed back)
+<span class="key">Effect</span> None — the tracking shot provides native motion
+<span class="key">Text overlay</span> None
+<span class="key">Transition</span> Whip pan blur — 4-frame directional motion blur overlay
+Direction: left to right, 40px horizontal blur
+Opacity: 0 → 0.7 → 0 across frames 177–180
+
+<span class="accent">SCENE 4 — SPRINT THROUGH CROWD</span>
+<span class="key">Frames</span> 180 – 300 (0:06 – 0:10)
+<span class="key">Source</span> VID-04 — trim to best 4s with visible pedestrian reactions
+<span class="key">Audio</span> AUD-02 at peak intensity -4dB
+AUD-01 fades out by frame 200 (duck to -20dB)
+<span class="key">Speed ramp</span> Frames 180–220: playback at 80% speed (slow entry)
+Frames 220–300: accelerate to 120% speed (frantic energy)
+<span class="key">Flash frames</span> Insert 1-frame white (#FFFFFF) at 40% opacity at:
+Frame 230, Frame 260, Frame 285
+Purpose: pattern interrupts that spike attention
+<span class="key">Effect</span> Slight handheld shake — 2px random X/Y offset per frame
+Adds gritty energy to the otherwise smooth AI output
+<span class="key">Text overlay</span> None
+<span class="key">Transition</span> Impact zoom: scale 1.0 → 1.12 over 2 frames (298–300)
+then snap to Scene 5 at 1.0
+
+<span class="accent">SCENE 5 — FINISH LINE</span>
+<span class="key">Frames</span> 300 – 390 (0:10 – 0:13)
+<span class="key">Source</span> VID-05 — select segment with tape-break and confetti visible
+<span class="key">Audio</span> AUD-02 hard stop at frame 300 (immediate cut, no fade)
+AUD-03 begins at frame 300 at -2dB
+The silence-to-fanfare contrast is the audio punchline
+<span class="key">Lens flare</span> Animated anamorphic lens flare overlay
+Sweeping left to right over 60 frames (300–360)
+Opacity: 0 → 0.3 → 0, warm tone (#FFF5E0)
+<span class="key">Confetti</span> If VID-05 confetti is insufficient, layer a Remotion particle
+system: gold (#D4A547) and white (#FFFFFF) rectangles,
+4x8px, falling from top, slight rotation, 40 particles,
+gravity: 0.15, wind: 0.02 (rightward drift)
+<span class="key">Text overlay</span> None
+<span class="key">Transition</span> Fade to black over 15 frames (375–390)
+Ease-in opacity curve (slow start, fast at end)
+
+
+<span class="accent">SCENE 6 — END CARD</span>
+<span class="key">Frames</span> 390 – 450 (0:13 – 0:15)
+<span class="key">Source</span> VID-06 as background layer at 60% opacity over #000000
+<span class="key">Audio</span> AUD-03 fading out naturally (tail reverb)
+AUD-04 triggers at frame 420 at -3dB (swoosh SFX)
+<span class="key">Text layer 1</span> “Your shoes have more discipline than you.”
+Font: Inter Medium, 34px
+Color: #FFFFFF
+Position: center X, Y at 40%
+Letter-spacing: -0.01em
+Line-height: 1.35
+Animation:
+Frames 390–405: opacity 0 → 1, translateY +20px → 0px
+Easing: cubic-bezier(0.16, 1, 0.3, 1)
+
+<span class="key">Text layer 2</span> “Nike Pegasus”
+Font: Inter Light, 22px
+Color: #999999
+Position: center X, Y at 53%
+Letter-spacing: 0.04em
+Animation:
+Frames 405–418: opacity 0 → 1, translateY +14px → 0px
+Easing: cubic-bezier(0.16, 1, 0.3, 1)
+
+<span class="key">Logo layer</span> nike_swoosh.svg
+Color: #FFFFFF
+Width: 56px, auto height
+Position: center X, Y at 68%
+Animation:
+Frames 418–428: opacity 0 → 1, scale 0.85 → 1.0
+Easing: cubic-bezier(0.34, 1.56, 0.64, 1)
+(slight overshoot bounce on scale)
+<span class="accent">SYNC: Frame 420 = AUD-04 swoosh hit</span>
+
+<span class="heading">GLOBAL POST-PROCESSING</span>
+<span class="divider">────────────────────────────────────────────────────────</span>
+<span class="key">Color grade</span> Apply to entire timeline:
+Saturation: 0.85 (15% desaturation)
+Blacks lift: +8 (via curves — raise shadow floor)
+Highlights warmth: shift +5 toward warm (#FFF8F0 tint at 3%)
+Contrast: 1.05 (subtle increase)
+
+<span class="key">Film grain</span> Overlay noise texture at 2.5% opacity across all frames
+Monochromatic grain, animated (different noise per frame)
+Adds texture that masks AI smoothness
+
+<span class="key">Vignette</span> Subtle radial darkening
+Radius: 85% of frame, feather: 40%
+Opacity: 12%
+Center: 50% 45% (slightly above center)
+
+<span class="key">Safe zones</span> Keep all text and critical action within:
+Top: 10% margin (platform UI overlap)
+Bottom: 15% margin (captions, engagement bar)
+Sides: 5% margin
+
+<span class="heading">AUDIO MASTER</span>
+<span class="divider">────────────────────────────────────────────────────────</span>
+<span class="key">Bus routing</span> Ambient (AUD-01) → Bus A → Master
+Score (AUD-02) → Bus B → Master
+SFX (AUD-03/04) → Bus C → Master
+
+<span class="key">Master chain</span> Limiter: ceiling -1.0dB, release 100ms
+Stereo width: 90% (slight narrowing for phone speakers)
+High-pass filter: 60Hz (remove sub-bass rumble)
+
+<span class="key">Ducking</span> When AUD-03 or AUD-04 play, duck AUD-01 by additional -6dB
+Attack: 10ms, Release: 200ms
+
+
+<span class="heading">EXPORT SETTINGS</span>
+<span class="divider">────────────────────────────────────────────────────────</span>
+<span class="key">Codec</span> H.264 (Main Profile, Level 4.0)
+<span class="key">Container</span> MP4
+<span class="key">Resolution</span> 1080 x 1920
+<span class="key">Frame rate</span> 30 fps (constant)
+<span class="key">Video bitrate</span> 8 Mbps (CBR)
+<span class="key">Audio codec</span> AAC-LC
+<span class="key">Audio bitrate</span> 192 kbps
+<span class="key">Channels</span> Stereo
+<span class="key">Sample rate</span> 44100 Hz
+<span class="key">Filename</span> nike_pegasus_shoe_runs_v1.mp4
+
+<span class="comment">// ──────────────────────────────────────────────────────</span>
+<span class="comment">// QUALITY CHECKLIST (verify before final export)</span>
+<span class="comment">// ──────────────────────────────────────────────────────</span>
+<span class="comment">// [ ] Hook text fully visible and legible within first 30 frames</span>
+<span class="comment">// [ ] No AI-generated text/watermarks visible in any video clip</span>
+<span class="comment">// [ ] Shoe silhouette recognizable as Nike Pegasus in all scenes</span>
+<span class="comment">// [ ] Audio transitions clean — no pops, clicks, or phase issues</span>
+<span class="comment">// [ ] Score hard-stop at frame 300 aligns with Scene 5 cut</span>
+<span class="comment">// [ ] Swoosh SFX at frame 420 syncs with logo animation start</span>
+<span class="comment">// [ ] All text within safe zones (10% top, 15% bottom, 5% sides)</span>
+<span class="comment">// [ ] Film grain visible but not distracting at 1x playback speed</span>
+<span class="comment">// [ ] End card holds for minimum 1.5 seconds with all elements visible</span>
+<span class="comment">// [ ] Total duration exactly 15.000 seconds / 450 frames</span></pre>
+            </div>
+
+
+        </section>
+        <!-- ============================================ -->
+        <!-- 08 OUTPUT SPECS -->
+        <!-- ============================================ -->
+        <section id="output">
+            <div class="section-header">
+                <span class="section-number">08</span>
+                <h2>Output Specifications</h2>
+            </div>
+            <p class="section-desc">Final deliverable format. The primary export targets TikTok and Instagram Reels. A
+                secondary export can be derived for YouTube Shorts by adjusting the safe zone margins.</p>
+
+            <table class="specs-table">
+                <thead>
+                    <tr>
+                        <th>Parameter</th>
+                        <th>Value</th>
+                        <th>Notes</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Resolution</td>
+                        <td><code>1080 x 1920</code></td>
+                        <td>9:16 vertical</td>
+                    </tr>
+                    <tr>
+                        <td>Duration</td>
+                        <td><code>15.000s</code></td>
+                        <td>450 frames at 30fps</td>
+                    </tr>
+                    <tr>
+                        <td>Video codec</td>
+                        <td><code>H.264 Main</code></td>
+                        <td>Maximum platform compatibility</td>
+                    </tr>
+                    <tr>
+                        <td>Video bitrate</td>
+                        <td><code>8 Mbps CBR</code></td>
+                        <td>High quality for upload, platforms re-encode</td>
+                    </tr>
+                    <tr>
+                        <td>Audio codec</td>
+                        <td><code>AAC-LC 192kbps</code></td>
+                        <td>Stereo, 44.1kHz</td>
+                    </tr>
+                    <tr>
+                        <td>Container</td>
+                        <td><code>.mp4</code></td>
+                        <td>Fast-start (moov atom at front)</td>
+                    </tr>
+                    <tr>
+                        <td>Color space</td>
+                        <td><code>BT.709</code></td>
+                        <td>Standard for web delivery</td>
+                    </tr>
+                    <tr>
+                        <td>File size (est.)</td>
+                        <td><code>~15 MB</code></td>
+                        <td>Within all platform upload limits</td>
+                    </tr>
+                    <tr>
+                        <td>Filename</td>
+                        <td><code>nike_pegasus_shoe_runs_v1.mp4</code></td>
+                        <td>Increment version on re-renders</td>
+                    </tr>
+                </tbody>
+            </table>
+
+
+        </section>
+    </div>
+    <footer>
+        <div class="container">
+            Nike Pegasus &mdash; AI Production Workflow &mdash; February 2026
+        </div>
+    </footer>
+    <script>
+        lucide.createIcons();
+    </script>
+</body>
+
+</html>

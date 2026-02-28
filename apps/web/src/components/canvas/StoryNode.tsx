@@ -15,7 +15,7 @@ import {
   useCanvasStore,
   visualStyleOptions,
   durationOptions,
-  storyTemplates,
+  storyInspirations,
   SceneData,
 } from "@/lib/canvas-store";
 import { canvasApi } from "@/lib/api";
@@ -44,17 +44,17 @@ export const StoryNode = memo(function StoryNode({ data }: NodeProps<Node<StoryN
   const [isEditing, setIsEditing] = useState(false);
   const [editedSynopsis, setEditedSynopsis] = useState("");
   const [editedScenes, setEditedScenes] = useState<{ id: number; description: string; visual_prompt: string }[]>([]);
-  const [showTemplates, setShowTemplates] = useState(true);
+  const [showInspirations, setShowInspirations] = useState(true);
   const [isImproving, setIsImproving] = useState(false);
 
   const isLoading = nodeStatuses.story === "loading";
 
-  const handleSelectTemplate = (templateId: string) => {
-    const template = storyTemplates.find((t) => t.id === templateId);
-    if (template) {
-      setStoryOptions(template.options);
+  const handleSelectInspiration = (inspirationId: string) => {
+    const inspiration = storyInspirations.find((i) => i.id === inspirationId);
+    if (inspiration) {
+      setStoryOptions(inspiration.options);
     }
-    setShowTemplates(false);
+    setShowInspirations(false);
   };
 
   const handleGenerateStory = async () => {
@@ -205,26 +205,26 @@ export const StoryNode = memo(function StoryNode({ data }: NodeProps<Node<StoryN
           )}
         </div>
 
-        {/* Templates or Options - Before story generation */}
+        {/* Inspirations or Options - Before story generation */}
         {!storyData && !isEditing && (
           <>
-            {showTemplates ? (
+            {showInspirations ? (
               <div className="space-y-3">
-                <p className="text-sm font-medium text-foreground">Quick Start Templates</p>
+                <p className="text-sm font-medium text-foreground">Quick Start Inspirations</p>
                 <div className="grid grid-cols-2 gap-2">
-                  {storyTemplates.slice(0, 4).map((template) => (
+                  {storyInspirations.slice(0, 4).map((inspiration) => (
                     <button
-                      key={template.id}
-                      onClick={() => handleSelectTemplate(template.id)}
+                      key={inspiration.id}
+                      onClick={() => handleSelectInspiration(inspiration.id)}
                       className="p-3 rounded-lg border border-border hover:border-foreground-subtle text-left transition-colors nodrag"
                     >
-                      <p className="font-medium text-sm text-foreground">{template.name}</p>
-                      <p className="text-xs text-foreground-muted">{template.description}</p>
+                      <p className="font-medium text-sm text-foreground">{inspiration.name}</p>
+                      <p className="text-xs text-foreground-muted">{inspiration.description}</p>
                     </button>
                   ))}
                 </div>
                 <button
-                  onClick={() => setShowTemplates(false)}
+                  onClick={() => setShowInspirations(false)}
                   className="text-xs text-foreground-muted hover:text-foreground nodrag"
                 >
                   Or customize settings →
@@ -375,7 +375,7 @@ export const StoryNode = memo(function StoryNode({ data }: NodeProps<Node<StoryN
         {!storyData && !isEditing && (
           <Button
             onClick={handleGenerateStory}
-            disabled={isLoading || showTemplates}
+            disabled={isLoading || showInspirations}
             className="w-full nodrag"
             icon={isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
           >

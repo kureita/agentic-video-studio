@@ -1,6 +1,6 @@
 import { memo, useState, useRef, useMemo, ChangeEvent } from "react";
 import { NodeProps, useReactFlow } from "@xyflow/react";
-import { Video, Clock, ChevronDown, Square, Loader2, Download, Monitor } from "lucide-react";
+import { Video, Clock, ChevronDown, Square, Loader2, Download, Monitor, Upload } from "lucide-react";
 import { NodeWrapper } from "@/components/workflow/node-wrapper";
 import { HighlightedTextarea } from "@/components/workflow/nodes/highlighted-textarea";
 
@@ -18,7 +18,23 @@ const MODEL_CONFIGS: Record<string, { durations: string[], inputs: { id: string,
 
 export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
     const { deleteElements, updateNodeData } = useReactFlow();
-    const { nodes, setNodes, runNode, clearNodeOutput, outputs, runningNodeId } = useWorkflowStore();
+    const { nodes, setNodes, runNode, clearNodeOutput, outputs, runningNodeId, setNodeOutput } = useWorkflowStore();
+
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const result = e.target?.result as string;
+            if (result) {
+                setNodeOutput(id, result);
+            }
+        };
+        reader.readAsDataURL(file);
+    };
 
     // Sync node data to workflow store
     const updateData = (updates: Record<string, unknown>) => {
@@ -332,6 +348,22 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
                             <option value="1080p">1080p</option>
                         </select>
                     </div>
+
+                    {/* Upload Pill */}
+                    <button
+                        onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
+                        className="h-7 w-7 flex items-center justify-center bg-black/60 backdrop-blur-md border border-white/10 rounded-full text-white/90 hover:bg-black/70 transition-colors flex-shrink-0 cursor-pointer"
+                        title="Upload Video"
+                    >
+                        <Upload className="w-3 h-3" />
+                    </button>
+                    <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="video/*"
+                        onChange={handleFileSelect}
+                        className="hidden"
+                    />
                 </div>
             </div>
         </NodeWrapper>
