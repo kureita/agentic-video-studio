@@ -15,28 +15,48 @@ from app.services.runware_service import RunwareService
 
 _MODEL_MAP = {
     # Frontend display name → Official Runware AIR ID (provider:model@version)
-    # Confirmed from: https://runware.ai/docs/providers/klingai
-    "Kling 3.0 Standard": "klingai:kling-video@3-standard",
-    "Kling 3.0 Pro":      "klingai:kling-video@3-pro",
-    # Confirmed from: https://runware.ai/docs/providers/klingai (KlingAI 2.1 Master)
-    "Kling 2.1 Master":   "klingai:5@3",
-    # Confirmed from: https://runware.ai/docs/providers/runway (Runway Gen-4.5)
-    "Runway Gen-4.5":     "runway:1@2",
-    # Confirmed from: https://runware.ai/docs/providers/alibaba (Wan2.6 Flash)
-    "Wan2.6 Flash":       "alibaba:wan@2.6-flash",
-    # Confirmed from: https://runware.ai/docs/providers/pixverse (PixVerse v5.6)
-    "PixVerse V5.6":      "pixverse:1@7",
-    # Confirmed from: https://runware.ai/docs/providers/klingai (KlingAI Lip-Sync)
-    "Kling Lip Sync":     "__lipsync__",   # Sentinel → uses klingai:7@1 via lipsync path
-    # Legacy names (no longer in dropdown, kept for backward compat)
-    "Veo":                "klingai:kling-video@3-standard",
-    "Veo 3.1":            "klingai:kling-video@3-standard",
-    "Veo 3.1 Fast":       "klingai:kling-video@3-standard",
-    "Kling":              "klingai:kling-video@3-standard",
-    "Kling V1.5":         "klingai:kling-video@3-standard",
-    "Kling V1.0":         "klingai:kling-video@3-standard",
-    "SeedDance 1.5 Pro":  "klingai:kling-video@3-standard",
-    "SeedDance 1.0 Pro":  "klingai:kling-video@3-standard",
+
+    # Google Veo — https://docs.runware.ai/en/providers/google
+    "Veo 3.1":              "google:3@2",
+    "Veo 3.1 Fast":         "google:3@3",
+    "Veo 3":                "google:3@0",
+    "Veo 3 Fast":           "google:3@1",
+    "Veo 2":                "google:2@0",
+
+    # KlingAI — https://docs.runware.ai/en/providers/klingai
+    "Kling 3.0 Standard":   "klingai:kling-video@3-standard",
+    "Kling 3.0 Pro":        "klingai:kling-video@3-pro",
+    "Kling 2.1 Master":     "klingai:5@3",
+    "Kling Lip Sync":       "__lipsync__",   # Sentinel → klingai:7@1
+
+    # Runway — https://docs.runware.ai/en/providers/runway
+    "Runway Gen-4.5":       "runway:1@2",
+    "Runway Gen-4 Turbo":   "runway:1@1",
+
+    # ByteDance Seedance — https://docs.runware.ai/en/providers/bytedance
+    "Seedance 1.5 Pro":     "bytedance:seedance@1.5-pro",
+    "Seedance 1.0 Pro":     "bytedance:2@1",
+    "Seedance 1.0 Pro Fast":"bytedance:2@2",
+    "Seedance 1.0 Lite":    "bytedance:1@1",
+
+    # Alibaba Wan — https://docs.runware.ai/en/providers/alibaba
+    "Wan2.6":               "alibaba:wan@2.6",
+    "Wan2.6 Flash":         "alibaba:wan@2.6-flash",
+
+    # MiniMax Hailuo — https://docs.runware.ai/en/providers/minimax
+    "Hailuo 2.3":           "minimax:4@1",
+    "Hailuo 2.3 Fast":      "minimax:4@2",
+
+    # PixVerse — https://docs.runware.ai/en/providers/pixverse
+    "PixVerse V5.6":        "pixverse:1@7",
+
+    # Legacy names (backward compat)
+    "Veo":                  "google:3@3",
+    "Kling":                "klingai:kling-video@3-standard",
+    "Kling V1.5":           "klingai:kling-video@3-standard",
+    "Kling V1.0":           "klingai:kling-video@3-standard",
+    "SeedDance 1.5 Pro":    "bytedance:seedance@1.5-pro",
+    "SeedDance 1.0 Pro":    "bytedance:2@1",
 }
 
 

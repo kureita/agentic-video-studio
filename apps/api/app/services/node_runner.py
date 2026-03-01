@@ -121,12 +121,27 @@ class NodeRunner:
                 
                 # Extract the handle name (format: "type|name")
                 target_input_name = target_handle.split("|")[-1] if "|" in target_handle else target_handle
+                source_handle_name = source_handle.split("|")[-1] if "|" in source_handle else source_handle
                 
-                print(f"[NodeRunner] Extracted target_input_name: {target_input_name}")
+                print(f"[NodeRunner] Extracted target_input_name: {target_input_name}, source_handle_name: {source_handle_name}")
                 
                 # Get output from source node
                 if source_id in outputs:
                     source_output = outputs[source_id]
+                    
+                    # Handle start_frame / end_frame extraction from video nodes
+                    if source_handle_name in ("start_frame", "end_frame"):
+                        source_node = next((n for n in nodes if n["id"] == source_id), None)
+                        if source_node and source_node.get("type") == "videoGen" and source_output:
+                            frame_url = self._extract_video_frame(
+                                source_output,
+                                frame_type=source_handle_name,
+                            )
+                            if frame_url:
+                                source_output = frame_url
+                                print(f"[NodeRunner] Extracted {source_handle_name} from video: {frame_url[:80]}...")
+                            else:
+                                print(f"[NodeRunner] Warning: Failed to extract {source_handle_name} from video")
                     
                     # For inputs that can accept multiple connections, collect into list
                     if target_input_name in ["ref_videos", "ref_images", "audio"]:
@@ -153,6 +168,84 @@ class NodeRunner:
                             print(f"[NodeRunner] Set input '{target_input_name}' from text node data")
         
         return inputs
+
+    def _extract_video_frame(self, video_url: str, frame_type: str = "start_frame") -> Optional[str]:
+        """
+        Extract the first or last frame from a video URL and return it as a data URI.
+        
+        Args:
+            video_url: URL of the video to extract frame from
+            frame_type: "start_frame" for first frame, "end_frame" for last frame
+            
+        Returns:
+            Base64 data URI of the extracted frame image, or None on failure
+        """
+        import tempfile
+        import subprocess
+        import base64
+        import os
+        import httpx
+        
+        try:
+            # Download the video to a temp file
+            with httpx.Client(timeout=60.0) as client:
+                resp = client.get(video_url)
+                if resp.status_code != 200:
+                    print(f"[NodeRunner] Failed to download video for frame extraction: HTTP {resp.status_code}")
+                    return None
+                
+                with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp_video:
+                    tmp_video.write(resp.content)
+                    tmp_video_path = tmp_video.name
+            
+            # Create temp output path for the frame
+            tmp_frame_path = tmp_video_path.replace(".mp4", "_frame.jpg")
+            
+            try:
+                if frame_type == "end_frame":
+                    # For last frame: first get duration, then seek to near the end
+                    duration_result = subprocess.run(
+                        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                         "-of", "default=noprint_wrappers=1:nokey=1", tmp_video_path],
+                        capture_output=True, text=True, timeout=30
+                    )
+                    duration = float(duration_result.stdout.strip()) if duration_result.stdout.strip() else 0
+                    seek_time = max(0, duration - 0.1)
+                    
+                    subprocess.run(
+                        ["ffmpeg", "-y", "-ss", str(seek_time), "-i", tmp_video_path,
+                         "-frames:v", "1", "-q:v", "2", tmp_frame_path],
+                        capture_output=True, timeout=30
+                    )
+                else:
+                    # For first frame: just grab the first frame
+                    subprocess.run(
+                        ["ffmpeg", "-y", "-i", tmp_video_path,
+                         "-frames:v", "1", "-q:v", "2", tmp_frame_path],
+                        capture_output=True, timeout=30
+                    )
+                
+                if os.path.exists(tmp_frame_path) and os.path.getsize(tmp_frame_path) > 0:
+                    with open(tmp_frame_path, "rb") as f:
+                        frame_data = f.read()
+                    b64 = base64.b64encode(frame_data).decode()
+                    return f"data:image/jpeg;base64,{b64}"
+                else:
+                    print(f"[NodeRunner] Frame extraction produced no output file")
+                    return None
+                    
+            finally:
+                # Clean up temp files
+                for path in [tmp_video_path, tmp_frame_path]:
+                    try:
+                        if os.path.exists(path):
+                            os.unlink(path)
+                    except Exception:
+                        pass
+                        
+        except Exception as e:
+            print(f"[NodeRunner] Frame extraction error: {e}")
+            return None
 
     async def _run_text_node(
         self,
@@ -406,31 +499,22 @@ class NodeRunner:
             elif reference_video:
                 prompt = "Generate video based on this reference video"
         
-        # Get generation parameters (duration: "4s"|"6s"|"8s" from UI, or int)
-        duration_val = data.get("duration", "4s")
+        # Get generation parameters (duration: "5s"|"8s"|"10s" from UI, or int)
+        duration_val = data.get("duration", "5s")
         if isinstance(duration_val, int):
             duration = duration_val
         elif isinstance(duration_val, str):
-            duration = int(duration_val.replace("s", "").strip()) if duration_val.replace("s", "").strip().isdigit() else 4
+            duration = int(duration_val.replace("s", "").strip()) if duration_val.replace("s", "").strip().isdigit() else 5
         else:
-            duration = 4
+            duration = 5
         ratio = data.get("ratio", "16:9")
         resolution = data.get("resolution", "720p")
         # Determine model
-        model_str = data.get("model", "Veo 3.1 Fast")
+        model_str = data.get("model", "Kling 3.0 Standard")
         use_fast_model = "Fast" in model_str
 
         if resolution not in ("720p", "1080p"):
             resolution = "720p"
-
-        # Validate duration for Veo 3.1 (only supports 4, 6, or 8 seconds)
-        if duration not in [4, 6, 8]:
-            if duration <= 4:
-                duration = 4
-            elif duration <= 6:
-                duration = 6
-            else:
-                duration = 8
         
         print(f"[NodeRunner] Generating video: prompt='{prompt[:50]}...', duration={duration}s, ratio={ratio}, resolution={resolution}, fast={use_fast_model}")
         print(f"[NodeRunner] Inputs: start_image={bool(start_image)}, end_image={bool(end_image)}, ref_images={bool(reference_images)}, ref_video={bool(reference_video)}")

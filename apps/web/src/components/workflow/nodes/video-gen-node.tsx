@@ -7,13 +7,26 @@ import { HighlightedTextarea } from "@/components/workflow/nodes/highlighted-tex
 import { useWorkflowStore } from "@/lib/workflow-store";
 
 const MODEL_CONFIGS: Record<string, { durations: string[], inputs: { id: string, label: string, type: "text" | "image" | "video" | "audio" }[] }> = {
+    "Veo 3.1": { durations: ["8s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }, { id: "end_image", label: "End Image", type: "image" }] },
+    "Veo 3.1 Fast": { durations: ["8s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }, { id: "end_image", label: "End Image", type: "image" }] },
+    "Veo 3": { durations: ["8s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }] },
+    "Veo 3 Fast": { durations: ["8s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }, { id: "end_image", label: "End Image", type: "image" }] },
+    "Veo 2": { durations: ["5s", "6s", "7s", "8s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }, { id: "end_image", label: "End Image", type: "image" }] },
     "Kling 3.0 Standard": { durations: ["5s", "10s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }, { id: "end_image", label: "End Image", type: "image" }] },
     "Kling 3.0 Pro": { durations: ["5s", "10s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }, { id: "end_image", label: "End Image", type: "image" }] },
     "Kling 2.1 Master": { durations: ["5s", "10s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }, { id: "end_image", label: "End Image", type: "image" }] },
-    "Runway Gen-4.5": { durations: ["5s", "10s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }] },
-    "Wan2.6 Flash": { durations: ["3s", "5s", "10s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }] },
-    "PixVerse V5.6": { durations: ["5s", "8s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }] },
     "Kling Lip Sync": { durations: ["5s", "10s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Video", type: "video" }, { id: "audio", label: "Audio", type: "audio" }] },
+    "Runway Gen-4.5": { durations: ["5s", "8s", "10s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }] },
+    "Runway Gen-4 Turbo": { durations: ["2s", "5s", "10s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }] },
+    "Seedance 1.5 Pro": { durations: ["4s", "5s", "8s", "10s", "12s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }, { id: "end_image", label: "End Image", type: "image" }] },
+    "Seedance 1.0 Pro": { durations: ["5s", "8s", "10s", "12s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }, { id: "end_image", label: "End Image", type: "image" }] },
+    "Seedance 1.0 Pro Fast": { durations: ["5s", "8s", "10s", "12s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }] },
+    "Seedance 1.0 Lite": { durations: ["5s", "8s", "10s", "12s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }, { id: "end_image", label: "End Image", type: "image" }] },
+    "Wan2.6": { durations: ["5s", "10s", "15s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }] },
+    "Wan2.6 Flash": { durations: ["3s", "5s", "10s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }] },
+    "Hailuo 2.3": { durations: ["6s", "10s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }] },
+    "Hailuo 2.3 Fast": { durations: ["6s", "10s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }] },
+    "PixVerse V5.6": { durations: ["5s", "8s", "10s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }, { id: "end_image", label: "End Image", type: "image" }] },
 };
 
 export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
@@ -167,7 +180,11 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
             icon={<Video className="w-4 h-4" />}
             selected={selected}
             inputs={config.inputs}
-            outputs={[{ id: "video", label: "Video", type: "video" }]}
+            outputs={[
+                { id: "video", label: "Video", type: "video" },
+                { id: "start_frame", label: "Start Frame", type: "image" },
+                { id: "end_frame", label: "End Frame", type: "image" },
+            ]}
             contentClassName="p-0 overflow-hidden isolate"
             onDelete={() => deleteElements({ nodes: [{ id }] })}
             onRun={() => runNode(id)}
@@ -308,13 +325,26 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
                             value={currentModel}
                             onChange={(e) => handleModelChange(e.target.value)}
                         >
+                            <option value="Veo 3.1">Veo 3.1</option>
+                            <option value="Veo 3.1 Fast">Veo 3.1 Fast</option>
+                            <option value="Veo 3">Veo 3</option>
+                            <option value="Veo 3 Fast">Veo 3 Fast</option>
+                            <option value="Veo 2">Veo 2</option>
                             <option value="Kling 3.0 Standard">Kling 3.0 Standard</option>
                             <option value="Kling 3.0 Pro">Kling 3.0 Pro</option>
                             <option value="Kling 2.1 Master">Kling 2.1 Master</option>
+                            <option value="Kling Lip Sync">Kling Lip Sync</option>
                             <option value="Runway Gen-4.5">Runway Gen-4.5</option>
-                            <option value="Wan2.6 Flash">Wan2.6 Flash ⚡</option>
+                            <option value="Runway Gen-4 Turbo">Runway Gen-4 Turbo</option>
+                            <option value="Seedance 1.5 Pro">Seedance 1.5 Pro</option>
+                            <option value="Seedance 1.0 Pro">Seedance 1.0 Pro</option>
+                            <option value="Seedance 1.0 Pro Fast">Seedance 1.0 Pro Fast</option>
+                            <option value="Seedance 1.0 Lite">Seedance 1.0 Lite</option>
+                            <option value="Wan2.6">Wan2.6</option>
+                            <option value="Wan2.6 Flash">Wan2.6 Flash</option>
+                            <option value="Hailuo 2.3">Hailuo 2.3</option>
+                            <option value="Hailuo 2.3 Fast">Hailuo 2.3 Fast</option>
                             <option value="PixVerse V5.6">PixVerse V5.6</option>
-                            <option value="Kling Lip Sync">Kling Lip Sync 💋</option>
                         </select>
                     </div>
 

@@ -71,11 +71,12 @@ The user describes a video they want to create, and you generate nodes and edges
    - Outputs: "image|image" (type: image)
    - Data: {{ "label": "Start Frame Scene X", "prompt": "Description", "width": 1024, "height": 576, "ratio": "16:9", "model": "Imagen 4" }}
 
-3. **videoGen** - Video Generator (Veo 3.1)
+3. **videoGen** - Video Generator (Multiple models via Runware)
    - Inputs: "text|text" (type: text), "image|start_image" (type: image), "image|end_image" (type: image, optional)
-   - Outputs: "video|video" (type: video)
-   - Data: {{ "label": "Video Scene X", "prompt": "Motion description", "duration": "4s", "ratio": "16:9", "model": "Veo 3.1 Fast" }}
-   - **Constraint**: `duration` MUST be "4s", "6s", or "8s". NO OTHER DURATIONS ALLOWED.
+   - Outputs: "video|video" (type: video), "image|start_frame" (type: image, first frame), "image|end_frame" (type: image, last frame)
+   - Data: {{ "label": "Video Scene X", "prompt": "Motion description", "duration": "5s", "ratio": "16:9", "model": "Kling 3.0 Standard" }}
+   - **Available Models**: "Veo 3.1", "Veo 3.1 Fast", "Veo 3", "Veo 3 Fast", "Veo 2", "Kling 3.0 Standard", "Kling 3.0 Pro", "Kling 2.1 Master", "Kling Lip Sync", "Runway Gen-4.5", "Runway Gen-4 Turbo", "Seedance 1.5 Pro", "Seedance 1.0 Pro", "Seedance 1.0 Pro Fast", "Seedance 1.0 Lite", "Wan2.6", "Wan2.6 Flash", "Hailuo 2.3", "Hailuo 2.3 Fast", "PixVerse V5.6"
+   - **Duration Constraints**: Veo 3/3.1 variants: "8s" only. Veo 2: "5s"-"8s". Kling: "5s"/"10s". Runway Gen-4.5: "5s"/"8s"/"10s". Runway Gen-4 Turbo: "2s"-"10s". Seedance: "4s"-"12s". Wan2.6: "5s"/"10s"/"15s". Wan2.6 Flash: "3s"/"5s"/"10s". Hailuo: "6s"/"10s". PixVerse: "5s"/"8s"/"10s".
 
 4. **editorAgent** - AI Editor (Stitches videos)
    - Inputs: "text|text", "video|ref_videos" (Multiple)
@@ -230,6 +231,7 @@ This thinking field should describe:
                     contents=start_prompt,
                     config=types.GenerateContentConfig(
                         response_mime_type='application/json',
+                        max_output_tokens=65536,
                         tools=[search_web]
                     )
                 )
@@ -260,6 +262,7 @@ This thinking field should describe:
                                 ],
                                 config=types.GenerateContentConfig(
                                     response_mime_type='application/json',
+                                    max_output_tokens=65536,
                                     tools=[search_web]
                                 )
                             )
@@ -417,7 +420,69 @@ This thinking field should describe:
                 response_text = response_text[:-3]
             response_text = response_text.strip()
 
-            result = json.loads(response_text)
+            # ── Robust JSON repair ──────────────────────────────────────
+            import re
+
+            def _repair_json(text: str) -> str:
+                """Fix common LLM JSON issues that cause 'Unterminated string' errors."""
+                # 1. Replace literal (unescaped) newlines/tabs inside JSON string values.
+                #    Walk through char-by-char tracking whether we're inside a string.
+                out = []
+                in_string = False
+                i = 0
+                while i < len(text):
+                    ch = text[i]
+                    if ch == '\\' and in_string:
+                        # Escaped character — keep as-is and skip next char
+                        out.append(ch)
+                        if i + 1 < len(text):
+                            out.append(text[i + 1])
+                        i += 2
+                        continue
+                    if ch == '"':
+                        in_string = not in_string
+                        out.append(ch)
+                    elif in_string and ch == '\n':
+                        out.append('\\n')
+                    elif in_string and ch == '\r':
+                        out.append('\\r')
+                    elif in_string and ch == '\t':
+                        out.append('\\t')
+                    else:
+                        out.append(ch)
+                    i += 1
+                text = ''.join(out)
+
+                # 2. Remove trailing commas before ] or }
+                text = re.sub(r',\s*([\]}])', r'\1', text)
+
+                # 3. If the JSON was truncated (common with long outputs), try to close it
+                open_braces = text.count('{') - text.count('}')
+                open_brackets = text.count('[') - text.count(']')
+                if open_brackets > 0 or open_braces > 0:
+                    text = text.rstrip().rstrip(',')
+                    text += ']' * max(0, open_brackets)
+                    text += '}' * max(0, open_braces)
+
+                return text
+
+            response_text = _repair_json(response_text)
+
+            try:
+                result = json.loads(response_text)
+            except json.JSONDecodeError as parse_err:
+                print(f"[AgentService] JSON parse error after repair: {parse_err}")
+                print(f"[AgentService] Response text (first 500 chars): {response_text[:500]}")
+                # Last-resort: try to extract nodes/edges arrays with regex
+                nodes_match = re.search(r'"nodes"\s*:\s*(\[[\s\S]*?\])\s*[,}]', response_text)
+                edges_match = re.search(r'"edges"\s*:\s*(\[[\s\S]*?\])\s*[,}]', response_text)
+                result = {
+                    "thinking": "JSON repair failed — extracted partial data",
+                    "message": "Workflow generated (recovered from partial response)",
+                    "nodes": json.loads(nodes_match.group(1)) if nodes_match else [],
+                    "edges": json.loads(edges_match.group(1)) if edges_match else [],
+                    "tool_calls": []
+                }
             
             # Extract thinking and tool_calls from the response
             thinking = result.get("thinking", None)

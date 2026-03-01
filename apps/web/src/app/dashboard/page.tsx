@@ -212,6 +212,17 @@ export default function DashboardPage() {
                             )}
                         </button>
                     </div>
+
+                    {/* Or create a blank workflow */}
+                    <div className="mt-3 flex items-center justify-center">
+                        <button
+                            onClick={createNewWorkflow}
+                            className="inline-flex items-center gap-1.5 text-[13px] text-muted-foreground/60 hover:text-foreground/80 transition-colors duration-200 py-1 px-2 rounded-md hover:bg-muted/30"
+                        >
+                            <Plus className="w-3.5 h-3.5" />
+                            <span>or start with a blank workflow</span>
+                        </button>
+                    </div>
                 </div>
             </section>
 
@@ -259,7 +270,7 @@ export default function DashboardPage() {
                                                     unoptimized
                                                 />
                                             ) : (
-                                                <div className="absolute inset-0 bg-gradient-to-br from-[hsl(230,15%,10%)] via-[hsl(250,20%,12%)] to-[hsl(270,15%,10%)]">
+                                                <div className="absolute inset-0 bg-[hsl(220,15%,8%)]">
                                                     <div className="absolute inset-0 flex items-center justify-center">
                                                         <Film className="w-8 h-8 text-muted-foreground/20" />
                                                     </div>
@@ -387,29 +398,29 @@ export default function DashboardPage() {
                             </h2>
                         </div>
 
-                        <div className="grid grid-cols-2 md:gird-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                            {workflowInspirations.map((inspiration) => (
+                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                            {workflowInspirations.map((template) => (
                                 <button
-                                    key={inspiration.id}
-                                    onClick={() => createFromInspiration(inspiration)}
+                                    key={template.id}
+                                    onClick={() => createFromInspiration(template)}
                                     disabled={!!creatingInspirationId}
                                     className="group/tpl text-left transition-all duration-200 focus:outline-none disabled:opacity-70"
                                 >
                                     {/* Thumbnail */}
                                     <div className={cn(
                                         "relative aspect-[16/10] rounded-lg border overflow-hidden transition-all duration-200",
-                                        "border-border/40 bg-[hsl(230,15%,8%)]",
+                                        "border-border/40 bg-[hsl(220,15%,8%)]",
                                         "group-hover/tpl:border-border/80 group-hover/tpl:shadow-md group-hover/tpl:shadow-primary/5",
                                         "group-focus-visible/tpl:border-primary/40 group-focus-visible/tpl:ring-1 group-focus-visible/tpl:ring-primary/20",
-                                        creatingInspirationId === inspiration.id && "border-primary/40"
+                                        creatingInspirationId === template.id && "border-primary/40"
                                     )}>
                                         <WorkflowPreview
-                                            nodes={inspiration.nodes.map(n => ({
+                                            nodes={template.nodes.map(n => ({
                                                 id: n.id,
                                                 type: n.type,
                                                 position: n.position,
                                             }))}
-                                            edges={inspiration.edges.map(e => ({
+                                            edges={template.edges.map(e => ({
                                                 id: e.id,
                                                 source: e.source,
                                                 target: e.target,
@@ -417,23 +428,23 @@ export default function DashboardPage() {
                                         />
 
                                         {/* Loading overlay */}
-                                        {creatingInspirationId === inspiration.id && (
+                                        {creatingInspirationId === template.id && (
                                             <div className="absolute inset-0 bg-background/60 backdrop-blur-sm flex items-center justify-center">
                                                 <Loader2 className="w-5 h-5 animate-spin text-primary" />
                                             </div>
                                         )}
                                     </div>
 
-                                    <div className="mt-2.5 px-0.5">
-                                        <h3 className="text-[13px] font-medium text-foreground/85 group-hover/tpl:text-foreground transition-colors">
-                                            {inspiration.name}
+                                    <div className="mt-2.5 px-0.5 min-w-0">
+                                        <h3 className="text-[13px] font-medium text-foreground/85 group-hover/tpl:text-foreground transition-colors truncate">
+                                            {template.name}
                                         </h3>
-                                        <p className="text-[11px] text-muted-foreground/50 mt-0.5">
-                                            {inspiration.description}
+                                        <p className="text-[11px] text-muted-foreground/50 mt-0.5 line-clamp-2 leading-relaxed">
+                                            {template.description}
                                         </p>
-                                        {inspiration.insight && (
-                                            <p className="text-[10px] text-primary/60 mt-1 font-medium">
-                                                📊 {inspiration.insight}
+                                        {template.insight && (
+                                            <p className="text-[10px] text-muted-foreground/45 mt-1 font-medium truncate">
+                                                {template.insight}
                                             </p>
                                         )}
                                     </div>

@@ -203,6 +203,14 @@ class RunwareService:
             "height": height
         }
         
+        # Add Google Veo-specific provider settings (native audio generation)
+        if model.startswith("google:"):
+            task["providerSettings"] = {
+                "google": {
+                    "generateAudio": True,
+                }
+            }
+        
         resp = await self._post([task])
         if not resp["success"]:
             return resp
@@ -271,6 +279,14 @@ class RunwareService:
                 ]
             }
         }
+        
+        # Add Google Veo-specific provider settings (native audio generation)
+        if model.startswith("google:"):
+            task["providerSettings"] = {
+                "google": {
+                    "generateAudio": True,
+                }
+            }
         
         resp = await self._post([task])
         if not resp["success"]:
