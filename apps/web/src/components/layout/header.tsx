@@ -13,13 +13,14 @@ export function Header() {
     { label: "Dashboard", href: "/dashboard" },
     { label: "Projects", href: "/projects" },
     { label: "Canvas", href: "/canvas" },
+    { label: "Usage", href: "/usage" },
   ];
 
   return (
     <header className="sticky top-0 z-50 glass border-b border-border/50">
       <div className="container-wide flex items-center justify-between h-16">
         {/* Logo */}
-        <Link href="/" className="flex items-center gap-2.5">
+        <Link href="/dashboard" className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-lg bg-foreground flex items-center justify-center">
             <Sparkles className="w-4 h-4 text-background" />
           </div>

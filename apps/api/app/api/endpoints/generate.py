@@ -7,8 +7,11 @@ from bson import ObjectId
 from pydantic import BaseModel
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
 
-from app.core.database import get_projects_collection
+from app.core.database import get_projects_collection, get_database
 from app.core.auth import get_current_user
+from motor.motor_asyncio import AsyncIOMotorDatabase
+from app.services.billing import BillingService
+from app.models.usage import ActionType
 from app.agents import BrandAnalyzer, Storyteller, ScriptWriter
 from app.services.scraper import WebScraper
 from app.services.video_generator import VideoGenerator
@@ -21,6 +24,8 @@ from app.models.project import (
 
 router = APIRouter()
 
+def get_billing_service(db: AsyncIOMotorDatabase = Depends(get_database)) -> BillingService:
+    return BillingService(db)
 
 class GenerateStoryRequest(BaseModel):
     project_id: str
@@ -174,12 +179,25 @@ async def run_story_generation(
 
 
 @router.post("/video")
-async def generate_video_clip(request: GenerateVideoRequest):
+async def generate_video_clip(
+    request: GenerateVideoRequest,
+    current_user: dict = Depends(get_current_user),
+    billing_service: BillingService = Depends(get_billing_service)
+):
     """
     Generate a single video clip using Veo 3.1.
     
     For testing video generation with custom prompts.
     """
+    
+    # 1. Deduct credits first
+    user_id = current_user.get("_id")
+    await billing_service.deduct_credits(
+        user_id=user_id,
+        action=ActionType.VIDEO_GEN,
+        metadata={"prompt": request.prompt[:50] + "..." if len(request.prompt) > 50 else request.prompt}
+    )
+
     generator = VideoGenerator()
     
     result = await generator.generate_clip(
@@ -195,7 +213,11 @@ async def generate_video_clip(request: GenerateVideoRequest):
 
 
 @router.post("/audio")
-async def generate_audio(request: GenerateAudioRequest):
+async def generate_audio(
+    request: GenerateAudioRequest,
+    current_user: dict = Depends(get_current_user),
+    billing_service: BillingService = Depends(get_billing_service)
+):
     """
     Generate voiceover audio using ElevenLabs (optional).
     
@@ -210,6 +232,14 @@ async def generate_audio(request: GenerateAudioRequest):
             detail="ElevenLabs not configured. Veo 3.1 generates native audio."
         )
     
+    # 1. Deduct credits first
+    user_id = current_user.get("_id")
+    await billing_service.deduct_credits(
+        user_id=user_id,
+        action=ActionType.AUDIO_GEN,
+        metadata={"text": request.text[:50] + "..." if len(request.text) > 50 else request.text}
+    )
+
     from app.services.audio_generator import AudioGenerator
     generator = AudioGenerator()
     

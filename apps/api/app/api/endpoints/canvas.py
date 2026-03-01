@@ -7,8 +7,11 @@ from bson import ObjectId
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, HttpUrl
 
-from app.core.database import get_projects_collection
+from app.core.database import get_projects_collection, get_database
 from app.core.auth import get_current_user
+from motor.motor_asyncio import AsyncIOMotorDatabase
+from app.services.billing import BillingService
+from app.models.usage import ActionType
 from app.models.project import ProjectStatus, VideoStyle, BrandProfile, Story, Scene
 from app.services.scraper import WebScraper
 from app.services.llm import get_llm
@@ -21,6 +24,8 @@ from app.agents.script_writer import ScriptWriter
 
 router = APIRouter(prefix="/canvas", tags=["canvas"])
 
+def get_billing_service(db: AsyncIOMotorDatabase = Depends(get_database)) -> BillingService:
+    return BillingService(db)
 
 # ============================================
 # Request/Response Models
@@ -595,7 +600,8 @@ Enhance each prompt for better AI image generation. Keep scene IDs the same."""
 async def generate_images(
     project_id: str, 
     request: ImageGenerateRequest, 
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    billing_service: BillingService = Depends(get_billing_service)
 ):
     """Generate images for all scenes."""
     collection = get_projects_collection()
@@ -618,6 +624,14 @@ async def generate_images(
             raise HTTPException(status_code=400, detail="No scenes available")
         
         print(f"[Canvas] Generating {len(scenes)} images...")
+        
+        # 1. Deduct credits first
+        await billing_service.deduct_credits(
+            user_id=user_id,
+            action=ActionType.IMAGE_GEN,
+            custom_cost=len(scenes),  # 1 credit per image
+            metadata={"project_id": project_id, "scene_count": len(scenes)}
+        )
         
         # Generate images for all scenes
         updated_scenes = await image_generator.generate_scene_images(
@@ -652,7 +666,8 @@ async def regenerate_image(
     project_id: str, 
     scene_id: int, 
     request: ImageRegenerateRequest, 
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    billing_service: BillingService = Depends(get_billing_service)
 ):
     """Regenerate a single scene image."""
     collection = get_projects_collection()
@@ -679,6 +694,13 @@ async def regenerate_image(
         prompt = request.prompt or scene.get("image_prompt") or scene.get("visual_prompt", "")
         
         print(f"[Canvas] Regenerating image for scene {scene_id}...")
+        
+        # 1. Deduct credits first
+        await billing_service.deduct_credits(
+            user_id=user_id,
+            action=ActionType.IMAGE_GEN,
+            metadata={"project_id": project_id, "scene_id": scene_id, "prompt": prompt[:50]}
+        )
         
         # Generate new image
         result = await image_generator.generate_image(
@@ -718,7 +740,11 @@ async def regenerate_image(
 
 
 @router.post("/{project_id}/videos", response_model=VideoResponse)
-async def generate_videos(project_id: str, current_user: dict = Depends(get_current_user)):
+async def generate_videos(
+    project_id: str, 
+    current_user: dict = Depends(get_current_user),
+    billing_service: BillingService = Depends(get_billing_service)
+):
     """Generate videos for all scenes using their images."""
     collection = get_projects_collection()
     video_generator = VideoGenerator()
@@ -742,6 +768,14 @@ async def generate_videos(project_id: str, current_user: dict = Depends(get_curr
         style = project.get("style", "cinematic")
         
         print(f"[Canvas] Generating {len(scenes)} videos...")
+        
+        # 1. Deduct credits first
+        await billing_service.deduct_credits(
+            user_id=user_id,
+            action=ActionType.VIDEO_GEN,
+            custom_cost=len(scenes) * 10,  # 10 credits per video
+            metadata={"project_id": project_id, "scene_count": len(scenes)}
+        )
         
         # Generate video for each scene
         updated_scenes = []
@@ -811,7 +845,8 @@ async def generate_videos(project_id: str, current_user: dict = Depends(get_curr
 async def regenerate_video(
     project_id: str, 
     scene_id: int, 
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    billing_service: BillingService = Depends(get_billing_service)
 ):
     """Regenerate a single scene video."""
     collection = get_projects_collection()
@@ -843,6 +878,14 @@ async def regenerate_video(
             prompt += f' Narrator speaks: "{voiceover}"'
         
         print(f"[Canvas] Regenerating video for scene {scene_id}...")
+        
+        # 1. Deduct credits first
+        await billing_service.deduct_credits(
+            user_id=user_id,
+            action=ActionType.VIDEO_GEN,
+            custom_cost=10,  # 10 credits per video
+            metadata={"project_id": project_id, "scene_id": scene_id}
+        )
         
         result = await video_generator.generate_clip(
             prompt=prompt,
@@ -951,7 +994,8 @@ async def compose_video(
 async def render_final_video(
     project_id: str, 
     request: RenderRequest, 
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    billing_service: BillingService = Depends(get_billing_service)
 ):
     """Render the final high-quality video."""
     collection = get_projects_collection()
@@ -979,6 +1023,14 @@ async def render_final_video(
         
         if not composition_url:
             raise HTTPException(status_code=400, detail="No video available to render")
+            
+        # 1. Deduct credits first
+        await billing_service.deduct_credits(
+            user_id=user_id,
+            action=ActionType.RENDER,
+            custom_cost=20,  # 20 credits for final render
+            metadata={"project_id": project_id, "resolution": request.resolution}
+        )
         
         print(f"[Canvas] Final render at {request.resolution}: {composition_url}")
         

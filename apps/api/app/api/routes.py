@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 
-from app.api.endpoints import projects, scrape, generate, canvas, workflow, agent, assets
+from app.api.endpoints import projects, scrape, generate, canvas, workflow, agent, assets, billing
 from app.core.auth import get_current_user
 
 # All routes under this router require authentication
@@ -13,6 +13,7 @@ router.include_router(canvas.router, tags=["canvas"])
 router.include_router(workflow.router, prefix="/workflows", tags=["workflows"])
 router.include_router(agent.router, prefix="/agent", tags=["agent"])
 router.include_router(assets.router, prefix="/assets", tags=["assets"])
+router.include_router(billing.router, tags=["billing"])
 
 
 # ============================================

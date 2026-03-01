@@ -208,13 +208,13 @@ This thinking field should briefly describe:
     ],
     "message": "Response to user",
     "action": "replace_all OR update",
-    "nodes": [ ... ], 
-    "edges": [ ... ],
+    "nodes": [ {{ "id": "n1", "type": "text", "position": {{ "x": 0, "y": 0 }}, "data": {{ "text": "Hello" }} }} ], 
+    "edges": [ {{ "id": "e1", "source": "n1", "target": "n2", "sourceHandle": "text|text", "targetHandle": "text|prompt" }} ],
     "updates": {{
         "add_nodes": [ ... ],
         "update_nodes": [ {{ "id": "node-to-update", "data": {{ "prompt": "new text" }} }} ],
         "delete_nodes": [ "node-id-to-delete" ],
-        "add_edges": [ ... ],
+        "add_edges": [ {{ "id": "e2", "source": "n3", "target": "n4", "sourceHandle": "image|image", "targetHandle": "image|start_image" }} ],
         "delete_edges": [ "edge-id-to-delete" ]
     }}
 }}
@@ -225,11 +225,11 @@ Note: If `action` is "update", you ONLY need to return the `updates` object. Lea
         try:
             start_time = time.time()
             
-            response_text = ""
+            token_usage = {"input": 0, "output": 0}
             
             if "Gemini" in model:
-                # Map frontend string to actual model string
-                mapped_model = 'gemini-3.1-pro' if '(High)' in model else 'gemini-3-flash' if '(Medium)' in model else 'gemini-2.5-flash-lite'
+                # Map frontend string to actual valid genai model string
+                mapped_model = 'gemini-3.1-pro-preview' if '(High)' in model else 'gemini-3-pro-preview' if '(Medium)' in model else 'gemini-3-flash-preview'
                 
                 # Gemini native tool calling requires a python function reference
                 async def search_web(query: str) -> str:
@@ -277,6 +277,10 @@ Note: If `action` is "update", you ONLY need to return the `updates` object. Lea
                                     tools=[search_web]
                                 )
                             )
+                
+                if hasattr(response, 'usage_metadata') and response.usage_metadata:
+                    token_usage["input"] += getattr(response.usage_metadata, 'prompt_token_count', 0)
+                    token_usage["output"] += getattr(response.usage_metadata, 'candidates_token_count', 0)
                 
                 response_text = response.text
                 
@@ -344,6 +348,10 @@ Note: If `action` is "update", you ONLY need to return the `updates` object. Lea
                         response_format={"type": "json_object"},
                         tools=tools
                     )
+                
+                if hasattr(response, 'usage') and response.usage:
+                    token_usage["input"] += getattr(response.usage, 'prompt_tokens', 0)
+                    token_usage["output"] += getattr(response.usage, 'completion_tokens', 0)
                 
                 response_text = response.choices[0].message.content
                 
@@ -415,6 +423,10 @@ Note: If `action` is "update", you ONLY need to return the `updates` object. Lea
                 for block in response.content:
                     if block.type == 'text':
                         response_text += block.text
+                        
+                if hasattr(response, 'usage') and response.usage:
+                    token_usage["input"] += getattr(response.usage, 'input_tokens', 0)
+                    token_usage["output"] += getattr(response.usage, 'output_tokens', 0)
             
             elapsed_ms = int((time.time() - start_time) * 1000)
             
@@ -589,6 +601,11 @@ Note: If `action` is "update", you ONLY need to return the `updates` object. Lea
                         del final_nodes[nid]
                         
                 for e in updates.get("add_edges", []):
+                    # Enforce camelCase for React Flow
+                    if "source_handle" in e:
+                        e["sourceHandle"] = e.pop("source_handle")
+                    if "target_handle" in e:
+                        e["targetHandle"] = e.pop("target_handle")
                     final_edges[e["id"]] = e
                     
                 for eid in updates.get("delete_edges", []):
@@ -600,6 +617,13 @@ Note: If `action` is "update", you ONLY need to return the `updates` object. Lea
             else:
                 result_nodes = result.get("nodes", [])
                 result_edges = result.get("edges", [])
+                
+                # Enforce camelCase for all edges in replace_all
+                for e in result_edges:
+                    if "source_handle" in e:
+                        e["sourceHandle"] = e.pop("source_handle")
+                    if "target_handle" in e:
+                        e["targetHandle"] = e.pop("target_handle")
             
             return {
                 "success": True,
@@ -608,7 +632,8 @@ Note: If `action` is "update", you ONLY need to return the `updates` object. Lea
                 "thinking_duration_ms": elapsed_ms,
                 "tool_calls": sanitized_tool_calls,
                 "nodes": result_nodes,
-                "edges": result_edges
+                "edges": result_edges,
+                "token_usage": token_usage
             }
             
         except Exception as e:

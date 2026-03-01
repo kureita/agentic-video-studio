@@ -29,6 +29,8 @@ import { api } from "@/lib/api";
 import { motion, AnimatePresence } from "framer-motion";
 import { MarkdownContent, HighlightedReferences } from "@/components/workflow/markdown-content";
 import { toast } from "sonner";
+import { AddCreditsModal } from "@/components/billing/add-credits-modal";
+import { useAuth0 } from "@auth0/auth0-react";
 
 // ============================================
 // Thinking Block Component
@@ -636,9 +638,9 @@ function CursorInput({
                                         </div>
                                         <div className="max-h-[240px] overflow-y-auto flex flex-col">
                                             {[
-                                                "Gemini 3.1 Pro (High)",
-                                                "Gemini 3 Flash (Medium)",
-                                                "Gemini 2.5 Flash-Lite (Low)",
+                                                "Gemini 3.1 Pro Preview (High)",
+                                                "Gemini 3 Pro Preview (Medium)",
+                                                "Gemini 3 Flash Preview (Low)",
                                                 "Claude 4.6 Opus (High)",
                                                 "Claude 4.6 Sonnet (Medium)",
                                                 "Claude 4.5 Haiku (Low)",
@@ -715,12 +717,14 @@ function CursorInput({
 
 export function AgentSidebar() {
     const { chatHistory, addChatMessage, setNodes, setEdges, nodes, edges } = useWorkflowStore();
+    const { getAccessTokenSilently } = useAuth0();
     const storeId = useWorkflowStore((state) => state.id);
     const [input, setInput] = useState("");
     const [isLoading, setIsLoading] = useState(false);
     const [isUploading, setIsUploading] = useState(false);
-    const [selectedModel, setSelectedModel] = useState("Gemini 3.1 Pro (High)");
+    const [selectedModel, setSelectedModel] = useState("Gemini 3.1 Pro Preview (High)");
     const [pendingAttachments, setPendingAttachments] = useState<Attachment[]>([]);
+    const [isCreditsModalOpen, setIsCreditsModalOpen] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const autoPromptSent = useRef(false);
 
@@ -842,12 +846,15 @@ export function AgentSidebar() {
                 content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
             }));
 
+            const token = await getAccessTokenSilently();
             const response = await api.post("/api/agent/flow", {
                 prompt: userMessage,
                 model: selectedModel,
                 current_nodes: nodes,
                 current_edges: edges,
                 chat_history: sanitizedHistory,
+            }, {
+                headers: { Authorization: `Bearer ${token}` }
             });
 
             const result = response.data;
@@ -855,7 +862,26 @@ export function AgentSidebar() {
             if (result.success) {
                 if (result.nodes && result.nodes.length > 0) {
                     setNodes(result.nodes);
-                    setEdges(result.edges || []);
+                    interface AgentEdge {
+                        id?: string;
+                        source?: string;
+                        target?: string;
+                        sourceHandle?: string;
+                        source_handle?: string;
+                        targetHandle?: string;
+                        target_handle?: string;
+                        [key: string]: unknown;
+                    }
+                    const validEdges = (result.edges || []).map((e: AgentEdge | unknown) => {
+                        const safeE = e as AgentEdge;
+                        return {
+                            ...safeE,
+                            id: safeE.id || `${safeE.source}-${safeE.target}`,
+                            sourceHandle: safeE.sourceHandle || safeE.source_handle || undefined,
+                            targetHandle: safeE.targetHandle || safeE.target_handle || undefined,
+                        };
+                    });
+                    setEdges(validEdges);
                 }
 
                 addChatMessage({
@@ -873,13 +899,43 @@ export function AgentSidebar() {
                     thinking_duration_ms: result.thinking_duration_ms || undefined,
                 });
             }
-        } catch (error) {
+        } catch (error: unknown) {
             console.error("Agent error:", error);
-            toast.error("AI service error. Please try again.");
-            addChatMessage({
-                role: "assistant",
-                content: "Sorry, something went wrong with the AI service.",
-            });
+
+            interface ErrorResponse {
+                response?: {
+                    status?: number;
+                    data?: {
+                        detail?: string;
+                    };
+                };
+            }
+            const typedError = error as ErrorResponse;
+            const status = typedError.response?.status;
+            const detail = typedError.response?.data?.detail;
+
+            if (status === 402 || (typeof detail === 'string' && detail.toLowerCase().includes("insufficient credits"))) {
+                toast.error("Not enough credits. Please add credits to continue.", {
+                    action: {
+                        label: "Billing",
+                        onClick: () => window.location.href = "/usage"
+                    }
+                });
+
+                addChatMessage({
+                    role: "assistant",
+                    content: "You do not have enough credits to perform this generative action. Please add more credits on the [Billing & Usage](/usage) page to continue building!",
+                });
+
+                // Automatically open the modal for convenience
+                setIsCreditsModalOpen(true);
+            } else {
+                toast.error("AI service error. Please try again.");
+                addChatMessage({
+                    role: "assistant",
+                    content: "Sorry, something went wrong with the AI service.",
+                });
+            }
         } finally {
             setIsLoading(false);
         }
@@ -911,13 +967,22 @@ export function AgentSidebar() {
             style={{ width: `${sidebarWidth}px` }}
         >
             {/* Header */}
-            <div className="px-4 py-3 flex items-center gap-2.5 z-10 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.1)]">
-                <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-violet-500/20 to-blue-500/20 flex items-center justify-center">
-                    <Image src="/kureita_logo.png" alt="Kureita" width={24} height={24} className="w-6 h-6" unoptimized />
-                </div>
-                <div className="flex-1">
-                    <h2 className="font-semibold text-sm">Kureita</h2>
-                    <p className="text-[10px] text-muted-foreground/60">AI Workflow Builder</p>
+            <div className="px-4 py-3 flex flex-col gap-2 z-10 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.1)]">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                        <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-violet-500/20 to-blue-500/20 flex items-center justify-center">
+                            <Image src="/kureita_logo.png" alt="Kureita" width={24} height={24} className="w-6 h-6" unoptimized />
+                        </div>
+                        <div className="flex-1">
+                            <h2 className="font-semibold text-sm">Kureita</h2>
+                            <p className="text-[10px] text-muted-foreground/60">AI Workflow Builder</p>
+                        </div>
+                    </div>
+
+                    <AddCreditsModal
+                        open={isCreditsModalOpen}
+                        onOpenChange={setIsCreditsModalOpen}
+                    />
                 </div>
             </div>
 

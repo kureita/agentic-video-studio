@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { Node, Edge } from "@xyflow/react";
-import { workflowApi, Workflow, ChatMessage, WorkflowNode, WorkflowEdge, NodeState, WorkflowRunStatus } from "./workflow-api";
+import { workflowApi, Workflow, ChatMessage, WorkflowNode, NodeState, WorkflowRunStatus } from "./workflow-api";
 import { toast } from "sonner";
 
 // ============================================
@@ -81,6 +81,62 @@ const initialState = {
 // Store
 // ============================================
 
+interface RawEdge {
+    id?: string;
+    source?: string;
+    target?: string;
+    sourceHandle?: string;
+    source_handle?: string;
+    targetHandle?: string;
+    target_handle?: string;
+    [key: string]: unknown;
+}
+
+// Helper to infer missing handles for older workflows
+function inferMissingHandles(edge: RawEdge, nodes: Node[]) {
+    let sourceHandle = edge.sourceHandle || edge.source_handle;
+    let targetHandle = edge.targetHandle || edge.target_handle;
+
+    if (sourceHandle && targetHandle) return { sourceHandle, targetHandle };
+
+    const sourceNode = nodes.find((n: Node) => n.id === edge.source);
+    const targetNode = nodes.find((n: Node) => n.id === edge.target);
+
+    if (!sourceNode || !targetNode) return { sourceHandle, targetHandle };
+
+    if (!sourceHandle) {
+        switch (sourceNode.type) {
+            case 'text': sourceHandle = 'text|text'; break;
+            case 'imageGen': sourceHandle = 'image|image'; break;
+            case 'videoGen': sourceHandle = 'video|video'; break;
+            case 'audioGen': sourceHandle = 'audio|audio'; break;
+            case 'mediaUpload': sourceHandle = 'image|output'; break;
+            default: sourceHandle = 'any|output';
+        }
+    }
+
+    if (!targetHandle) {
+        switch (targetNode.type) {
+            case 'imageGen':
+                targetHandle = sourceNode.type === 'text' ? 'text|prompt' : 'image|image';
+                break;
+            case 'videoGen':
+                targetHandle = sourceNode.type === 'text' ? 'text|text' : 'image|start_image';
+                break;
+            case 'editorAgent':
+                if (sourceNode.type === 'videoGen') targetHandle = 'video|ref_videos';
+                else if (sourceNode.type === 'imageGen') targetHandle = 'image|ref_images';
+                else if (sourceNode.type === 'audioGen') targetHandle = 'audio|audio';
+                else targetHandle = 'text|text';
+                break;
+            default:
+                targetHandle = 'any|input';
+        }
+    }
+
+    return { sourceHandle, targetHandle };
+}
+
 export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     ...initialState,
 
@@ -100,13 +156,17 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
         })) as Node[];
 
         // Validate and sanitize edges
-        const validEdges = edges.map((edge: WorkflowEdge) => ({
-            id: edge.id || `${edge.source}-${edge.target}`,
-            source: edge.source,
-            target: edge.target,
-            sourceHandle: edge.sourceHandle || undefined,
-            targetHandle: edge.targetHandle || undefined,
-        })) as Edge[];
+        const validEdges = edges.map((edge: RawEdge | unknown) => {
+            const safeEdge = edge as RawEdge;
+            const { sourceHandle, targetHandle } = inferMissingHandles(safeEdge, validNodes);
+            return {
+                id: safeEdge.id || `${safeEdge.source}-${safeEdge.target}`,
+                source: safeEdge.source,
+                target: safeEdge.target,
+                sourceHandle,
+                targetHandle,
+            };
+        }) as Edge[];
 
         set({
             id: workflow.id,
@@ -258,13 +318,17 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
             })) as Node[];
 
             // Validate and sanitize edges
-            const validEdges = edges.map((edge: WorkflowEdge) => ({
-                id: edge.id || `${edge.source}-${edge.target}`,
-                source: edge.source,
-                target: edge.target,
-                sourceHandle: edge.sourceHandle || undefined,
-                targetHandle: edge.targetHandle || undefined,
-            })) as Edge[];
+            const validEdges = edges.map((edge: RawEdge | unknown) => {
+                const safeEdge = edge as RawEdge;
+                const { sourceHandle, targetHandle } = inferMissingHandles(safeEdge, validNodes);
+                return {
+                    id: safeEdge.id || `${safeEdge.source}-${safeEdge.target}`,
+                    source: safeEdge.source,
+                    target: safeEdge.target,
+                    sourceHandle,
+                    targetHandle,
+                };
+            }) as Edge[];
 
             console.log(`[WorkflowStore] Loaded workflow ${id}: ${validNodes.length} nodes, ${validEdges.length} edges`);
 

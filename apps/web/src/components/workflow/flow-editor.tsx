@@ -141,7 +141,7 @@ function FlowEditorInner({ workflowId }: FlowEditorProps) {
                 takeSnapshot(nodes, edges);
             }
 
-            const newEdges = applyEdgeChanges(changes, edges);
+            const hasRemove2 = changes.some(c => c.type === "remove"); if (hasRemove2) console.log("[FlowEditor] Removed edges due to changes:", changes); const newEdges = applyEdgeChanges(changes, edges);
             setEdges(newEdges);
         },
         [nodes, edges, setEdges, takeSnapshot]
