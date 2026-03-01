@@ -1,16 +1,15 @@
 "use client";
 
-import { ArrowLeft, Play, Loader2, CheckCircle2, Cloud } from "lucide-react";
+import { ArrowLeft, Loader2, CheckCircle2, Cloud } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useWorkflowStore } from "@/lib/workflow-store";
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
-import { cn } from "@/lib/utils";
 
 export function WorkflowHeader() {
     const router = useRouter();
-    const { name, setName, isSaving, isDirty, runWorkflow, isRunning, saveWorkflow } = useWorkflowStore();
+    const { name, setName, isSaving, isDirty, saveWorkflow } = useWorkflowStore();
     const [editingName, setEditingName] = useState(name);
 
     // Sync local state with store
@@ -73,27 +72,6 @@ export function WorkflowHeader() {
             </div>
 
             <div className="flex items-center gap-2">
-                <Button
-                    onClick={() => runWorkflow()}
-                    disabled={isRunning}
-                    size="sm"
-                    className={cn(
-                        "gap-2 transition-all shadow-md active:scale-95",
-                        isRunning ? "bg-accent text-accent-foreground" : "bg-primary text-primary-foreground hover:bg-primary/90"
-                    )}
-                >
-                    {isRunning ? (
-                        <>
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                            Running...
-                        </>
-                    ) : (
-                        <>
-                            <Play className="w-4 h-4 fill-current" />
-                            Run Workflow
-                        </>
-                    )}
-                </Button>
             </div>
         </div>
     );

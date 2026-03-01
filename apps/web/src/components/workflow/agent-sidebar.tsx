@@ -254,14 +254,14 @@ function ChatMessageItem({ message }: { message: ChatMessage }) {
         cleanContent = cleanContent.trim();
 
         return (
-            <div className="flex justify-end mb-4">
-                <div className="max-w-[85%]">
-                    <div className="rounded-2xl rounded-br-md px-3.5 py-2 text-[13px] bg-primary text-primary-foreground leading-relaxed">
-                        {cleanContent && <p><HighlightedReferences text={cleanContent} /></p>}
+            <div className="flex justify-end mb-5 mt-2">
+                <div className="max-w-[88%]">
+                    <div className="rounded-2xl rounded-br-[4px] px-4 py-2.5 text-[13.5px] bg-muted/80 text-foreground/90 border border-border/40 shadow-sm leading-relaxed">
+                        {cleanContent && <div className="whitespace-pre-wrap"><HighlightedReferences text={cleanContent} /></div>}
                         {attachments.length > 0 && (
-                            <div className={`flex flex-wrap gap-1.5 ${cleanContent ? 'mt-1.5' : ''}`}>
+                            <div className={`flex flex-wrap gap-1.5 ${cleanContent ? 'mt-3' : ''}`}>
                                 {attachments.map((att, idx) => (
-                                    <div key={idx} className="rounded-lg overflow-hidden border border-primary-foreground/20 max-w-[120px]">
+                                    <div key={idx} className="rounded-lg overflow-hidden border border-border/50 bg-muted/40 max-w-[120px] shadow-sm">
                                         {att.type.startsWith("image") && (
                                             <Image src={att.url} alt={att.filename} width={200} height={200} className="w-full h-auto object-cover" unoptimized />
                                         )}
@@ -636,33 +636,28 @@ function CursorInput({
                                         </div>
                                         <div className="max-h-[240px] overflow-y-auto flex flex-col">
                                             {[
-                                                { name: "Gemini 3.1 Pro (High)", isNew: true },
-                                                { name: "Gemini 3 Flash (Medium)", isNew: true },
-                                                { name: "Gemini 2.5 Flash-Lite (Low)", isNew: false },
-                                                { name: "Claude 4.6 Opus (High)", isNew: true },
-                                                { name: "Claude 4.6 Sonnet (Medium)", isNew: true },
-                                                { name: "Claude 4.5 Haiku (Low)", isNew: true },
-                                                { name: "GPT-5.2 Pro (High)", isNew: true },
-                                                { name: "GPT-5 Mini (Medium)", isNew: true },
-                                                { name: "GPT-4.1 Nano (Low)", isNew: true }
-                                            ].map((model) => (
+                                                "Gemini 3.1 Pro (High)",
+                                                "Gemini 3 Flash (Medium)",
+                                                "Gemini 2.5 Flash-Lite (Low)",
+                                                "Claude 4.6 Opus (High)",
+                                                "Claude 4.6 Sonnet (Medium)",
+                                                "Claude 4.5 Haiku (Low)",
+                                                "GPT-5.2 Pro (High)",
+                                                "GPT-5 Mini (Medium)",
+                                                "GPT-4.1 Nano (Low)"
+                                            ].map((modelName) => (
                                                 <button
-                                                    key={model.name}
+                                                    key={modelName}
                                                     onClick={() => {
-                                                        onModelSelect(model.name);
+                                                        onModelSelect(modelName);
                                                         setShowModelMenu(false);
                                                     }}
                                                     className={cn(
                                                         "w-full text-left px-2 py-2 text-[11px] hover:bg-accent/80 hover:text-accent-foreground cursor-pointer flex items-center justify-between",
-                                                        selectedModel === model.name && "bg-accent/60 text-accent-foreground font-medium"
+                                                        selectedModel === modelName && "bg-accent/60 text-accent-foreground font-medium"
                                                     )}
                                                 >
-                                                    <span className={cn(selectedModel !== model.name && "text-muted-foreground/90")}>{model.name}</span>
-                                                    {model.isNew && (
-                                                        <span className="bg-muted/80 px-1.5 py-0.5 rounded-full text-[9px] text-muted-foreground border border-border/50 shadow-sm font-medium">
-                                                            New
-                                                        </span>
-                                                    )}
+                                                    <span className={cn(selectedModel !== modelName && "text-muted-foreground/90")}>{modelName}</span>
                                                 </button>
                                             ))}
                                         </div>

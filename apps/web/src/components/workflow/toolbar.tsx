@@ -10,8 +10,6 @@ import {
     Redo2,
     Settings,
     MousePointer2,
-    Play,
-    Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -25,9 +23,6 @@ export interface WorkflowToolbarProps {
     onRedo: () => void;
     canUndo: boolean;
     canRedo: boolean;
-    onRunAll?: () => void;
-    isRunningAll?: boolean;
-    executionProgress?: { current: number; total: number } | null;
 }
 
 export function WorkflowToolbar({
@@ -38,9 +33,6 @@ export function WorkflowToolbar({
     onRedo,
     canUndo,
     canRedo,
-    onRunAll,
-    isRunningAll,
-    executionProgress,
 }: WorkflowToolbarProps) {
     const [isSelectorOpen, setIsSelectorOpen] = useState(false);
 
@@ -119,43 +111,6 @@ export function WorkflowToolbar({
                 <Button variant="ghost" size="icon" className="rounded-full w-10 h-10 text-muted-foreground hover:text-foreground">
                     <Settings className="w-5 h-5" />
                 </Button>
-
-                {onRunAll && (
-                    <>
-                        <div className="w-full h-[1px] bg-border my-1" />
-
-                        {/* Run All Button */}
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            className={cn(
-                                "rounded-full w-10 h-10 transition-all duration-200",
-                                isRunningAll
-                                    ? "text-amber-500 bg-amber-500/10 hover:bg-amber-500/20"
-                                    : "text-green-500 hover:text-green-600 hover:bg-green-500/10"
-                            )}
-                            onClick={onRunAll}
-                            disabled={isRunningAll}
-                            title={isRunningAll
-                                ? `Running... ${executionProgress ? `${executionProgress.current}/${executionProgress.total}` : ""}`
-                                : "Run All Nodes"
-                            }
-                        >
-                            {isRunningAll ? (
-                                <Loader2 className="w-5 h-5 animate-spin" />
-                            ) : (
-                                <Play className="w-5 h-5 fill-current" />
-                            )}
-                        </Button>
-
-                        {/* Progress indicator */}
-                        {isRunningAll && executionProgress && executionProgress.total > 0 && (
-                            <div className="text-[9px] text-center font-mono text-amber-500/80 -mt-1">
-                                {executionProgress.current}/{executionProgress.total}
-                            </div>
-                        )}
-                    </>
-                )}
             </div>
         </div>
     );

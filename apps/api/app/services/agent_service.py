@@ -193,11 +193,12 @@ Edges: {json.dumps(current_edges)}
 "{prompt}"
 
 # IMPORTANT: Your response MUST include a "thinking" field that contains your reasoning/plan BEFORE generating the workflow.
-This thinking field should describe:
+CRITICAL Token Limit Constraint: KEEP YOUR `thinking` AND `message` FIELDS EXTREMELY CONCISE (max 3-4 short sentences). Do NOT write out every node's prompt, plan, or position in the thinking field. You must save your output tokens for the actual JSON nodes/edges!
+
+This thinking field should briefly describe:
 1. What the user is asking for
-2. What approach you'll take (brainstorm vs generate)
-3. Key decisions (aspect ratio, scene count, character refs needed, etc.)
-4. Any tools/capabilities you're using (e.g. search_web if you needed real-time info)
+2. What approach you'll take
+3. Key decisions (aspect ratio, scene count, references)
 
 # Output Format (JSON only):
 {{
@@ -206,9 +207,19 @@ This thinking field should describe:
         {{"name": "search_web", "args": {{"query": "latest AI news"}}, "result": "Search results snippet..."}}
     ],
     "message": "Response to user",
-    "nodes": [ ... ],
-    "edges": [ ... ]
+    "action": "replace_all OR update",
+    "nodes": [ ... ], 
+    "edges": [ ... ],
+    "updates": {{
+        "add_nodes": [ ... ],
+        "update_nodes": [ {{ "id": "node-to-update", "data": {{ "prompt": "new text" }} }} ],
+        "delete_nodes": [ "node-id-to-delete" ],
+        "add_edges": [ ... ],
+        "delete_edges": [ "edge-id-to-delete" ]
+    }}
 }}
+Note: If `action` is "update", you ONLY need to return the `updates` object. Leave `nodes` and `edges` empty. Use this for small fixes to save time and tokens! If it's a completely new workflow, use "replace_all" and fill out `nodes` and `edges`.
+
 """
         
         try:
@@ -364,7 +375,7 @@ This thinking field should describe:
                 
                 response = await self.anthropic_client.messages.create(
                     model=mapped_model,
-                    max_tokens=4096,
+                    max_tokens=8192,
                     messages=messages,
                     tools=tools
                 )
@@ -394,7 +405,7 @@ This thinking field should describe:
                     # Ping claude again for final answer
                     response = await self.anthropic_client.messages.create(
                         model=mapped_model,
-                        max_tokens=4096,
+                        max_tokens=8192,
                         messages=messages,
                         tools=tools
                     )
@@ -407,33 +418,47 @@ This thinking field should describe:
             
             elapsed_ms = int((time.time() - start_time) * 1000)
             
+            # --- DEBUG LOGS ADDED FOR USER ---
+            print("\n" + "="*80)
+            print(f"[DEBUG] MODEL USED: {model}")
+            print("[DEBUG] RAW AI RESPONSE TEXT ALMOST EXACTLY AS RECEIVED:")
+            print("-" * 40)
+            print(response_text)
+            print("-" * 40)
+            print("="*80 + "\n")
+            # ---------------------------------
+
             if not response_text:
                 return {"success": False, "message": "Empty response from AI", "thinking": None, "thinking_duration_ms": None, "tool_calls": []}
 
-            # If anthropic includes markdown tags by accident, strip them
+            # ── Clean up response text ──────────────────────────────────────
+            # Extract JSON block if it's wrapped in markdown or conversational text
             response_text = response_text.strip()
-            if response_text.startswith("```json"):
-                response_text = response_text[7:]
-            if response_text.startswith("```"):
-                response_text = response_text[3:]
-            if response_text.endswith("```"):
-                response_text = response_text[:-3]
-            response_text = response_text.strip()
-
-            # ── Robust JSON repair ──────────────────────────────────────
             import re
-
+            markdown_match = re.search(r'```(?:json)?(.*?)```', response_text, re.DOTALL)
+            if markdown_match:
+                response_text = markdown_match.group(1).strip()
+                print("\n[DEBUG] Extracted JSON via Markdown block match.")
+            else:
+                # If no markdown block, try to find the outermost JSON object
+                json_match = re.search(r'\{[\s\S]*\}', response_text)
+                if json_match:
+                    response_text = json_match.group(0)
+                    print("\n[DEBUG] Extracted JSON via JSON bracket Match.")
+            
+            print("\n[DEBUG] EXTRACTED TEXT (Before Repair):")
+            print(response_text)
+            print("="*80 + "\n")
+            
+            # ── Robust JSON repair ──────────────────────────────────────
             def _repair_json(text: str) -> str:
-                """Fix common LLM JSON issues that cause 'Unterminated string' errors."""
-                # 1. Replace literal (unescaped) newlines/tabs inside JSON string values.
-                #    Walk through char-by-char tracking whether we're inside a string.
+                """Fix common LLM JSON issues that cause decoding errors."""
                 out = []
                 in_string = False
                 i = 0
                 while i < len(text):
                     ch = text[i]
                     if ch == '\\' and in_string:
-                        # Escaped character — keep as-is and skip next char
                         out.append(ch)
                         if i + 1 < len(text):
                             out.append(text[i + 1])
@@ -453,40 +478,80 @@ This thinking field should describe:
                     i += 1
                 text = ''.join(out)
 
-                # 2. Remove trailing commas before ] or }
+                # Remove trailing commas before ] or }
                 text = re.sub(r',\s*([\]}])', r'\1', text)
-
-                # 3. If the JSON was truncated (common with long outputs), try to close it
-                open_braces = text.count('{') - text.count('}')
-                open_brackets = text.count('[') - text.count(']')
-                if open_brackets > 0 or open_braces > 0:
-                    text = text.rstrip().rstrip(',')
-                    text += ']' * max(0, open_brackets)
-                    text += '}' * max(0, open_braces)
+                
+                # Close potentially truncated JSON without breaking strings
+                in_str = False
+                esc = False
+                stack = []
+                for char in text:
+                    if esc:
+                        esc = False
+                        continue
+                    if char == '\\':
+                        esc = True
+                        continue
+                    if char == '"':
+                        in_str = not in_str
+                    elif not in_str:
+                        if char == '{':
+                            stack.append('}')
+                        elif char == '[':
+                            stack.append(']')
+                        elif char == '}' and stack and stack[-1] == '}':
+                            stack.pop()
+                        elif char == ']' and stack and stack[-1] == ']':
+                            stack.pop()
+                            
+                text = text.rstrip().rstrip(',')
+                if in_str:
+                    text += '"'  # Close any unclosed string
+                
+                while stack:
+                    text += stack.pop()
 
                 return text
 
             response_text = _repair_json(response_text)
+
+            print("\n[DEBUG] FINAL REPAIRED JSON:")
+            print(response_text)
+            print("="*80 + "\n")
 
             try:
                 result = json.loads(response_text)
             except json.JSONDecodeError as parse_err:
                 print(f"[AgentService] JSON parse error after repair: {parse_err}")
                 print(f"[AgentService] Response text (first 500 chars): {response_text[:500]}")
-                # Last-resort: try to extract nodes/edges arrays with regex
-                nodes_match = re.search(r'"nodes"\s*:\s*(\[[\s\S]*?\])\s*[,}]', response_text)
-                edges_match = re.search(r'"edges"\s*:\s*(\[[\s\S]*?\])\s*[,}]', response_text)
+                
+                # Last-resort fallback with more robust regex that handles nested brackets better
+                nodes = []
+                edges = []
+                try:
+                    # Look for nodes array more safely
+                    nodes_match = re.search(r'"nodes"\s*:\s*(\[(?:[^\[\]]|\[[^\[\]]*\])*\])', response_text)
+                    if nodes_match:
+                        nodes = json.loads(nodes_match.group(1))
+                        
+                    edges_match = re.search(r'"edges"\s*:\s*(\[(?:[^\[\]]|\[[^\[\]]*\])*\])', response_text)
+                    if edges_match:
+                        edges = json.loads(edges_match.group(1))
+                except Exception as inner_err:
+                    print(f"[AgentService] Fallback regex extraction failed: {inner_err}")
+                    
                 result = {
                     "thinking": "JSON repair failed — extracted partial data",
                     "message": "Workflow generated (recovered from partial response)",
-                    "nodes": json.loads(nodes_match.group(1)) if nodes_match else [],
-                    "edges": json.loads(edges_match.group(1)) if edges_match else [],
+                    "nodes": nodes,
+                    "edges": edges,
                     "tool_calls": []
                 }
             
             # Extract thinking and tool_calls from the response
             thinking = result.get("thinking", None)
             tool_calls = result.get("tool_calls", [])
+            action = result.get("action", "replace_all")
             
             # Sanitize tool_calls to ensure proper format
             sanitized_tool_calls = []
@@ -497,6 +562,44 @@ This thinking field should describe:
                     "args": tc.get("args", {}),
                     "result": tc.get("result", None)
                 })
+                
+            # Process partial updates vs full replace
+            if action == "update" and "updates" in result:
+                final_nodes = {n["id"]: n for n in current_nodes}
+                final_edges = {e["id"]: e for e in current_edges}
+                
+                updates = result["updates"]
+                
+                for n in updates.get("add_nodes", []):
+                    final_nodes[n["id"]] = n
+                
+                for update in updates.get("update_nodes", []):
+                    nid = update.get("id")
+                    if nid in final_nodes:
+                        if "data" in update:
+                            for key, val in update["data"].items():
+                                final_nodes[nid]["data"][key] = val
+                        if "position" in update:
+                            final_nodes[nid]["position"] = update["position"]
+                        if "type" in update:
+                            final_nodes[nid]["type"] = update["type"]
+                            
+                for nid in updates.get("delete_nodes", []):
+                    if nid in final_nodes:
+                        del final_nodes[nid]
+                        
+                for e in updates.get("add_edges", []):
+                    final_edges[e["id"]] = e
+                    
+                for eid in updates.get("delete_edges", []):
+                    if eid in final_edges:
+                        del final_edges[eid]
+                        
+                result_nodes = list(final_nodes.values())
+                result_edges = list(final_edges.values())
+            else:
+                result_nodes = result.get("nodes", [])
+                result_edges = result.get("edges", [])
             
             return {
                 "success": True,
@@ -504,8 +607,8 @@ This thinking field should describe:
                 "thinking": thinking,
                 "thinking_duration_ms": elapsed_ms,
                 "tool_calls": sanitized_tool_calls,
-                "nodes": result.get("nodes", []),
-                "edges": result.get("edges", [])
+                "nodes": result_nodes,
+                "edges": result_edges
             }
             
         except Exception as e:
