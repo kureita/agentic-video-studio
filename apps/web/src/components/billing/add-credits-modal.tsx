@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Coins, Loader2, Sparkles } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { useAuth0 } from "@auth0/auth0-react";
@@ -60,71 +60,72 @@ export function AddCreditsModal({ open, onOpenChange, onSuccess, children }: Add
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             {children && <DialogTrigger asChild>{children}</DialogTrigger>}
-            <DialogContent className="sm:max-w-[425px]">
-                <DialogHeader>
-                    <DialogTitle className="flex items-center gap-2">
-                        <Coins className="w-5 h-5 text-violet-500" />
-                        Get More Credits
-                    </DialogTitle>
-                    <DialogDescription>
-                        Redeem a voucher or contact our team to top up your account balance.
-                    </DialogDescription>
-                </DialogHeader>
+            <DialogContent className="sm:max-w-[400px] p-0 gap-0 overflow-hidden">
+                {/* Header */}
+                <div className="px-6 pt-6 pb-4">
+                    <DialogHeader className="space-y-1">
+                        <DialogTitle className="text-lg font-semibold tracking-tight">
+                            Add Credits
+                        </DialogTitle>
+                        <DialogDescription className="text-sm text-muted-foreground">
+                            Redeem a voucher or contact us for custom plans.
+                        </DialogDescription>
+                    </DialogHeader>
+                </div>
 
-                <div className="grid gap-6 py-4">
+                <div className="px-6 pb-6 space-y-5">
                     {/* Voucher Section */}
-                    <div className="space-y-4">
-                        <form onSubmit={handleRedeem} className="space-y-3">
-                            <Label htmlFor="voucher" className="text-sm font-medium">
-                                Redeem Voucher
-                            </Label>
-                            <div className="flex gap-2">
-                                <Input
-                                    id="voucher"
-                                    placeholder="Enter your code (e.g. KUREITA_500)"
-                                    value={voucherCode}
-                                    onChange={(e) => setVoucherCode(e.target.value)}
-                                    className="uppercase font-mono tracking-wider"
-                                />
-                                <Button type="submit" disabled={!voucherCode.trim() || isLoading}>
-                                    {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Redeem"}
-                                </Button>
-                            </div>
-                        </form>
-                    </div>
+                    <form onSubmit={handleRedeem} className="space-y-2.5">
+                        <Label htmlFor="voucher" className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                            Voucher Code
+                        </Label>
+                        <div className="flex gap-2">
+                            <Input
+                                id="voucher"
+                                placeholder="e.g. KUREITA_500"
+                                value={voucherCode}
+                                onChange={(e) => setVoucherCode(e.target.value)}
+                                className="uppercase font-mono text-sm tracking-wider h-9"
+                            />
+                            <Button
+                                type="submit"
+                                size="sm"
+                                disabled={!voucherCode.trim() || isLoading}
+                                className="h-9 px-4 shrink-0"
+                            >
+                                {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Redeem"}
+                            </Button>
+                        </div>
+                    </form>
 
+                    {/* Divider */}
                     <div className="relative">
                         <div className="absolute inset-0 flex items-center">
-                            <span className="w-full border-t" />
+                            <div className="w-full border-t border-border/60" />
                         </div>
-                        <div className="relative flex justify-center text-xs uppercase">
-                            <span className="bg-background px-2 text-muted-foreground">Or</span>
+                        <div className="relative flex justify-center">
+                            <span className="bg-background px-3 text-[11px] uppercase tracking-widest text-muted-foreground/60 font-medium">or</span>
                         </div>
                     </div>
 
-                    {/* Contact Sales Section */}
-                    <div className="rounded-xl border border-border/50 bg-muted/30 p-4">
-                        <div className="flex gap-3 items-start">
-                            <div className="mt-0.5 w-8 h-8 rounded-full bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center shrink-0">
-                                <Sparkles className="w-4 h-4 text-violet-600 dark:text-violet-400" />
-                            </div>
-                            <div>
-                                <h4 className="text-sm font-semibold mb-1">Need a custom plan?</h4>
-                                <p className="text-xs text-muted-foreground mb-3">
-                                    Running out of credits often? Contact us for custom enterprise pricing or high-volume packages.
-                                </p>
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="w-full bg-background"
-                                    onClick={handleContactUs}
-                                    disabled={isContacting}
-                                >
-                                    {isContacting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-                                    Contact Sales
-                                </Button>
-                            </div>
+                    {/* Contact Sales */}
+                    <div className="rounded-lg border border-border/40 p-4 space-y-3">
+                        <div>
+                            <h4 className="text-sm font-medium">Need a custom plan?</h4>
+                            <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                                Contact us for enterprise pricing or high-volume packages.
+                            </p>
                         </div>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="w-full h-9 text-xs font-medium"
+                            onClick={handleContactUs}
+                            disabled={isContacting}
+                        >
+                            {isContacting ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-2" /> : null}
+                            Contact Sales
+                        </Button>
                     </div>
                 </div>
             </DialogContent>

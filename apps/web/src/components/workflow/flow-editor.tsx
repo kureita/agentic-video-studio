@@ -356,7 +356,7 @@ function FlowEditorInner({ workflowId }: FlowEditorProps) {
                 defaultEdgeOptions={{
                     animated: true,
                     style: {
-                        stroke: 'hsl(var(--primary))',
+                        stroke: 'var(--primary)',
                         strokeWidth: 2,
                         cursor: activeTool === 'cut' ? 'crosshair' : (activeTool === 'pointer' ? 'default' : 'pointer'),
                     },
@@ -366,7 +366,7 @@ function FlowEditorInner({ workflowId }: FlowEditorProps) {
                 <Controls
                     showFitView
                     orientation="horizontal"
-                    className="!flex !flex-row !absolute !bottom-4 !right-4 !left-auto !top-auto !transform-none !bg-card !border !border-border !rounded-full !shadow-lg !p-1"
+                    className="!flex !flex-row !absolute !bottom-[72px] md:!bottom-4 !left-2 md:!left-auto md:!right-4 !top-auto !transform-none !bg-card !border !border-border !rounded-full !shadow-lg !p-0.5 md:!p-1"
                 />
             </ReactFlow>
         </div>

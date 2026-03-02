@@ -57,7 +57,7 @@ export const CommentNode = memo(({ id, selected, data }: NodeProps) => {
                 <textarea
                     ref={textareaRef}
                     className="w-full h-full bg-transparent border-none outline-none resize-none text-xs leading-relaxed placeholder:text-muted-foreground/50 nodrag nowheel"
-                    style={{ color: "hsl(var(--foreground))" }}
+                    style={{ color: "var(--foreground)" }}
                     placeholder="Add a comment..."
                     value={text}
                     onChange={(e) => updateNodeData(id, { text: e.target.value })}

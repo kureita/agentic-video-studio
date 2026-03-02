@@ -60,11 +60,21 @@ Resources:
       Policies:
         - S3CrudPolicy:
             BucketName: !Ref KureitaAssetsBucket
-
+        - Statement:
+            - Effect: Allow
+              Action:
+                - lambda:InvokeFunction
+              Resource: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:kureita-api-KureitaApiFunction-*"
+            
   KureitaAssetsBucket:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: !Sub kureita-assets-${AWS::AccountId}-${AWS::Region}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: false
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: false
       CorsConfiguration:
         CorsRules:
           - AllowedHeaders:
@@ -78,6 +88,19 @@ Resources:
             AllowedOrigins:
               - "https://app.kureita.com"
               - "https://app-api.kureita.com"
+
+  KureitaAssetsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref KureitaAssetsBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: PublicReadGetObject
+            Effect: Allow
+            Principal: "*"
+            Action: "s3:GetObject"
+            Resource: !Sub "arn:aws:s3:::${KureitaAssetsBucket}/*"
 
   ApiDomainName:
     Type: AWS::ApiGatewayV2::DomainName

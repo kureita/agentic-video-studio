@@ -7,6 +7,7 @@ from datetime import datetime
 from uuid import uuid4
 from fastapi import UploadFile
 from botocore.exceptions import NoCredentialsError
+from botocore.config import Config
 
 from app.core.config import settings
 
@@ -16,6 +17,11 @@ class StorageService(ABC):
     @abstractmethod
     async def upload_file(self, file_data: bytes | UploadFile, filename: str, content_type: str = None) -> str:
         """Upload a file and return its URL."""
+        pass
+        
+    @abstractmethod
+    def get_presigned_url(self, file_url: str) -> str:
+        """Get a presigned URL if applicable, otherwise return the original URL."""
         pass
 
     @abstractmethod
@@ -67,6 +73,9 @@ class LocalStorageService(StorageService):
             base_url = base_url[:-1]
             
         return f"{base_url}/static/uploads/{safe_filename}"
+        
+    def get_presigned_url(self, file_url: str) -> str:
+        return file_url
 
     async def delete_file(self, file_url: str) -> bool:
         # Extract filename from URL
@@ -89,13 +98,20 @@ class S3StorageService(StorageService):
         self.bucket = settings.s3_bucket
         self.region = settings.aws_region
         
-        self.s3_client = boto3.client(
-            's3',
-            aws_access_key_id=settings.aws_access_key_id,
-            aws_secret_access_key=settings.aws_secret_access_key,
-            region_name=self.region,
-            endpoint_url=settings.s3_endpoint if settings.s3_endpoint else None
-        )
+        kwargs = {
+            'region_name': self.region,
+            'config': Config(signature_version='s3v4')
+        }
+        
+        if not os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
+            if settings.aws_access_key_id and settings.aws_secret_access_key:
+                kwargs['aws_access_key_id'] = settings.aws_access_key_id
+                kwargs['aws_secret_access_key'] = settings.aws_secret_access_key
+            
+        if settings.s3_endpoint:
+            kwargs['endpoint_url'] = settings.s3_endpoint
+            
+        self.s3_client = boto3.client('s3', **kwargs)
 
     async def upload_file(self, file_data: bytes | UploadFile, filename: str, content_type: str = None) -> str:
         try:
@@ -127,13 +143,12 @@ class S3StorageService(StorageService):
                     **extra_args
                 )
 
-            # Return URL
-            # If standard S3
+            # Return Unsigned URL by default
             if not settings.s3_endpoint:
                 url = f"https://{self.bucket}.s3.{self.region}.amazonaws.com/{key}"
             else:
-                 # Custom endpoint (e.g. MinIO, R2)
-                 url = f"{settings.s3_endpoint}/{self.bucket}/{key}"
+                # Custom endpoint (e.g. MinIO, R2)
+                url = f"{settings.s3_endpoint}/{self.bucket}/{key}"
             
             return url
 
@@ -165,3 +180,23 @@ class S3StorageService(StorageService):
         except Exception as e:
             print(f"S3 Delete Error: {e}")
             return False
+
+    def get_presigned_url(self, file_url: str) -> str:
+        try:
+            from urllib.parse import urlparse
+            path = urlparse(file_url).path
+            if path.startswith("/"):
+                path = path[1:]
+                
+            # Keep custom endpoints simple if they don't support signing
+            if settings.s3_endpoint:
+                return file_url
+                
+            return self.s3_client.generate_presigned_url(
+                ClientMethod='get_object',
+                Params={'Bucket': self.bucket, 'Key': path},
+                ExpiresIn=3600  # Generate short-lived URL (1 hour) when viewed
+            )
+        except Exception as e:
+            print(f"S3 Presigned URL Error: {e}")
+            return file_url

@@ -165,7 +165,7 @@ def serialize_workflow(workflow: dict) -> dict:
     if not isinstance(chat_history, list):
         print(f"[Workflow] Warning: chat_history is not a list, got {type(chat_history)}")
         chat_history = []
-    
+    # Let the router handle presigning output URLs if necessary
     return {
         "id": str(workflow.get("_id")) if "_id" in workflow else workflow.get("id"),
         "name": workflow.get("name", "Untitled Workflow"),
@@ -176,6 +176,22 @@ def serialize_workflow(workflow: dict) -> dict:
         "created_at": workflow.get("created_at", datetime.now(timezone.utc)).isoformat(),
         "updated_at": workflow.get("updated_at", datetime.now(timezone.utc)).isoformat(),
     }
+    
+def presign_outputs(outputs: Dict[str, Any]) -> Dict[str, Any]:
+    """Helper to presign all url-like strings in an outputs dictionary."""
+    from app.services.storage_service import S3StorageService
+    s3_service = S3StorageService()
+    
+    presigned = {}
+    for k, v in outputs.items():
+        if isinstance(v, str) and v.startswith("http") and "kureita.s3" in v:
+            presigned[k] = s3_service.get_presigned_url(v)
+        elif isinstance(v, dict):
+             # Recursively presign dictionaries (like generated scene objects)
+             presigned[k] = presign_outputs(v)
+        else:
+            presigned[k] = v
+    return presigned
 
 
 # ============================================
@@ -258,6 +274,11 @@ async def list_workflows(current_user: dict = Depends(get_current_user)):
         else:
             status = "draft"
         
+        from app.services.storage_service import S3StorageService
+        s3_service = S3StorageService()
+        if thumbnail_url and "kureita.s3" in thumbnail_url:
+            thumbnail_url = s3_service.get_presigned_url(thumbnail_url)
+            
         result.append(
             WorkflowListItem(
                 id=str(w["_id"]),
@@ -301,6 +322,7 @@ async def get_workflow(workflow_id: str, current_user: dict = Depends(get_curren
         raise HTTPException(status_code=404, detail="Workflow not found")
     
     serialized = serialize_workflow(workflow)
+    serialized["outputs"] = presign_outputs(serialized["outputs"])
     print(f"[Workflow] Retrieved workflow {workflow_id}: {len(serialized['nodes'])} nodes, {len(serialized['edges'])} edges")
     
     return serialized
@@ -348,10 +370,12 @@ async def update_workflow(
     
     # Return updated workflow
     workflow = await collection.find_one({"_id": oid})
+    serialized = serialize_workflow(workflow)
+    serialized["outputs"] = presign_outputs(serialized["outputs"])
     
     print(f"[Workflow] Updated workflow: {workflow_id}")
     
-    return serialize_workflow(workflow)
+    return serialized
 
 
 @router.delete("/{workflow_id}")
@@ -446,10 +470,15 @@ async def run_node(
     else:
         print(f"[Workflow] Node {node_id} failed: {result.get('error')}")
     
+    output_val = result.get("output")
+    if result.get("success") and isinstance(output_val, str) and "kureita.s3" in output_val:
+        from app.services.storage_service import S3StorageService
+        output_val = S3StorageService().get_presigned_url(output_val)
+        
     return RunNodeResponse(
         success=result.get("success", False),
         node_id=node_id,
-        output=result.get("output"),
+        output=output_val,
         error=result.get("error"),
     )
 
@@ -515,9 +544,11 @@ async def run_workflow(workflow_id: str, current_user: dict = Depends(get_curren
     
     print(f"[Workflow] Workflow completed. Outputs: {len(outputs)}, Errors: {len(errors)}")
     
+    presigned_outputs = presign_outputs(outputs)
+    
     return RunWorkflowResponse(
         success=len(errors) == 0,
-        outputs=outputs,
+        outputs=presigned_outputs,
         errors=errors,
     )
 
@@ -786,7 +817,7 @@ async def get_run_status(workflow_id: str, current_user: dict = Depends(get_curr
         run_id=execution.get("run_id", ""),
         status=execution.get("status", "running"),
         node_states=node_states,
-        outputs=execution.get("outputs", {}),
+        outputs=presign_outputs(execution.get("outputs", {})),
         errors=execution.get("errors", []),
         progress=execution.get("progress", {}),
     )

@@ -39,7 +39,7 @@ function WorkflowEditorContent() {
     }
 
     return (
-        <div className="flex flex-col h-screen">
+        <div className="flex flex-col h-[100dvh]">
             <WorkflowHeader />
             <div className="flex-1 relative overflow-hidden">
                 <FlowEditor workflowId={workflowId} />

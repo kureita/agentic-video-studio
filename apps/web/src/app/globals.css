@@ -136,16 +136,16 @@
   /* React Flow Customization */
   .react-flow__controls {
     box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
-    border: 1px solid hsl(var(--border));
+    border: 1px solid var(--border);
     overflow: hidden;
   }
 
   .react-flow__controls-button {
-    background-color: hsl(var(--card)) !important;
+    background-color: var(--card) !important;
     border-bottom: none !important;
-    border-right: 1px solid hsl(var(--border)) !important;
-    color: hsl(var(--foreground)) !important;
-    fill: hsl(var(--foreground)) !important;
+    border-right: 1px solid var(--border) !important;
+    color: var(--foreground) !important;
+    fill: var(--foreground) !important;
     width: 32px !important;
     height: 32px !important;
   }
@@ -155,9 +155,9 @@
   }
 
   .react-flow__controls-button:hover {
-    background-color: hsl(var(--accent)) !important;
-    color: hsl(var(--accent-foreground)) !important;
-    fill: hsl(var(--accent-foreground)) !important;
+    background-color: var(--accent) !important;
+    color: var(--accent-foreground) !important;
+    fill: var(--accent-foreground) !important;
   }
 
   .react-flow__controls-button svg {
@@ -167,6 +167,29 @@
   /* Hide attribution as requested */
   .react-flow__attribution {
     display: none !important;
+  }
+
+  /* Mobile-specific React Flow overrides */
+  @media (max-width: 767px) {
+    .react-flow__controls-button {
+      width: 28px !important;
+      height: 28px !important;
+    }
+
+    .react-flow__controls-button svg {
+      width: 12px !important;
+      height: 12px !important;
+    }
+
+    /* Better touch handling on mobile */
+    .react-flow__pane {
+      touch-action: none;
+    }
+
+    /* Compact node execution badge on mobile */
+    .react-flow__node {
+      touch-action: none;
+    }
   }
 }
 

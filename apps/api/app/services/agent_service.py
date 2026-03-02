@@ -59,6 +59,7 @@ class AgentService:
         start_prompt = f"""
 You are an expert AI Video Agent that builds workflows for a visual node-based video generation studio.
 The user describes a video they want to create, and you generate nodes and edges for a workflow editor.
+Your #1 priority is VISUAL CONSISTENCY — every character, background, and style element must look identical across all scenes.
 
 # Available Node Types and Their Handles:
 
@@ -98,15 +99,105 @@ The user describes a video they want to create, and you generate nodes and edges
 - **IF NO** (Request is specific/confirmed, e.g., "Use that script", "Scene 1 is..."):
   - Proceed to generate workflow.
 
-## 2. CHARACTER & ASSET FIRST (Consistency)
-**Check**: Does the video involve a repeating character, person, or specific setting?
-- **IF YES**:
-  - **Rule**: You MUST create `imageGen` nodes for these assets **at the very beginning** (Sequence 0).
-  - **Label**: "Character Reference" or "Background Reference".
-  - **Action**: Connect these nodes to the `image|start_image` or `image|image` (reference) inputs of your Scene nodes.
-  - **Never** just generate "a person" in every scene independently. Use the reference!
+## 2. CHARACTER BIBLE & REFERENCE IMAGES (Consistency Foundation)
+**Check**: Does the video involve any character, person, animal, or specific subject?
+- **IF YES**, you MUST do ALL of the following:
 
-## 3. ASPECT RATIO & DIMENSIONS (GLOBAL RULE)
+### A. Write a Character Bible
+Before generating ANY nodes, define a **frozen Character Bible** for each main character. This is a precise, factual description of their appearance that will be embedded verbatim in EVERY scene prompt.
+
+**Character Bible format** (be extremely specific — vague = inconsistent):
+```
+[CHARACTER: Name]
+Physical: [age]-year-old [gender] with [exact hair color, length, style], [exact eye color], [skin tone], [build/height]
+Clothing: [exact outfit with colors, materials, and details — e.g., "weathered brown leather jacket over a white crew-neck t-shirt, dark indigo slim jeans, scuffed black combat boots"]
+Distinguishing: [scars, tattoos, accessories, glasses, facial hair, etc.]
+```
+
+### B. Generate Character Reference Images
+- Create `imageGen` nodes at **Row 0** for each main character.
+- Label: "Character Ref: [Name]" 
+- The imageGen prompt should be the full Character Bible description + "front-facing, neutral pose, studio lighting, full body visible, plain background"
+- Connect these character reference nodes to the `image|start_image` input of EVERY `videoGen` node featuring that character.
+
+### C. Embed the Bible in EVERY Prompt
+- The Character Bible block must appear **word-for-word** at the START of every text node prompt and every videoGen/imageGen prompt that features the character.
+- NEVER paraphrase it. NEVER change adjectives. "Auburn" must stay "auburn" — never switch to "reddish-brown".
+
+## 3. STYLE BIBLE (Visual Consistency Across All Scenes)
+Before generating nodes, define a **frozen Style Bible** that locks the visual language for the entire video.
+
+**Style Bible format:**
+```
+[STYLE]
+Camera: [lens, e.g., "85mm lens, shallow depth of field"]
+Lighting: [e.g., "warm golden hour side-lighting" or "dramatic Rembrandt lighting with deep shadows"]
+Color Palette: [e.g., "desaturated teal and warm amber tones" or "high contrast, rich blacks, neon accent colors"]
+Texture: [e.g., "cinematic 35mm film grain" or "clean digital, sharp detail"]
+Mood: [e.g., "gritty and tense" or "dreamy and ethereal"]
+```
+
+**Rules:**
+- The Style Bible block must appear **word-for-word** in every scene prompt, after the Character Bible.
+- ALL scenes must share the same Style Bible. Do not vary lighting/color per scene unless the user explicitly asks.
+- This prevents the #1 community complaint: "my clips look like they're from different movies."
+
+## 4. LAST-FRAME CHAINING (Scene-to-Scene Continuity)
+**CRITICAL for preventing background/environment drift between clips.**
+
+For sequential scenes (Scene 1 → Scene 2 → Scene 3...), you MUST create edges that chain the **end frame** of one video to the **start image** of the next:
+
+```
+Scene 1 videoGen (output: "image|end_frame") → Scene 2 videoGen (input: "image|start_image")
+Scene 2 videoGen (output: "image|end_frame") → Scene 3 videoGen (input: "image|start_image")
+```
+
+**Why this works:** The AI model sees the exact last frame of the previous clip as its starting point, so it maintains the same environment, character position, and lighting. This is the #1 technique used by professional AI filmmakers.
+
+**Rules:**
+- Create these chaining edges for EVERY pair of sequential scenes.
+- The edge format: `{{ "id": "chain-sN-sN+1", "source": "[scene-N-video-node-id]", "target": "[scene-N+1-video-node-id]", "sourceHandle": "image|end_frame", "targetHandle": "image|start_image" }}`
+- If Scene N+1 already has a start image from an imageGen node, the last-frame chain takes priority. Remove the imageGen→start_image edge for that scene and use the chain instead (EXCEPT for the very first scene, which should use its start image).
+
+## 5. BACKGROUND/LOCATION REFERENCE IMAGES
+**Check**: Does the video feature distinct locations or environments?
+- **IF YES**:
+  - Create `imageGen` nodes at **Row 0** for each unique location.
+  - Label: "Location: [Name]" (e.g., "Location: Dark Alley", "Location: Rooftop")
+  - Prompt: Detailed description of the environment + Style Bible + "wide establishing shot, no people, [aspect ratio]"
+  - Connect each location imageGen to the `image|image` (reference) input of the FIRST `imageGen` node in each scene that takes place in that location.
+  - This anchors the AI to generate the same environment every time.
+
+## 6. TRANSITION CONTEXT (Narrative Continuity)
+Each scene prompt (except the first) MUST include a brief transition sentence at the beginning of the scene-specific action that describes where the previous scene left off.
+
+**Example:**
+- Scene 1 prompt ends with: "...she pushes open the heavy metal door."
+- Scene 2 prompt's action starts with: "Continuing from the previous shot — she steps through the doorway into a dimly lit kitchen. She looks around cautiously..."
+
+This gives the AI model narrative context and helps it understand spatial/temporal continuity.
+
+## 7. STRUCTURED PROMPT TEMPLATE (Mandatory Format)
+Every `text` node prompt for a scene MUST follow this exact structure:
+
+```
+[CHARACTER BIBLE — copied verbatim]
+
+[STYLE BIBLE — copied verbatim]
+
+[SCENE ACTION — unique per scene, includes transition context]
+[Describe what happens: character actions, movements, expressions, interactions]
+
+[CAMERA DIRECTION — specific per scene]
+[Shot type, camera movement, framing. e.g., "Medium close-up, slow dolly push in, eye-level angle"]
+```
+
+**Rules:**
+- Character Bible and Style Bible blocks are IDENTICAL across all scene prompts — copy-paste, never rewrite.
+- Only SCENE ACTION and CAMERA DIRECTION change between scenes.
+- This prevents "identity drift" — the AI always has the same character/style anchors.
+
+## 8. ASPECT RATIO & DIMENSIONS (GLOBAL RULE)
 **CRITICAL:** You must determine the **Primary Aspect Ratio** for the entire video first.
 - **Video Ads / Default**: 16:9
 - **Social (TikTok/Shorts)**: 9:16
@@ -127,7 +218,7 @@ The user describes a video they want to create, and you generate nodes and edges
 - Do **NOT** create 1:1 (Square) images for a 16:9 or 9:16 video.
 - All Character References, Backgrounds, and Start/End frames MUST match the video dimensions exactly.
 
-## 4. TEXT NODE REFERENCING (CRITICAL)
+## 9. TEXT NODE REFERENCING (CRITICAL)
 When a **text** node is connected to a generator node (imageGen, videoGen, editorAgent, vision, audioGen),
 the generator node's prompt/instruction field MUST reference the connected text node using the `@Text #N` syntax.
 
@@ -151,14 +242,14 @@ the generator node's prompt/instruction field MUST reference the connected text 
 - For `editorAgent` nodes, use `@Text #N` in the `instruction` field.
 - For `imageGen`, `videoGen`, and `audioGen` nodes, use `@Text #N` in the `prompt` field.
 
-## 5. PROACTIVE WEB SEARCH (MANDATORY)
+## 10. PROACTIVE WEB SEARCH (MANDATORY)
 **RULE: If the user mentions ANY website URL or domain name (e.g., "regulify.ai", "example.com", https://...), you MUST call the `search_web` tool IMMEDIATELY to fetch and read its content. Do NOT ask the user for permission. Do NOT skip this step.**
 - **Query format**: Pass ONLY the bare domain or URL as the query — e.g., `"regulify.ai"` or `"https://regulify.ai"`. Do NOT add `site:` operators, `OR`, or any other modifiers. The backend handles scraping automatically.
 - Use the scraped content (brand, tagline, features, visuals) to ground your response in real, accurate information.
 - After fetching, summarize what you found in your `thinking` field, and reference it in your `message`.
 - Similarly, if the user asks about current events, news, or time-sensitive data, call `search_web` with a clear, concise query.
 
-## 6. LAYOUT GRID (Prevent Overlap)
+## 11. LAYOUT GRID (Prevent Overlap)
 You must use a strict GRID coordinate system based on ROW and COLUMN indices.
 - **Horizontal Grid Unit (X spacing)**: 700px between columns.
 - **Vertical Grid Unit (Y spacing)**: 600px between rows.
@@ -170,7 +261,7 @@ You must use a strict GRID coordinate system based on ROW and COLUMN indices.
 3. Calculate: `x = col_index * 700`, `y = row_index * 600`.
 
 **Standard Layout Map**:
-- **Row 0 (Assets)**: Character Refs, Backgrounds. (x=0, x=700, x=1400...)
+- **Row 0 (References)**: Character Refs, Location Refs. (x=0, x=700, x=1400...)
 - **Row 1 (Scene 1)**: Text (x=0) -> Start Image (x=700) -> Video (x=1400)
 - **Row 2 (Scene 2)**: Text (x=0) -> Start Image (x=700) -> Video (x=1400)
 - ...
@@ -197,8 +288,8 @@ CRITICAL Token Limit Constraint: KEEP YOUR `thinking` AND `message` FIELDS EXTRE
 
 This thinking field should briefly describe:
 1. What the user is asking for
-2. What approach you'll take
-3. Key decisions (aspect ratio, scene count, references)
+2. Character Bible + Style Bible summary
+3. Key decisions (aspect ratio, scene count, chaining strategy)
 
 # Output Format (JSON only):
 {{
@@ -381,12 +472,13 @@ Note: If `action` is "update", you ONLY need to return the `updates` object. Lea
                 
                 messages = [{"role": "user", "content": claude_prompt}]
                 
-                response = await self.anthropic_client.messages.create(
+                async with self.anthropic_client.messages.stream(
                     model=mapped_model,
-                    max_tokens=8192,
+                    max_tokens=32768,
                     messages=messages,
                     tools=tools
-                )
+                ) as stream:
+                    response = await stream.get_final_message()
                 
                 if response.stop_reason == "tool_use":
                     # Append assistant's tool use message to history
@@ -411,12 +503,13 @@ Note: If `action` is "update", you ONLY need to return the `updates` object. Lea
                     messages.append({"role": "user", "content": tool_results})
                     
                     # Ping claude again for final answer
-                    response = await self.anthropic_client.messages.create(
+                    async with self.anthropic_client.messages.stream(
                         model=mapped_model,
-                        max_tokens=8192,
+                        max_tokens=32768,
                         messages=messages,
                         tools=tools
-                    )
+                    ) as stream:
+                        response = await stream.get_final_message()
 
                 # Extract the text content from Anthropic's response blocks
                 response_text = ""
@@ -464,36 +557,30 @@ Note: If `action` is "update", you ONLY need to return the `updates` object. Lea
             
             # ── Robust JSON repair ──────────────────────────────────────
             def _repair_json(text: str) -> str:
-                """Fix common LLM JSON issues that cause decoding errors."""
-                out = []
-                in_string = False
-                i = 0
-                while i < len(text):
-                    ch = text[i]
-                    if ch == '\\' and in_string:
-                        out.append(ch)
-                        if i + 1 < len(text):
-                            out.append(text[i + 1])
-                        i += 2
-                        continue
-                    if ch == '"':
-                        in_string = not in_string
-                        out.append(ch)
-                    elif in_string and ch == '\n':
-                        out.append('\\n')
-                    elif in_string and ch == '\r':
-                        out.append('\\r')
-                    elif in_string and ch == '\t':
-                        out.append('\\t')
-                    else:
-                        out.append(ch)
-                    i += 1
-                text = ''.join(out)
-
-                # Remove trailing commas before ] or }
+                """Fix common LLM JSON issues that cause decoding errors.
+                
+                Strategy: Try the least invasive fix first, escalate only if needed.
+                NEVER manually escape characters inside string values — that corrupts content.
+                """
+                # Fast path: try strict=False first (accepts control chars in strings)
+                try:
+                    json.loads(text, strict=False)
+                    return text  # Already valid, no repair needed
+                except json.JSONDecodeError:
+                    pass
+                
+                # Fix 1: Remove trailing commas before ] or }
                 text = re.sub(r',\s*([\]}])', r'\1', text)
                 
-                # Close potentially truncated JSON without breaking strings
+                # Try again after trailing comma fix
+                try:
+                    json.loads(text, strict=False)
+                    return text
+                except json.JSONDecodeError:
+                    pass
+                
+                # Fix 2: Close truncated JSON (bracket balancing)
+                # Track string state carefully to avoid mis-counting brackets inside strings
                 in_str = False
                 esc = False
                 stack = []
@@ -502,7 +589,8 @@ Note: If `action` is "update", you ONLY need to return the `updates` object. Lea
                         esc = False
                         continue
                     if char == '\\':
-                        esc = True
+                        if in_str:
+                            esc = True
                         continue
                     if char == '"':
                         in_str = not in_str
@@ -515,11 +603,13 @@ Note: If `action` is "update", you ONLY need to return the `updates` object. Lea
                             stack.pop()
                         elif char == ']' and stack and stack[-1] == ']':
                             stack.pop()
-                            
+                
+                # If we're inside an unclosed string, close it
                 text = text.rstrip().rstrip(',')
                 if in_str:
-                    text += '"'  # Close any unclosed string
+                    text += '"'
                 
+                # Close any unclosed brackets/braces
                 while stack:
                     text += stack.pop()
 
@@ -532,25 +622,50 @@ Note: If `action` is "update", you ONLY need to return the `updates` object. Lea
             print("="*80 + "\n")
 
             try:
-                result = json.loads(response_text)
+                result = json.loads(response_text, strict=False)
             except json.JSONDecodeError as parse_err:
                 print(f"[AgentService] JSON parse error after repair: {parse_err}")
                 print(f"[AgentService] Response text (first 500 chars): {response_text[:500]}")
                 
-                # Last-resort fallback with more robust regex that handles nested brackets better
+                # Last-resort fallback: extract "nodes" and "edges" arrays via bracket matching
+                def _extract_json_array(text: str, key: str) -> list:
+                    """Find '"key": [...]' in text using proper bracket matching."""
+                    pattern = re.search(r'"' + re.escape(key) + r'"\s*:\s*\[', text)
+                    if not pattern:
+                        return []
+                    start = pattern.end() - 1  # position of the opening [
+                    depth = 0
+                    in_str = False
+                    esc = False
+                    for i in range(start, len(text)):
+                        c = text[i]
+                        if esc:
+                            esc = False
+                            continue
+                        if c == '\\' and in_str:
+                            esc = True
+                            continue
+                        if c == '"':
+                            in_str = not in_str
+                        elif not in_str:
+                            if c == '[':
+                                depth += 1
+                            elif c == ']':
+                                depth -= 1
+                                if depth == 0:
+                                    try:
+                                        return json.loads(text[start:i+1], strict=False)
+                                    except json.JSONDecodeError:
+                                        return []
+                    return []
+                
                 nodes = []
                 edges = []
                 try:
-                    # Look for nodes array more safely
-                    nodes_match = re.search(r'"nodes"\s*:\s*(\[(?:[^\[\]]|\[[^\[\]]*\])*\])', response_text)
-                    if nodes_match:
-                        nodes = json.loads(nodes_match.group(1))
-                        
-                    edges_match = re.search(r'"edges"\s*:\s*(\[(?:[^\[\]]|\[[^\[\]]*\])*\])', response_text)
-                    if edges_match:
-                        edges = json.loads(edges_match.group(1))
+                    nodes = _extract_json_array(response_text, "nodes")
+                    edges = _extract_json_array(response_text, "edges")
                 except Exception as inner_err:
-                    print(f"[AgentService] Fallback regex extraction failed: {inner_err}")
+                    print(f"[AgentService] Fallback bracket-matching extraction failed: {inner_err}")
                     
                 result = {
                     "thinking": "JSON repair failed — extracted partial data",

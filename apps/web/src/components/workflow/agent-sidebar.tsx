@@ -20,7 +20,9 @@ import {
     Clapperboard,
     Upload,
     Music,
+    Workflow,
 } from "lucide-react";
+
 import { cn } from "@/lib/utils";
 import Image from "next/image";
 import { useWorkflowStore } from "@/lib/workflow-store";
@@ -31,6 +33,9 @@ import { MarkdownContent, HighlightedReferences } from "@/components/workflow/ma
 import { toast } from "sonner";
 import { AddCreditsModal } from "@/components/billing/add-credits-modal";
 import { useAuth0 } from "@auth0/auth0-react";
+import { useMobileTab } from "@/app/dashboard/layout";
+import { useRouter } from "next/navigation";
+
 
 // ============================================
 // Thinking Block Component
@@ -712,10 +717,29 @@ function CursorInput({
 }
 
 // ============================================
+// Mobile Tab Switch Buttons
+// ============================================
+
+function MobileSwitchToCanvas() {
+    const { setActiveTab } = useMobileTab();
+    return (
+        <button
+            onClick={() => setActiveTab("canvas")}
+            className="md:hidden flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors cursor-pointer"
+            title="Switch to Canvas"
+        >
+            <Workflow className="w-4 h-4" />
+            <span>Canvas</span>
+        </button>
+    );
+}
+
+// ============================================
 // Main Agent Sidebar
 // ============================================
 
 export function AgentSidebar() {
+    const router = useRouter();
     const { chatHistory, addChatMessage, setNodes, setEdges, nodes, edges } = useWorkflowStore();
     const { getAccessTokenSilently } = useAuth0();
     const storeId = useWorkflowStore((state) => state.id);
@@ -857,7 +881,33 @@ export function AgentSidebar() {
                 headers: { Authorization: `Bearer ${token}` }
             });
 
-            const result = response.data;
+            const initialResult = response.data;
+            if (!initialResult.job_id) {
+                throw new Error("Failed to start workflow generation job");
+            }
+
+            // Poll for completion
+            let result;
+            while (true) {
+                await new Promise(resolve => setTimeout(resolve, 3000));
+                const statusRes = await api.get(`/api/agent/flow/status/${initialResult.job_id}`, {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+
+                if (statusRes.data.status === "completed" || statusRes.data.status === "failed") {
+                    result = {
+                        success: statusRes.data.status === "completed",
+                        message: statusRes.data.result?.message,
+                        nodes: statusRes.data.result?.nodes,
+                        edges: statusRes.data.result?.edges,
+                        thinking: statusRes.data.result?.thinking,
+                        thinking_duration_ms: statusRes.data.result?.thinking_duration_ms,
+                        tool_calls: statusRes.data.result?.tool_calls,
+                        error: statusRes.data.error,
+                    };
+                    break;
+                }
+            }
 
             if (result.success) {
                 if (result.nodes && result.nodes.length > 0) {
@@ -969,21 +1019,29 @@ export function AgentSidebar() {
             {/* Header */}
             <div className="px-4 py-3 flex flex-col gap-2 z-10 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.1)]">
                 <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2.5">
+                    <button
+                        onClick={() => router.push("/dashboard")}
+                        className="flex items-center gap-2.5 cursor-pointer hover:opacity-80 transition-opacity"
+                        title="Go to Dashboard"
+                    >
                         <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-violet-500/20 to-blue-500/20 flex items-center justify-center">
                             <Image src="/kureita_logo.png" alt="Kureita" width={24} height={24} className="w-6 h-6" unoptimized />
                         </div>
-                        <div className="flex-1">
+                        <div className="flex-1 text-left">
                             <h2 className="font-semibold text-sm">Kureita</h2>
                             <p className="text-[10px] text-muted-foreground/60">AI Workflow Builder</p>
                         </div>
-                    </div>
+                    </button>
 
                     <AddCreditsModal
                         open={isCreditsModalOpen}
                         onOpenChange={setIsCreditsModalOpen}
                     />
+
+                    {/* Mobile: Switch to Canvas */}
+                    <MobileSwitchToCanvas />
                 </div>
+
             </div>
 
             {/* Messages Area */}
@@ -1018,7 +1076,7 @@ export function AgentSidebar() {
             {/* Resize Handle */}
             <div
                 className={cn(
-                    "absolute top-0 right-0 w-1 h-full cursor-col-resize z-30 group",
+                    "sidebar-resize-handle absolute top-0 right-0 w-1 h-full cursor-col-resize z-30 group",
                     "hover:bg-primary/30 active:bg-primary/50 transition-colors duration-150",
                     isResizing && "bg-primary/50"
                 )}

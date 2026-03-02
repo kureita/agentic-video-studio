@@ -143,10 +143,10 @@ export const NodeWrapper = memo(({
             {/* Main Node Content Box */}
             <div
                 className={cn(
-                    "min-w-[300px] rounded-[20px] bg-card border-[3px] transition-all duration-300 overflow-hidden",
+                    "min-w-[240px] md:min-w-[300px] rounded-[20px] bg-card border-[3px] transition-all duration-300 overflow-hidden",
                     executionBorderClass || (
                         selected
-                            ? "border-primary/20 shadow-[0_0_40px_-10px_hsl(var(--primary)/0.2)] ring-1 ring-primary/40"
+                            ? "border-primary/20 shadow-[0_0_40px_-10px_color-mix(in_srgb,var(--primary)_20%,transparent)] ring-1 ring-primary/40"
                             : "border-border/40 shadow-sm hover:border-border/80"
                     ),
                     isRunning && "ring-2 ring-primary/30 ring-offset-2 ring-offset-background"
