@@ -54,6 +54,12 @@ class RunwareService:
                     return {"success": False, "error": str(result["error"])}
                     
                 data = result.get("data", [])
+                errors = result.get("errors", [])
+                if errors:
+                    err = errors[0]
+                    err_msg = err.get("message", str(err)) if isinstance(err, dict) else str(err)
+                    return {"success": False, "error": f"Runware error: {err_msg}"}
+
                 if not data:
                     return {"success": False, "error": "Runware API returned no data"}
                     

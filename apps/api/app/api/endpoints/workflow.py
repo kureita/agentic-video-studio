@@ -733,6 +733,8 @@ async def _execute_node_async(workflow_id: str, node_id: str, run_id: str, input
         {"$set": {
             f"execution.node_states.{node_id}.status": "running",
             f"execution.node_states.{node_id}.started_at": now,
+            "execution.status": "running",
+            "execution.run_id": run_id,
         }}
     )
     
@@ -756,7 +758,9 @@ async def _execute_node_async(workflow_id: str, node_id: str, run_id: str, input
                 {"$set": {
                     f"execution.node_states.{node_id}.status": "completed",
                     f"execution.node_states.{node_id}.completed_at": completed_at,
+                    f"execution.outputs.{node_id}": new_output,
                     f"outputs.{node_id}": new_output,
+                    "execution.status": "completed",
                     "updated_at": datetime.now(timezone.utc),
                 }}
             )
@@ -769,6 +773,7 @@ async def _execute_node_async(workflow_id: str, node_id: str, run_id: str, input
                     f"execution.node_states.{node_id}.status": "failed",
                     f"execution.node_states.{node_id}.completed_at": completed_at,
                     f"execution.node_states.{node_id}.error": error_msg,
+                    "execution.status": "failed",
                 }}
             )
             print(f"[NodeAsync] Node {node_id} failed: {error_msg}")
@@ -783,6 +788,7 @@ async def _execute_node_async(workflow_id: str, node_id: str, run_id: str, input
                 f"execution.node_states.{node_id}.status": "failed",
                 f"execution.node_states.{node_id}.completed_at": completed_at,
                 f"execution.node_states.{node_id}.error": error_msg,
+                "execution.status": "failed",
             }}
         )
         print(f"[NodeAsync] Node {node_id} exception: {e}")
@@ -1066,7 +1072,28 @@ async def get_run_status(workflow_id: str, current_user: dict = Depends(get_curr
     # Build node states from stored data
     raw_states = execution.get("node_states", {})
     node_states = {}
+    
+    from datetime import timedelta
+    
     for nid, state in raw_states.items():
+        if state.get("status") == "running" and state.get("started_at"):
+            try:
+                started = datetime.fromisoformat(state["started_at"])
+                if datetime.now(timezone.utc) - started > timedelta(minutes=15):
+                    await collection.update_one(
+                        {"_id": oid},
+                        {"$set": {
+                            f"execution.node_states.{nid}.status": "failed",
+                            f"execution.node_states.{nid}.error": "Timed out — Lambda may have been recycled. Please retry.",
+                            "execution.status": "failed",
+                        }}
+                    )
+                    state["status"] = "failed"
+                    state["error"] = "Timed out. Please retry."
+                    execution["status"] = "failed"
+            except Exception:
+                pass
+
         node_states[nid] = NodeState(
             status=state.get("status", "queued"),
             started_at=state.get("started_at"),
