@@ -43,11 +43,12 @@ class NodeRunner:
         node_data = node.get("data", {})
         
         # Resolve inputs from connected nodes
-        inputs = self._resolve_inputs(node_id, nodes, edges, outputs)
+        raw_inputs = self._resolve_inputs(node_id, nodes, edges, outputs)
+        inputs = self._presign_s3_urls(raw_inputs)
         
         # Apply overrides if provided
         if input_overrides:
-            inputs.update(input_overrides)
+            inputs.update(self._presign_s3_urls(input_overrides))
         
         print(f"[NodeRunner] Running node {node_id} (type: {node_type})")
         print(f"[NodeRunner] Resolved inputs: {list(inputs.keys())}")
@@ -93,6 +94,20 @@ class NodeRunner:
                 "success": False,
                 "error": str(e),
             }
+
+    def _presign_s3_urls(self, data: Any) -> Any:
+        """Helper to recursively presign all S3 URLs in node inputs."""
+        from app.services.storage_service import S3StorageService
+        s3_service = S3StorageService()
+        
+        if isinstance(data, dict):
+            return {k: self._presign_s3_urls(v) for k, v in data.items()}
+        elif isinstance(data, list):
+            return [self._presign_s3_urls(item) for item in data]
+        elif isinstance(data, str) and s3_service.is_s3_url(data):
+            if data.startswith("http") and not (" " in data or "\n" in data):
+                return s3_service.get_presigned_url(data)
+        return data
 
     def _resolve_inputs(
         self,
