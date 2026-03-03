@@ -25,6 +25,7 @@ import {
 
 import { cn } from "@/lib/utils";
 import Image from "next/image";
+import { S3Image } from "@/components/ui/s3-image";
 import { useWorkflowStore } from "@/lib/workflow-store";
 import { ChatMessage, ToolCall } from "@/lib/workflow-api";
 import { api } from "@/lib/api";
@@ -270,7 +271,7 @@ function ChatMessageItem({ message }: { message: ChatMessage }) {
                                 {attachments.map((att, idx) => (
                                     <div key={idx} className="rounded-lg overflow-hidden border border-border/50 bg-muted/40 max-w-[120px] shadow-sm">
                                         {att.type.startsWith("image") && (
-                                            <Image src={att.url} alt={att.filename} width={200} height={200} className="w-full h-auto object-cover" unoptimized />
+                                            <S3Image src={att.url} alt={att.filename} width={200} height={200} className="w-full h-auto object-cover" unoptimized />
                                         )}
                                         {att.type.startsWith("video") && (
                                             <video src={att.url} className="w-full h-auto" controls />
@@ -491,7 +492,7 @@ function CursorInput({
                                     >
                                         {att.type.startsWith("image") ? (
                                             <div className="relative h-14 w-14 rounded-lg overflow-hidden border border-border/40 bg-muted/40">
-                                                <Image src={att.url} alt={att.filename} fill className="object-cover" unoptimized />
+                                                <S3Image src={att.url} alt={att.filename} fill className="object-cover" unoptimized />
                                                 <button
                                                     onClick={() => onRemoveAttachment(idx)}
                                                     className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center opacity-0 group-hover/att:opacity-100 transition-opacity cursor-pointer shadow-sm"

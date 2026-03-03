@@ -1,12 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useCallback, useRef } from "react";
 import { Plus, MoreHorizontal, Clock, Trash2, Pencil, Loader2, ArrowRight, Sparkles, Film, AlertCircle } from "lucide-react";
 import { WorkflowPreview } from "@/components/workflow/workflow-preview";
 import { Button } from "@/components/ui/button";
+import { S3Image } from "@/components/ui/s3-image";
 import { workflowApi, WorkflowListItem } from "@/lib/workflow-api";
 import { workflowInspirations, WorkflowInspiration } from "@/lib/inspirations"
 import { cn } from "@/lib/utils";
@@ -262,7 +262,7 @@ export default function DashboardPage() {
                                         <div className="relative aspect-[4/3] rounded-lg border border-border/60 bg-card overflow-hidden transition-all duration-200 hover:border-border hover:shadow-sm hover:shadow-primary/5">
                                             {/* Thumbnail or gradient placeholder */}
                                             {workflow.thumbnail_url ? (
-                                                <Image
+                                                <S3Image
                                                     src={workflow.thumbnail_url}
                                                     alt={workflow.name}
                                                     className="absolute inset-0 w-full h-full object-cover"

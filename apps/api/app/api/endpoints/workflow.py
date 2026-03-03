@@ -177,21 +177,59 @@ def serialize_workflow(workflow: dict) -> dict:
         "updated_at": workflow.get("updated_at", datetime.now(timezone.utc)).isoformat(),
     }
     
-def presign_outputs(outputs: Dict[str, Any]) -> Dict[str, Any]:
-    """Helper to presign all url-like strings in an outputs dictionary."""
-    from app.services.storage_service import S3StorageService
-    s3_service = S3StorageService()
+import re
+
+def presign_urls(data: Any, s3_service=None) -> Any:
+    """Helper to recursively presign all s3 url strings in an object.
     
-    presigned = {}
-    for k, v in outputs.items():
-        if isinstance(v, str) and v.startswith("http") and "kureita.s3" in v:
-            presigned[k] = s3_service.get_presigned_url(v)
-        elif isinstance(v, dict):
-             # Recursively presign dictionaries (like generated scene objects)
-             presigned[k] = presign_outputs(v)
+    Handles both raw S3 URLs and already-presigned URLs (strips old signature first).
+    """
+    if s3_service is None:
+        from app.services.storage_service import S3StorageService
+        s3_service = S3StorageService()
+    
+    if isinstance(data, dict):
+        return {k: presign_urls(v, s3_service) for k, v in data.items()}
+    elif isinstance(data, list):
+        return [presign_urls(item, s3_service) for item in data]
+    elif isinstance(data, str) and S3StorageService.is_s3_url(data):
+        # If it's precisely a URL
+        if data.startswith("http") and not (" " in data or "\n" in data):
+            return s3_service.get_presigned_url(data)
         else:
-            presigned[k] = v
-    return presigned
+            # If it's a markdown string, extract URLs and replace them
+            pattern = r'(https://[^"\s\'\>\)]*kureita[^"\s\'\>\)]*amazonaws\.com[^"\s\'\>\)]+)'
+            def replacer(match):
+                url = match.group(1)
+                return s3_service.get_presigned_url(url)
+            return re.sub(pattern, replacer, data)
+    else:
+        return data
+
+
+def strip_presigned_from_data(data: Any) -> Any:
+    """Recursively strip presigned URL params from all S3 URLs in an object.
+    
+    This ensures we only store raw S3 keys/URLs in MongoDB, never signed URLs.
+    """
+    from app.services.storage_service import S3StorageService
+    
+    if isinstance(data, dict):
+        return {k: strip_presigned_from_data(v) for k, v in data.items()}
+    elif isinstance(data, list):
+        return [strip_presigned_from_data(item) for item in data]
+    elif isinstance(data, str) and S3StorageService.is_s3_url(data):
+        if data.startswith("http") and not (" " in data or "\n" in data):
+            return S3StorageService.strip_presigned_params(data)
+        else:
+            # Handle markdown strings with embedded URLs
+            pattern = r'(https://[^"\s\'\>\)]*kureita[^"\s\'\>\)]*amazonaws\.com[^"\s\'\>\)]+)'
+            def replacer(match):
+                url = match.group(1)
+                return S3StorageService.strip_presigned_params(url)
+            return re.sub(pattern, replacer, data)
+    else:
+        return data
 
 
 # ============================================
@@ -220,7 +258,7 @@ async def create_workflow(request: CreateWorkflowRequest, current_user: dict = D
     
     print(f"[Workflow] Created workflow: {result.inserted_id}")
     
-    return serialize_workflow(workflow_data)
+    return presign_urls(serialize_workflow(workflow_data))
 
 
 @router.get("", response_model=List[WorkflowListItem])
@@ -321,8 +359,7 @@ async def get_workflow(workflow_id: str, current_user: dict = Depends(get_curren
         print(f"[Workflow] Workflow not found: {workflow_id}")
         raise HTTPException(status_code=404, detail="Workflow not found")
     
-    serialized = serialize_workflow(workflow)
-    serialized["outputs"] = presign_outputs(serialized["outputs"])
+    serialized = presign_urls(serialize_workflow(workflow))
     print(f"[Workflow] Retrieved workflow {workflow_id}: {len(serialized['nodes'])} nodes, {len(serialized['edges'])} edges")
     
     return serialized
@@ -348,7 +385,8 @@ async def update_workflow(
     if request.name is not None:
         update_data["name"] = request.name
     if request.nodes is not None:
-        update_data["nodes"] = [node.model_dump() for node in request.nodes]
+        # Strip presigned params from node data before saving to MongoDB
+        update_data["nodes"] = strip_presigned_from_data([node.model_dump() for node in request.nodes])
     if request.edges is not None:
         update_data["edges"] = [edge.model_dump() for edge in request.edges]
     if request.chat_history is not None:
@@ -370,8 +408,7 @@ async def update_workflow(
     
     # Return updated workflow
     workflow = await collection.find_one({"_id": oid})
-    serialized = serialize_workflow(workflow)
-    serialized["outputs"] = presign_outputs(serialized["outputs"])
+    serialized = presign_urls(serialize_workflow(workflow))
     
     print(f"[Workflow] Updated workflow: {workflow_id}")
     
@@ -544,7 +581,7 @@ async def run_workflow(workflow_id: str, current_user: dict = Depends(get_curren
     
     print(f"[Workflow] Workflow completed. Outputs: {len(outputs)}, Errors: {len(errors)}")
     
-    presigned_outputs = presign_outputs(outputs)
+    presigned_outputs = presign_urls(outputs)
     
     return RunWorkflowResponse(
         success=len(errors) == 0,
@@ -817,8 +854,77 @@ async def get_run_status(workflow_id: str, current_user: dict = Depends(get_curr
         run_id=execution.get("run_id", ""),
         status=execution.get("status", "running"),
         node_states=node_states,
-        outputs=presign_outputs(execution.get("outputs", {})),
+        outputs=presign_urls(execution.get("outputs", {})),
         errors=execution.get("errors", []),
         progress=execution.get("progress", {}),
     )
+
+
+# ============================================
+# Presigned URL Refresh Endpoint
+# ============================================
+
+class PresignRequest(BaseModel):
+    urls: List[str]
+
+
+@router.post("/presign")
+async def presign_urls_endpoint(
+    request: PresignRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """Generate fresh presigned URLs for S3 keys. Used by frontend to refresh expired URLs."""
+    from app.services.storage_service import S3StorageService
+    s3_service = S3StorageService()
+    
+    result = {}
+    for url in request.urls:
+        if S3StorageService.is_s3_url(url):
+            result[url] = s3_service.get_presigned_url(url)
+        else:
+            result[url] = url
+    
+    return {"urls": result}
+
+
+@router.post("/cleanup-urls")
+async def cleanup_presigned_urls(current_user: dict = Depends(get_current_user)):
+    """One-time cleanup: strip presigned URL params from all stored data in MongoDB.
+    
+    This fixes existing data where presigned URLs were accidentally persisted.
+    Safe to run multiple times (idempotent).
+    """
+    collection = get_workflows_collection()
+    
+    user_id = current_user.get("_id")
+    query = {"$or": [{"user_id": user_id}, {"user_id": {"$exists": False}}]}
+    cursor = collection.find(query)
+    workflows = await cursor.to_list(length=1000)
+    
+    cleaned_count = 0
+    for w in workflows:
+        oid = w["_id"]
+        
+        # Clean outputs
+        outputs = w.get("outputs", {})
+        clean_outputs = strip_presigned_from_data(outputs)
+        
+        # Clean node data (specifically data.output fields)
+        nodes = w.get("nodes", [])
+        clean_nodes = strip_presigned_from_data(nodes)
+        
+        # Check if anything changed
+        if clean_outputs != outputs or clean_nodes != nodes:
+            await collection.update_one(
+                {"_id": oid},
+                {"$set": {
+                    "outputs": clean_outputs,
+                    "nodes": clean_nodes,
+                }}
+            )
+            cleaned_count += 1
+            print(f"[Cleanup] Cleaned presigned URLs in workflow {oid}")
+    
+    print(f"[Cleanup] Done. Cleaned {cleaned_count}/{len(workflows)} workflows.")
+    return {"cleaned": cleaned_count, "total": len(workflows)}
 

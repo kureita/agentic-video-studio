@@ -2,6 +2,7 @@ import React, { memo } from "react";
 import { NodeProps, useReactFlow } from "@xyflow/react";
 import { Music, Loader2, Download, ChevronDown, Mic, Sparkles, Volume2, Upload } from "lucide-react";
 import { NodeWrapper } from "@/components/workflow/node-wrapper";
+import { usePresignedUrl } from "@/lib/use-presigned-url";
 import { useWorkflowStore } from "@/lib/workflow-store";
 
 type AudioType = "speech" | "music" | "sfx";
@@ -39,7 +40,11 @@ export const AudioGenNode = memo(({ id, selected, data }: NodeProps) => {
     };
 
     const isRunning = runningNodeId === id;
-    const output = (outputs[id] as string | undefined) || (data.output as string | undefined);
+    const rawOutput = (outputs[id] as string | undefined) || (data.output as string | undefined);
+
+    // Get presigned URL for S3 audio assets
+    const { url: presignedOutput } = usePresignedUrl(rawOutput);
+    const output = presignedOutput || rawOutput;
 
     const audioType: AudioType = (typeof data.audioType === "string" ? data.audioType : "speech") as AudioType;
 

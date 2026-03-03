@@ -3,6 +3,7 @@ import { NodeProps, useReactFlow } from "@xyflow/react";
 import { Video, Clock, ChevronDown, Square, Loader2, Download, Monitor, Upload } from "lucide-react";
 import { NodeWrapper } from "@/components/workflow/node-wrapper";
 import { HighlightedTextarea } from "@/components/workflow/nodes/highlighted-textarea";
+import { usePresignedUrl } from "@/lib/use-presigned-url";
 
 import { useWorkflowStore } from "@/lib/workflow-store";
 
@@ -60,7 +61,11 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
     };
 
     const isRunning = runningNodeId === id;
-    const output = (outputs[id] as string | undefined) || (data.output as string | undefined);
+    const rawOutput = (outputs[id] as string | undefined) || (data.output as string | undefined);
+
+    // Get presigned URL for S3 video assets
+    const { url: presignedOutput } = usePresignedUrl(rawOutput);
+    const output = presignedOutput || rawOutput;
 
     const currentModel = (typeof data.model === 'string' ? data.model : "Kling 3.0 Standard");
     // Ensure the current model exists in configs, fallback to default

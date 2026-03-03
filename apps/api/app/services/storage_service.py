@@ -5,6 +5,7 @@ import boto3
 from pathlib import Path
 from datetime import datetime
 from uuid import uuid4
+from urllib.parse import urlparse, urlencode, parse_qs, urlunparse
 from fastapi import UploadFile
 from botocore.exceptions import NoCredentialsError
 from botocore.config import Config
@@ -181,10 +182,34 @@ class S3StorageService(StorageService):
             print(f"S3 Delete Error: {e}")
             return False
 
+    @staticmethod
+    def strip_presigned_params(url: str) -> str:
+        """Strip presigned URL query parameters to get the raw S3 URL.
+        
+        Presigned URLs contain ?X-Amz-Algorithm=...&X-Amz-Credential=... etc.
+        This strips all query params to recover the original clean S3 URL.
+        """
+        if not url or not isinstance(url, str):
+            return url
+        parsed = urlparse(url)
+        # Only strip if it looks like an S3 URL with signing params
+        if 'X-Amz-' in (parsed.query or ''):
+            return urlunparse((parsed.scheme, parsed.netloc, parsed.path, '', '', ''))
+        return url
+
+    @staticmethod
+    def is_s3_url(url: str) -> bool:
+        """Check if a URL is an S3 URL (either raw or presigned)."""
+        if not url or not isinstance(url, str):
+            return False
+        return 'kureita' in url and ('s3' in url or 'amazonaws.com' in url)
+
     def get_presigned_url(self, file_url: str) -> str:
         try:
-            from urllib.parse import urlparse
-            path = urlparse(file_url).path
+            # First strip any existing presigned params to get clean URL
+            clean_url = self.strip_presigned_params(file_url)
+            
+            path = urlparse(clean_url).path
             if path.startswith("/"):
                 path = path[1:]
                 
@@ -195,7 +220,7 @@ class S3StorageService(StorageService):
             return self.s3_client.generate_presigned_url(
                 ClientMethod='get_object',
                 Params={'Bucket': self.bucket, 'Key': path},
-                ExpiresIn=3600  # Generate short-lived URL (1 hour) when viewed
+                ExpiresIn=3600  # 1 hour expiry
             )
         except Exception as e:
             print(f"S3 Presigned URL Error: {e}")

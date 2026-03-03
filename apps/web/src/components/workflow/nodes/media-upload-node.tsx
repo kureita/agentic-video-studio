@@ -1,8 +1,9 @@
 import { memo, useRef, useEffect } from "react";
-import NextImage from "next/image";
 import { NodeProps, useReactFlow } from "@xyflow/react";
 import { Upload, Image as ImageIcon, Video, Music } from "lucide-react";
 import { NodeWrapper } from "@/components/workflow/node-wrapper";
+import { S3Image } from "@/components/ui/s3-image";
+import { usePresignedUrl } from "@/lib/use-presigned-url";
 import { useWorkflowStore } from "@/lib/workflow-store";
 
 export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
@@ -11,7 +12,11 @@ export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const isRunning = runningNodeId === id;
-    const output = (outputs[id] as string | undefined) || (data.output as string | undefined);
+    const rawOutput = (outputs[id] as string | undefined) || (data.output as string | undefined);
+
+    // Get presigned URL for S3 assets
+    const { url: presignedOutput } = usePresignedUrl(rawOutput);
+    const output = presignedOutput || rawOutput;
 
     // Determine media type from data or current output
     const mediaType = data.mediaType || (output ? (
@@ -167,8 +172,8 @@ export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
                                 />
                             </div>
                         ) : (
-                            <NextImage
-                                src={output as string}
+                            <S3Image
+                                src={rawOutput}
                                 alt="Uploaded media"
                                 fill
                                 className="object-contain"

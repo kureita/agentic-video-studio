@@ -1,9 +1,9 @@
 import React, { memo } from "react";
-import Image from "next/image";
 import { NodeProps, useReactFlow } from "@xyflow/react";
 import { Image as ImageIcon, Minus, Plus, ChevronDown, Square, Loader2, Download, Upload } from "lucide-react";
 import { NodeWrapper } from "@/components/workflow/node-wrapper";
 import { HighlightedTextarea } from "@/components/workflow/nodes/highlighted-textarea";
+import { S3Image } from "@/components/ui/s3-image";
 
 import { useWorkflowStore } from "@/lib/workflow-store";
 
@@ -177,7 +177,7 @@ export const ImageGenNode = memo(({ id, selected, data }: NodeProps) => {
                 {/* 1. Background Image (Output) */}
                 {output && !isRunning && (
                     <>
-                        <Image
+                        <S3Image
                             src={output}
                             alt="Generated"
                             className="absolute inset-0 w-full h-full object-cover z-0 transition-transform duration-700 group-hover/image:scale-105"
