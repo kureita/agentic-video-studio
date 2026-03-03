@@ -12,6 +12,8 @@ from pydantic import BaseModel
 from app.core.database import get_database
 from app.core.auth import get_current_user
 from app.services.node_runner import NodeRunner
+from app.services.billing import BillingService
+from app.models.usage import ActionType
 
 router = APIRouter()
 
@@ -184,8 +186,8 @@ def presign_urls(data: Any, s3_service=None) -> Any:
     
     Handles both raw S3 URLs and already-presigned URLs (strips old signature first).
     """
+    from app.services.storage_service import S3StorageService
     if s3_service is None:
-        from app.services.storage_service import S3StorageService
         s3_service = S3StorageService()
     
     if isinstance(data, dict):
@@ -478,6 +480,27 @@ async def run_node(
     if not target_node:
         raise HTTPException(status_code=404, detail="Node not found")
     
+    # Check credits before running
+    node_type = target_node.get("type")
+    
+    cost_map = {
+        "imageGen": (ActionType.IMAGE_GEN, 1),
+        "videoGen": (ActionType.VIDEO_GEN, 10),
+        "audioGen": (ActionType.AUDIO_GEN, 2),
+        "editorAgent": (ActionType.RENDER, 20),
+    }
+    
+    if node_type in cost_map:
+        action_type, cost = cost_map[node_type]
+        billing_service = BillingService(get_database())
+        # Deduct credits, which auto-throws HTTPException(402) on failure
+        await billing_service.deduct_credits(
+            user_id=user_id,
+            action=action_type,
+            custom_cost=cost,
+            metadata={"workflow_id": workflow_id, "node_id": node_id, "node_type": node_type}
+        )
+    
     print(f"[Workflow] Running node: {node_id} (type: {target_node.get('type')})")
     
     # Run the node
@@ -627,6 +650,142 @@ def get_topological_order(nodes: List[Dict], edges: List[Dict]) -> List[str]:
 # ============================================
 # Async Workflow Execution (Polling-based)
 # ============================================
+
+async def _execute_node_async(workflow_id: str, node_id: str, run_id: str, input_overrides: Optional[Dict[str, Any]] = None):
+    """
+    Background task: execute a single node,
+    updating its status in MongoDB so the frontend can poll.
+    """
+    collection = get_workflows_collection()
+    oid = ObjectId(workflow_id)
+    
+    workflow = await collection.find_one({"_id": oid})
+    if not workflow:
+        return
+    
+    nodes = workflow.get("nodes", [])
+    edges = workflow.get("edges", [])
+    outputs = workflow.get("outputs", {})
+    
+    target_node = next((n for n in nodes if n["id"] == node_id), None)
+    if not target_node:
+        # Mark as failed
+        await collection.update_one(
+            {"_id": oid},
+            {"$set": {
+                f"execution.node_states.{node_id}.status": "failed",
+                f"execution.node_states.{node_id}.error": "Node not found",
+            }}
+        )
+        return
+        
+    user_id = workflow.get("user_id")
+
+    # Check credits before running
+    node_type = target_node.get("type")
+    
+    cost_map = {
+        "imageGen": (ActionType.IMAGE_GEN, 1),
+        "videoGen": (ActionType.VIDEO_GEN, 10),
+        "audioGen": (ActionType.AUDIO_GEN, 2),
+        "editorAgent": (ActionType.RENDER, 20),
+    }
+    
+    if node_type in cost_map:
+        try:
+            action_type, cost = cost_map[node_type]
+            billing_service = BillingService(get_database())
+            
+            # Use user_id from workflow instead of requiring Depends inside async background task
+            # Or fall back if not explicitly set
+            
+            await billing_service.deduct_credits(
+                user_id=user_id,
+                action=action_type,
+                custom_cost=cost,
+                metadata={"workflow_id": workflow_id, "node_id": node_id, "node_type": node_type}
+            )
+        except Exception as e:
+            # Insufficient credits or other billing error
+            error_msg = str(e)
+            
+            # Clean up FastAPI HTTPExceptions to simple strings for frontend
+            if hasattr(e, "detail"):
+                error_msg = str(e.detail)
+            
+            await collection.update_one(
+                {"_id": oid},
+                {"$set": {
+                    f"execution.node_states.{node_id}.status": "failed",
+                    f"execution.node_states.{node_id}.error": error_msg,
+                }}
+            )
+            print(f"[NodeAsync] Node {node_id} failed billing check: {error_msg}")
+            return
+
+    print(f"[NodeAsync] Running node: {node_id} (type: {target_node.get('type')}) (run_id: {run_id})")
+    runner = NodeRunner()
+    
+    # Mark node as "running"
+    now = datetime.now(timezone.utc).isoformat()
+    await collection.update_one(
+        {"_id": oid},
+        {"$set": {
+            f"execution.node_states.{node_id}.status": "running",
+            f"execution.node_states.{node_id}.started_at": now,
+        }}
+    )
+    
+    try:
+        result = await runner.run_node(
+            node=target_node,
+            nodes=nodes,
+            edges=edges,
+            outputs=outputs,
+            input_overrides=input_overrides,
+        )
+        
+        completed_at = datetime.now(timezone.utc).isoformat()
+        
+        if result.get("success"):
+            new_output = result.get("output")
+            
+            # Use dot notation to update specific fields directly
+            await collection.update_one(
+                {"_id": oid},
+                {"$set": {
+                    f"execution.node_states.{node_id}.status": "completed",
+                    f"execution.node_states.{node_id}.completed_at": completed_at,
+                    f"outputs.{node_id}": new_output,
+                    "updated_at": datetime.now(timezone.utc),
+                }}
+            )
+            print(f"[NodeAsync] Node {node_id} completed successfully")
+        else:
+            error_msg = result.get("error", "Unknown error")
+            await collection.update_one(
+                {"_id": oid},
+                {"$set": {
+                    f"execution.node_states.{node_id}.status": "failed",
+                    f"execution.node_states.{node_id}.completed_at": completed_at,
+                    f"execution.node_states.{node_id}.error": error_msg,
+                }}
+            )
+            print(f"[NodeAsync] Node {node_id} failed: {error_msg}")
+            
+    except Exception as e:
+        error_msg = str(e)
+        completed_at = datetime.now(timezone.utc).isoformat()
+        
+        await collection.update_one(
+            {"_id": oid},
+            {"$set": {
+                f"execution.node_states.{node_id}.status": "failed",
+                f"execution.node_states.{node_id}.completed_at": completed_at,
+                f"execution.node_states.{node_id}.error": error_msg,
+            }}
+        )
+        print(f"[NodeAsync] Node {node_id} exception: {e}")
 
 async def _execute_workflow_async(workflow_id: str, run_id: str):
     """
@@ -811,6 +970,71 @@ async def run_workflow_async(workflow_id: str, current_user: dict = Depends(get_
     print(f"[WorkflowAsync] Starting async run: {workflow_id} (run_id: {run_id})")
     
     asyncio.create_task(_execute_workflow_async(workflow_id, run_id))
+    
+    return RunWorkflowAsyncResponse(run_id=run_id, status="running")
+
+
+@router.post("/{workflow_id}/nodes/{node_id}/run-async", response_model=RunWorkflowAsyncResponse)
+async def run_node_async(
+    workflow_id: str, 
+    node_id: str, 
+    request: RunNodeRequest = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """Start async node execution. Poll /{workflow_id}/run-status for progress on the given node."""
+    collection = get_workflows_collection()
+    
+    try:
+        oid = ObjectId(workflow_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid workflow ID")
+    
+    user_id = current_user.get("_id")
+    workflow = await collection.find_one({
+        "_id": oid,
+        "$or": [{"user_id": user_id}, {"user_id": {"$exists": False}}]
+    })
+    
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+        
+    execution = workflow.get("execution", {})
+    node_state = execution.get("node_states", {}).get(node_id, {})
+    
+    if node_state.get("status") == "running":
+        return RunWorkflowAsyncResponse(
+            run_id=execution.get("run_id", ""), # reuse existing if available but not strictly matched
+            status="running",
+        )
+    
+    run_id = str(uuid4())
+    print(f"[NodeAsync] Starting async node run: {workflow_id} / {node_id} (run_id: {run_id})")
+    
+    # Initialize execution.node_states for this node if execution doesn't exist
+    if not execution:
+        await collection.update_one(
+            {"_id": oid},
+            {"$set": {"execution": {"node_states": {}}}}
+        )
+        
+    # Set it to queued
+    await collection.update_one(
+        {"_id": oid},
+        {"$set": {
+            f"execution.node_states.{node_id}": {
+                "status": "queued",
+                "type": next((n.get("type") for n in workflow.get("nodes", []) if n["id"] == node_id), "unknown"),
+            },
+            "updated_at": datetime.now(timezone.utc),
+        }}
+    )
+    
+    asyncio.create_task(_execute_node_async(
+        workflow_id=workflow_id, 
+        node_id=node_id, 
+        run_id=run_id, 
+        input_overrides=request.input_overrides if request else None
+    ))
     
     return RunWorkflowAsyncResponse(run_id=run_id, status="running")
 

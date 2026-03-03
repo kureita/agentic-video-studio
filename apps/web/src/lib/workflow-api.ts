@@ -157,6 +157,15 @@ export const workflowApi = {
         }),
 
     /**
+     * Start async node execution (returns immediately)
+     */
+    runNodeAsync: (workflowId: string, nodeId: string, inputOverrides?: Record<string, unknown>) =>
+        api.post<RunWorkflowAsyncResponse>(`/api/workflows/${workflowId}/nodes/${nodeId}/run-async`, {
+            input_overrides: inputOverrides,
+        }),
+
+
+    /**
      * Run the entire workflow (synchronous - blocks until done)
      */
     runWorkflow: (id: string) =>
@@ -192,6 +201,36 @@ export const workflowApi = {
                     onUpdate(status);
 
                     if (status.status === "running") {
+                        setTimeout(poll, intervalMs);
+                    } else {
+                        resolve(status);
+                    }
+                } catch (err) {
+                    reject(err);
+                }
+            };
+            poll();
+        });
+    },
+
+    /**
+     * Poll node run status specifically for a single node until completion.
+     */
+    pollNodeRun: (
+        workflowId: string,
+        nodeId: string,
+        onUpdate: (status: WorkflowRunStatus) => void,
+        intervalMs = 2000,
+    ): Promise<WorkflowRunStatus> => {
+        return new Promise((resolve, reject) => {
+            const poll = async () => {
+                try {
+                    const response = await workflowApi.getRunStatus(workflowId);
+                    const status = response.data;
+                    onUpdate(status);
+
+                    const nodeState = status.node_states[nodeId];
+                    if (!nodeState || nodeState.status === "running" || nodeState.status === "queued") {
                         setTimeout(poll, intervalMs);
                     } else {
                         resolve(status);

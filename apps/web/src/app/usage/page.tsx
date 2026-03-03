@@ -22,11 +22,11 @@ interface UsageLog {
 }
 
 const ACTION_LABELS: Record<ActionType, { label: string, icon: React.ReactNode, color: string }> = {
-    ai_chat: { label: "AI Assistant", icon: <MessageSquare className="w-4 h-4" />, color: "bg-blue-500/10 text-blue-600 dark:text-blue-400" },
-    video_gen: { label: "Video Generation", icon: <Video className="w-4 h-4" />, color: "bg-purple-500/10 text-purple-600 dark:text-purple-400" },
-    image_gen: { label: "Image Generation", icon: <ImageIcon className="w-4 h-4" />, color: "bg-pink-500/10 text-pink-600 dark:text-pink-400" },
-    audio_gen: { label: "Voiceover", icon: <Music className="w-4 h-4" />, color: "bg-amber-500/10 text-amber-600 dark:text-amber-400" },
-    render: { label: "Final Export", icon: <CheckCircle2 className="w-4 h-4" />, color: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" },
+    ai_chat: { label: "AI Assistant", icon: <MessageSquare className="w-4 h-4" />, color: "bg-muted text-foreground/80" },
+    video_gen: { label: "Video Generation", icon: <Video className="w-4 h-4" />, color: "bg-muted text-foreground/80" },
+    image_gen: { label: "Image Generation", icon: <ImageIcon className="w-4 h-4" />, color: "bg-muted text-foreground/80" },
+    audio_gen: { label: "Voiceover", icon: <Music className="w-4 h-4" />, color: "bg-muted text-foreground/80" },
+    render: { label: "Final Export", icon: <CheckCircle2 className="w-4 h-4" />, color: "bg-muted text-foreground/80" },
 };
 
 import { useAuth0 } from "@auth0/auth0-react";
@@ -85,7 +85,7 @@ export default function UsageDashboard() {
                     </div>
                     <Button
                         onClick={() => setIsCreditsModalOpen(true)}
-                        className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-md transition-all whitespace-nowrap"
+                        className="shadow-sm transition-all whitespace-nowrap"
                     >
                         <Plus className="w-4 h-4 mr-2" />
                         Add Credits
@@ -93,12 +93,11 @@ export default function UsageDashboard() {
                 </div>
 
                 <div className="grid gap-6 md:grid-cols-3">
-                    <Card className="bg-gradient-to-br from-indigo-500/10 via-background to-background border-indigo-500/20 shadow-sm relative overflow-hidden group">
-                        <div className="absolute inset-0 bg-indigo-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                    <Card className="shadow-sm border-border/50 hover:border-border transition-colors">
                         <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0 relative z-10">
                             <CardTitle className="text-sm font-medium">Available Credits</CardTitle>
-                            <div className="p-2 bg-indigo-500/10 rounded-full">
-                                <Coins className="w-4 h-4 text-indigo-500" />
+                            <div className="p-2 bg-muted rounded-full">
+                                <Coins className="w-4 h-4 text-primary" />
                             </div>
                         </CardHeader>
                         <CardContent className="relative z-10">
@@ -139,6 +138,61 @@ export default function UsageDashboard() {
                         </CardContent>
                     </Card>
                 </div>
+
+                <Card className="shadow-sm border-border/50">
+                    <CardHeader className="pb-3">
+                        <CardTitle className="text-lg flex items-center gap-2">
+                            <Coins className="w-5 h-5 text-muted-foreground" />
+                            Pricing Rates
+                        </CardTitle>
+                        <CardDescription>
+                            How your credits are consumed
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mt-2">
+                            <div className="flex flex-col items-start gap-1 p-4 rounded-lg bg-muted/40 border border-border/50 hover:bg-muted/60 transition-colors">
+                                <div className="text-xs font-medium flex items-center gap-1.5 mb-1 text-foreground/80">
+                                    <MessageSquare className="w-3.5 h-3.5" /> AI Assistant
+                                </div>
+                                <div className="text-lg font-bold">1 <span className="text-xs font-normal text-muted-foreground mr-1">credit</span></div>
+                                <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Per 10K Tokens</div>
+                            </div>
+
+                            <div className="flex flex-col items-start gap-1 p-4 rounded-lg bg-muted/40 border border-border/50 hover:bg-muted/60 transition-colors">
+                                <div className="text-xs font-medium flex items-center gap-1.5 mb-1 text-foreground/80">
+                                    <ImageIcon className="w-3.5 h-3.5" /> Image Gen
+                                </div>
+                                <div className="text-lg font-bold">1 <span className="text-xs font-normal text-muted-foreground mr-1">credit</span></div>
+                                <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Per Image</div>
+                            </div>
+
+                            <div className="flex flex-col items-start gap-1 p-4 rounded-lg bg-muted/40 border border-border/50 hover:bg-muted/60 transition-colors">
+                                <div className="text-xs font-medium flex items-center gap-1.5 mb-1 text-foreground/80">
+                                    <Music className="w-3.5 h-3.5" /> Text-to-Speech
+                                </div>
+                                <div className="text-lg font-bold">2 <span className="text-xs font-normal text-muted-foreground mr-1">credits</span></div>
+                                <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Per Usage</div>
+                            </div>
+
+                            <div className="flex flex-col items-start gap-1 p-4 rounded-lg bg-muted/40 border border-border/50 hover:bg-muted/60 transition-colors">
+                                <div className="text-xs font-medium flex items-center gap-1.5 mb-1 text-foreground/80">
+                                    <Video className="w-3.5 h-3.5" /> Video Gen
+                                </div>
+                                <div className="text-lg font-bold">10 <span className="text-xs font-normal text-muted-foreground mr-1">credits</span></div>
+                                <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Per Generation</div>
+                            </div>
+
+                            <div className="flex flex-col items-start gap-1 p-4 rounded-lg bg-muted/40 border border-border/50 hover:bg-muted/60 transition-colors">
+                                <div className="text-xs font-medium flex items-center gap-1.5 mb-1 text-foreground/80">
+                                    <CheckCircle2 className="w-3.5 h-3.5" /> Final Export
+                                </div>
+                                <div className="text-lg font-bold">20 <span className="text-xs font-normal text-muted-foreground mr-1">credits</span></div>
+                                <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Per Video</div>
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
 
                 <Card className="shadow-sm">
                     <CardHeader>

@@ -552,11 +552,37 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
             }
 
             try {
-                const response = await workflowApi.runNode(id, targetId, inputOverrides);
-                const result = response.data;
+                // Start async execution
+                await workflowApi.runNodeAsync(id, targetId, inputOverrides);
 
-                if (result.success && result.output) {
-                    const storeOutput = result.output as string;
+                // Initialize running visual state
+                set((state) => ({
+                    nodeExecutionStates: {
+                        ...state.nodeExecutionStates,
+                        [targetId]: { ...state.nodeExecutionStates[targetId], status: "running" }
+                    }
+                }));
+
+                // Poll until completion for the specific node
+                const finalStatus = await workflowApi.pollNodeRun(id, targetId, (status: WorkflowRunStatus) => {
+                    set((state) => ({
+                        nodeExecutionStates: {
+                            ...state.nodeExecutionStates,
+                            ...status.node_states
+                        },
+                    }));
+
+                    if (Object.keys(status.outputs).length > 0) {
+                        set((state) => ({
+                            outputs: { ...state.outputs, ...status.outputs },
+                        }));
+                    }
+                });
+
+                const nodeState = finalStatus.node_states[targetId];
+
+                if (nodeState && nodeState.status === "completed") {
+                    const storeOutput = finalStatus.outputs[targetId];
 
                     set((state) => {
                         const newOutputs = { ...state.outputs, [targetId]: storeOutput };
@@ -576,18 +602,37 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
                             outputs: newOutputs,
                             nodes: newNodes,
                             runningNodeId: null,
+                            nodeExecutionStates: {
+                                ...state.nodeExecutionStates,
+                                [targetId]: { ...nodeState }
+                            },
                             isDirty: true // Mark dirty so it gets saved on next manual save or run
                         };
                     });
 
                     return true;
                 } else {
-                    set({ runningNodeId: null, error: result.error || "Node execution failed" });
+                    const finalError = nodeState?.error || "Node execution failed";
+                    set((state) => ({
+                        runningNodeId: null,
+                        error: finalError,
+                        nodeExecutionStates: {
+                            ...state.nodeExecutionStates,
+                            [targetId]: { ...nodeState }
+                        }
+                    }));
                     return false;
                 }
             } catch (error) {
                 console.error("[WorkflowStore] Run node error:", error);
-                set({ runningNodeId: null, error: "Failed to run node" });
+                set((state) => ({
+                    runningNodeId: null,
+                    error: "Failed to run node",
+                    nodeExecutionStates: {
+                        ...state.nodeExecutionStates,
+                        [targetId]: { status: "failed", error: "Network or polling error" }
+                    }
+                }));
                 toast.error("Failed to run node");
                 return false;
             }
