@@ -690,10 +690,10 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
             const data = res.data;
 
             if (data.url) {
-                // Update outputs
-                get().setNodeOutput(nodeId, data.url);
-                // The URL returned might be unsigned. Since we want to display it immediately,
-                // we should use the presigned URL if provided, or the signed flow will handle it.
+                // Do NOT call setNodeOutput here — that would overwrite the TSX code
+                // with a video URL, causing a re-compile attempt on the URL.
+                // The video URL is persisted server-side; the local store keeps the TSX
+                // so in-browser re-renders keep working.
                 return data.presigned_url || data.url;
             }
             return null;

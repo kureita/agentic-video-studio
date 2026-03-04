@@ -101,7 +101,10 @@ class S3StorageService(StorageService):
         
         kwargs = {
             'region_name': self.region,
-            'config': Config(signature_version='s3v4')
+            'config': Config(
+                signature_version='s3v4',
+                s3={'addressing_style': 'virtual'}
+            )
         }
         
         if not os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
@@ -128,13 +131,13 @@ class S3StorageService(StorageService):
                 extra_args['ContentDisposition'] = 'inline'
 
             if isinstance(file_data, UploadFile):
-                # Reset file pointer just in case
-                await file_data.seek(0)
-                self.s3_client.upload_fileobj(
-                    file_data.file, 
-                    self.bucket, 
-                    key, 
-                    ExtraArgs=extra_args
+                # Read into memory fully to avoid SpooledTemporaryFile / boto3 coroutine issues
+                file_bytes = await file_data.read()
+                self.s3_client.put_object(
+                    Bucket=self.bucket,
+                    Key=key,
+                    Body=file_bytes,
+                    **extra_args
                 )
             else:
                 self.s3_client.put_object(

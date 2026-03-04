@@ -13,6 +13,7 @@ import { useCallback, useRef, useState } from "react";
 import { renderMediaOnWeb } from "@remotion/web-renderer";
 import type { RenderMediaOnWebProgressCallback } from "@remotion/web-renderer";
 import { compileComposition } from "./compile-composition";
+import { getPresignedUrls } from "../presigned-url-cache";
 
 export interface ClientRenderState {
     isRendering: boolean;
@@ -67,10 +68,30 @@ export function useClientRender(): UseClientRender {
                 phase: "compiling",
             });
 
+            // ──── 0. Presign any S3 URLs in the TSX code ────
+            // Raw S3 URLs are stored in MongoDB to avoid expiry. Freshen them now.
+            let resolvedCode = tsxCode;
+            try {
+                const s3UrlPattern = /https:\/\/[^"\s'>\)\\]*kureita[^"\s'>\)\\]*amazonaws\.com[^"\s'>\)\\]+/g;
+                const rawUrls = [...new Set(tsxCode.match(s3UrlPattern) || [])];
+                if (rawUrls.length > 0) {
+                    const presigned = await getPresignedUrls(rawUrls);
+                    for (const raw of rawUrls) {
+                        const signed = presigned[raw];
+                        if (signed && signed !== raw) {
+                            resolvedCode = resolvedCode.split(raw).join(signed);
+                        }
+                    }
+                }
+            } catch (err) {
+                console.warn("[useClientRender] URL presigning failed, using original URLs:", err);
+            }
+
+
             // ──── 1. Compile the TSX code ────
             let meta;
             try {
-                meta = compileComposition(tsxCode);
+                meta = compileComposition(resolvedCode);
             } catch (err) {
                 const msg = err instanceof Error ? err.message : "Compilation failed";
                 setState({

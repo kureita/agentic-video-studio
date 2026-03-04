@@ -6,14 +6,34 @@ import { HighlightedTextarea } from "@/components/workflow/nodes/highlighted-tex
 import { useWorkflowStore } from "@/lib/workflow-store";
 import { useClientRender } from "@/lib/remotion/useClientRender";
 
+/** Check if a string is a video/media URL rather than TSX code */
+function isVideoUrl(s: string): boolean {
+    if (!s) return false;
+    // Trim and check if it starts with http and looks like a media URL
+    const trimmed = s.trim();
+    return (
+        trimmed.startsWith('http') &&
+        !trimmed.includes('\n') &&
+        (trimmed.includes('.mp4') || trimmed.includes('.webm') || trimmed.includes('.mov') ||
+            trimmed.includes('video') || (trimmed.includes('kureita') && trimmed.includes('s3')))
+    );
+}
+
 export const EditorAgentNode = memo(({ id, selected, data }: NodeProps) => {
     const { deleteElements, updateNodeData } = useReactFlow();
     const { runNode, clearNodeOutput, outputs, runningNodeId, uploadRenderedVideo } = useWorkflowStore();
 
     const isRunning = runningNodeId === id;
 
-    // The output from the backend — could be raw TSX or JSON-wrapped scene/compositor
-    const rawOutput = (outputs[id] as string | undefined) || (data.output as string | undefined) || null;
+    // The output from the backend — could be raw TSX, JSON-wrapped scene/compositor, or a video URL
+    const storeOutput = (outputs[id] as string | undefined) || (data.output as string | undefined) || null;
+
+    // If the output got overwritten with a video URL (from upload-render), ignore it
+    // and use the preserved TSX code instead.
+    const preservedCodeRef = useRef<string | null>(null);
+    const rawOutput = (storeOutput && isVideoUrl(storeOutput))
+        ? preservedCodeRef.current   // Fall back to preserved TSX
+        : storeOutput;
 
     // Parse scene/compositor metadata from JSON output
     const parsedOutput = useMemo(() => {
@@ -44,6 +64,7 @@ export const EditorAgentNode = memo(({ id, selected, data }: NodeProps) => {
     useEffect(() => {
         if (compositionCode && !isScene && compositionCode !== lastRenderedCodeRef.current && !renderState.isRendering) {
             lastRenderedCodeRef.current = compositionCode;
+            preservedCodeRef.current = compositionCode; // Preserve TSX so upload-render can't overwrite it
             hasUploadedRef.current = false; // Reset upload flag for new render
             renderFromCode(compositionCode);
         }
@@ -145,7 +166,10 @@ export const EditorAgentNode = memo(({ id, selected, data }: NodeProps) => {
     };
 
     // Determine what to show in the video area
-    const hasVideo = !!renderState.blobUrl;
+    // If the store output is a video URL (e.g. page reload), show it directly
+    const storedVideoUrl = (storeOutput && isVideoUrl(storeOutput)) ? storeOutput : null;
+    const videoSrc = renderState.blobUrl || storedVideoUrl || null;
+    const hasVideo = !!videoSrc;
     const isCompiling = renderState.phase === "compiling";
     const isRendering = renderState.phase === "rendering";
     const hasError = renderState.phase === "error";
@@ -212,11 +236,12 @@ export const EditorAgentNode = memo(({ id, selected, data }: NodeProps) => {
                     {hasVideo ? (
                         <div className="relative w-full h-full">
                             <video
-                                src={renderState.blobUrl!}
+                                src={videoSrc!}
                                 controls
                                 className="w-full h-full object-cover"
                                 autoPlay
                                 loop
+                                crossOrigin="anonymous"
                             />
 
                             {/* Action buttons overlay */}

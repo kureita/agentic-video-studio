@@ -201,8 +201,9 @@ def presign_urls(data: Any, s3_service=None) -> Any:
         if data.startswith("http") and not (" " in data or "\n" in data):
             return s3_service.get_presigned_url(data)
         else:
-            # If it's a markdown string, extract URLs and replace them
-            pattern = r'(https://[^"\s\'\>\)]*kureita[^"\s\'\>\)]*amazonaws\.com[^"\s\'\>\)]+)'
+            # Extract and presign S3 URLs embedded in markdown, TSX code, or JSON strings.
+            # The \\ exclusion prevents eating JSON escape backslashes before quotes.
+            pattern = r'(https://[^"\s\'\>\)\\]*kureita[^"\s\'\>\)\\]*amazonaws\.com[^"\s\'\>\)\\]+)'
             def replacer(match):
                 url = match.group(1)
                 return s3_service.get_presigned_url(url)
@@ -1356,8 +1357,10 @@ async def upload_rendered_video(
     print(f"[{workflow_id}/{node_id}] Uploading rendered video to S3 as {filename}")
 
     try:
-        # Note: file_url returned here is unsigned (raw S3 URL) if correctly implemented
-        file_url = await storage.upload_file(file, filename, content_type="video/mp4")
+        # Read file bytes eagerly to avoid UploadFile isinstance mismatches in Lambda/Mangum
+        file_bytes = await file.read()
+        print(f"[{workflow_id}/{node_id}] Read {len(file_bytes)} bytes from upload")
+        file_url = await storage.upload_file(file_bytes, filename, content_type="video/mp4")
         
         # Strip just in case it returned a presigned URL by accident
         file_url = S3StorageService.strip_presigned_params(file_url)
