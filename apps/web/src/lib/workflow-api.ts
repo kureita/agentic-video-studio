@@ -184,6 +184,20 @@ export const workflowApi = {
         api.get<WorkflowRunStatus>(`/api/workflows/${id}/run-status`),
 
     /**
+     * Upload a client-rendered video blob to S3 and save to node output
+     */
+    uploadRenderedVideo: async (workflowId: string, nodeId: string, file: File) => {
+        const formData = new FormData();
+        formData.append("file", file);
+        
+        return api.post<{ url: string; presigned_url: string }>(
+            `/api/workflows/${workflowId}/nodes/${nodeId}/upload-render`,
+            formData,
+            { headers: { "Content-Type": "multipart/form-data" } }
+        );
+    },
+
+    /**
      * Poll workflow run status every intervalMs until completion.
      * Calls onUpdate on each poll with the current status.
      * Returns the final status when done.

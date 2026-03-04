@@ -430,7 +430,12 @@ class EditorAgent:
 
     def __init__(self):
         self.client = AsyncAnthropic(api_key=settings.anthropic_api_key)
-        self.compositions_dir = Path("static/compositions")
+        # AWS Lambda has a read-only filesystem except for /tmp/.
+        # Use /tmp/compositions/ on Lambda and static/compositions/ locally.
+        if os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
+            self.compositions_dir = Path("/tmp/compositions")
+        else:
+            self.compositions_dir = Path("static/compositions")
         self.compositions_dir.mkdir(parents=True, exist_ok=True)
         print("[EditorAgent] Initialized (code-generation mode, Claude Opus 4.6)")
 
@@ -479,9 +484,14 @@ class EditorAgent:
             )
 
             # Save to file for persistence / debugging
-            file_path = self.compositions_dir / f"{node_id}.tsx"
-            file_path.write_text(code, encoding="utf-8")
-            print(f"[EditorAgent] Saved composition to {file_path}")
+            # On Lambda, this goes to /tmp/compositions/ (only writable path).
+            try:
+                file_path = self.compositions_dir / f"{node_id}.tsx"
+                file_path.write_text(code, encoding="utf-8")
+                print(f"[EditorAgent] Saved composition to {file_path}")
+            except OSError as write_err:
+                # Non-fatal: the code is returned in the response regardless.
+                print(f"[EditorAgent] Warning: could not save composition file: {write_err}")
 
             result = {
                 "success": True,

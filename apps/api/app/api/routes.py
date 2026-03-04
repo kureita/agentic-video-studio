@@ -3,7 +3,22 @@ from fastapi import APIRouter, Depends
 from app.api.endpoints import projects, scrape, generate, canvas, workflow, agent, assets, billing
 from app.core.auth import get_current_user
 
-# All routes under this router require authentication
+# ── Internal (unauthenticated) router for Lambda-to-Lambda endpoints ──────────
+# These endpoints use their own invoke_secret verification instead of JWT auth.
+# This router MUST be included before the authenticated router in main.py
+# so that /workflows/execute-background is matched without requiring a Bearer token.
+internal_router = APIRouter()
+
+# Import and mount only the internal background endpoint
+from app.api.endpoints.workflow import execute_node_background, BackgroundExecuteRequest
+internal_router.add_api_route(
+    "/workflows/execute-background",
+    execute_node_background,
+    methods=["POST"],
+    tags=["internal"],
+)
+
+# ── All routes under this router require authentication ───────────────────────
 router = APIRouter(dependencies=[Depends(get_current_user)])
 
 router.include_router(projects.router, prefix="/projects", tags=["projects"])

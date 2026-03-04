@@ -1,12 +1,14 @@
 """Workflow CRUD and Execution Endpoints."""
 
 import asyncio
-from datetime import datetime, timezone
+import json
+import os
+from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Dict, Any
 from uuid import uuid4
 
 from bson import ObjectId
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
 from pydantic import BaseModel
 
 from app.core.database import get_database
@@ -651,16 +653,107 @@ def get_topological_order(nodes: List[Dict], edges: List[Dict]) -> List[str]:
 # Async Workflow Execution (Polling-based)
 # ============================================
 
+# Strong-reference set to prevent asyncio from GC-ing background tasks before they complete
+_running_tasks: set = set()
+
+# ── Lambda self-invocation helpers ────────────────────────────────────────────
+
+def _get_lambda_function_name() -> Optional[str]:
+    """Return this Lambda's function name (set automatically by AWS runtime)."""
+    return os.environ.get("AWS_LAMBDA_FUNCTION_NAME")
+
+
+async def _invoke_node_lambda(
+    workflow_id: str,
+    node_id: str,
+    run_id: str,
+    input_overrides: Optional[Dict[str, Any]] = None,
+) -> bool:
+    """
+    Fire-and-forget: invoke THIS Lambda asynchronously (InvocationType=Event)
+    to execute a single node in a brand-new Lambda context with its own
+    15-minute timeout and its own CloudWatch log stream.
+
+    Falls back to asyncio.create_task() when running locally (no Lambda env).
+    """
+    function_name = _get_lambda_function_name()
+
+    if not function_name:
+        # Local dev: fall back to asyncio background task
+        print(f"[NodeAsync] Local mode — using asyncio.create_task for node {node_id}")
+        task = asyncio.create_task(_execute_node_async(workflow_id, node_id, run_id, input_overrides))
+        _running_tasks.add(task)
+        task.add_done_callback(_running_tasks.discard)
+        return True
+
+    # Build a minimal HTTP-style payload that the /execute-background endpoint expects
+    payload = {
+        "workflow_id": workflow_id,
+        "node_id": node_id,
+        "run_id": run_id,
+        "input_overrides": input_overrides or {},
+        # Internal secret so the endpoint rejects external calls
+        "invoke_secret": os.environ.get("LAMBDA_INVOKE_SECRET", "kureita-internal"),
+    }
+
+    # Wrap in a fake API Gateway event so Lambda Web Adapter routes it correctly
+    api_gw_event = {
+        "version": "2.0",
+        "routeKey": "POST /api/workflows/execute-background",
+        "rawPath": "/api/workflows/execute-background",
+        "rawQueryString": "",
+        "headers": {
+            "content-type": "application/json",
+            "x-invoke-source": "lambda-self",
+        },
+        "requestContext": {
+            "http": {
+                "method": "POST",
+                "path": "/api/workflows/execute-background",
+                "protocol": "HTTP/1.1",
+                "sourceIp": "127.0.0.1",
+                "userAgent": "lambda-self-invoke",
+            },
+            "accountId": os.environ.get("AWS_ACCOUNT_ID", ""),
+            "requestId": run_id,
+            "stage": "$default",
+            "apiId": "self",
+        },
+        "body": json.dumps(payload),
+        "isBase64Encoded": False,
+    }
+
+    try:
+        import boto3
+        lambda_client = boto3.client("lambda", region_name=os.environ.get("AWS_REGION", "ap-south-1"))
+        response = lambda_client.invoke(
+            FunctionName=function_name,
+            InvocationType="Event",   # async fire-and-forget
+            Payload=json.dumps(api_gw_event).encode("utf-8"),
+        )
+        status = response.get("StatusCode")
+        print(f"[NodeAsync] Lambda self-invoke dispatched for node {node_id} — status: {status}")
+        return status == 202  # 202 = accepted (async invoke)
+    except Exception as e:
+        print(f"[NodeAsync] ❌ Lambda self-invoke failed for node {node_id}: {e}")
+        # Fallback: run in current Lambda (risky but better than nothing)
+        task = asyncio.create_task(_execute_node_async(workflow_id, node_id, run_id, input_overrides))
+        _running_tasks.add(task)
+        task.add_done_callback(_running_tasks.discard)
+        return False
+
 async def _execute_node_async(workflow_id: str, node_id: str, run_id: str, input_overrides: Optional[Dict[str, Any]] = None):
     """
     Background task: execute a single node,
     updating its status in MongoDB so the frontend can poll.
     """
+    print(f"[NodeAsync] ▶ _execute_node_async START: workflow={workflow_id}, node={node_id}, run_id={run_id}")
     collection = get_workflows_collection()
     oid = ObjectId(workflow_id)
     
     workflow = await collection.find_one({"_id": oid})
     if not workflow:
+        print(f"[NodeAsync] ❌ Workflow {workflow_id} not found — aborting background task")
         return
     
     nodes = workflow.get("nodes", [])
@@ -691,6 +784,7 @@ async def _execute_node_async(workflow_id: str, node_id: str, run_id: str, input
         "editorAgent": (ActionType.RENDER, 20),
     }
     
+    print(f"[NodeAsync] Node type: {node_type}, checking billing...")
     if node_type in cost_map:
         try:
             action_type, cost = cost_map[node_type]
@@ -705,6 +799,7 @@ async def _execute_node_async(workflow_id: str, node_id: str, run_id: str, input
                 custom_cost=cost,
                 metadata={"workflow_id": workflow_id, "node_id": node_id, "node_type": node_type}
             )
+            print(f"[NodeAsync] ✅ Billing OK for {node_type} ({cost} credits)")
         except Exception as e:
             # Insufficient credits or other billing error
             error_msg = str(e)
@@ -720,10 +815,10 @@ async def _execute_node_async(workflow_id: str, node_id: str, run_id: str, input
                     f"execution.node_states.{node_id}.error": error_msg,
                 }}
             )
-            print(f"[NodeAsync] Node {node_id} failed billing check: {error_msg}")
+            print(f"[NodeAsync] ❌ Node {node_id} FAILED billing check: {error_msg}")
             return
 
-    print(f"[NodeAsync] Running node: {node_id} (type: {target_node.get('type')}) (run_id: {run_id})")
+    print(f"[NodeAsync] 🚀 Calling runner.run_node for: {node_id} (type: {target_node.get('type')}) (run_id: {run_id})")
     runner = NodeRunner()
     
     # Mark node as "running"
@@ -1035,14 +1130,62 @@ async def run_node_async(
         }}
     )
     
-    asyncio.create_task(_execute_node_async(
-        workflow_id=workflow_id, 
-        node_id=node_id, 
-        run_id=run_id, 
-        input_overrides=request.input_overrides if request else None
-    ))
+    invoked = await _invoke_node_lambda(
+        workflow_id=workflow_id,
+        node_id=node_id,
+        run_id=run_id,
+        input_overrides=request.input_overrides if request else None,
+    )
     
+    if not invoked:
+        # If the Lambda self-invoke failed, mark as failed so it doesn't get stuck in 'queued'
+        await collection.update_one(
+            {"_id": oid},
+            {"$set": {
+                f"execution.node_states.{node_id}.status": "failed",
+                f"execution.node_states.{node_id}.error": "Failed to dispatch background execution.",
+                "execution.status": "failed",
+                "updated_at": datetime.now(timezone.utc),
+            }}
+        )
+        return RunWorkflowAsyncResponse(run_id=run_id, status="failed")
+
     return RunWorkflowAsyncResponse(run_id=run_id, status="running")
+
+
+# ── Internal background execution endpoint (called by Lambda self-invoke) ─────
+
+class BackgroundExecuteRequest(BaseModel):
+    workflow_id: str
+    node_id: str
+    run_id: str
+    input_overrides: Optional[Dict[str, Any]] = None
+    invoke_secret: str = ""
+
+
+@router.post("/execute-background")
+async def execute_node_background(request: BackgroundExecuteRequest):
+    """
+    Internal endpoint: called by Lambda self-invocation (InvocationType=Event).
+    Runs a single node synchronously within this Lambda's 15-min window.
+    NOT intended to be called directly from the frontend.
+    """
+    expected_secret = os.environ.get("LAMBDA_INVOKE_SECRET", "kureita-internal")
+    if request.invoke_secret != expected_secret:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    print(f"[Background] ▶ execute-background START: workflow={request.workflow_id}, node={request.node_id}, run_id={request.run_id}")
+
+    # Run the full node execution synchronously (we ARE the background Lambda)
+    await _execute_node_async(
+        workflow_id=request.workflow_id,
+        node_id=request.node_id,
+        run_id=request.run_id,
+        input_overrides=request.input_overrides,
+    )
+
+    print(f"[Background] ✅ execute-background DONE: node={request.node_id}")
+    return {"ok": True}
 
 
 @router.get("/{workflow_id}/run-status", response_model=WorkflowRunStatus)
@@ -1072,8 +1215,6 @@ async def get_run_status(workflow_id: str, current_user: dict = Depends(get_curr
     # Build node states from stored data
     raw_states = execution.get("node_states", {})
     node_states = {}
-    
-    from datetime import timedelta
     
     for nid, state in raw_states.items():
         if state.get("status") == "running" and state.get("started_at"):
@@ -1175,7 +1316,64 @@ async def cleanup_presigned_urls(current_user: dict = Depends(get_current_user))
             )
             cleaned_count += 1
             print(f"[Cleanup] Cleaned presigned URLs in workflow {oid}")
-    
+
     print(f"[Cleanup] Done. Cleaned {cleaned_count}/{len(workflows)} workflows.")
     return {"cleaned": cleaned_count, "total": len(workflows)}
 
+@router.post("/{workflow_id}/nodes/{node_id}/upload-render")
+async def upload_rendered_video(
+    workflow_id: str,
+    node_id: str,
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Endpoint for the frontend to upload a client-rendered video blob to S3.
+    This saves the raw S3 URL back into the workflow's outputs and node data.
+    """
+    try:
+        oid = ObjectId(workflow_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid workflow ID")
+
+    collection = get_workflows_collection()
+    user_id = current_user.get("_id")
+
+    # Verify workflow ownership
+    workflow = await collection.find_one({
+        "_id": oid,
+        "$or": [{"user_id": user_id}, {"user_id": {"$exists": False}}]
+    })
+
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    from app.services.storage_service import S3StorageService
+    storage = S3StorageService()
+
+    # Upload to S3
+    filename = f"editor_render_{workflow_id}_{node_id}_{int(datetime.now().timestamp())}.mp4"
+    print(f"[{workflow_id}/{node_id}] Uploading rendered video to S3 as {filename}")
+
+    try:
+        # Note: file_url returned here is unsigned (raw S3 URL) if correctly implemented
+        file_url = await storage.upload_file(file, filename, content_type="video/mp4")
+        
+        # Strip just in case it returned a presigned URL by accident
+        file_url = S3StorageService.strip_presigned_params(file_url)
+
+        # Update MongoDB with the new raw S3 URL, overwriting the TSX code output
+        await collection.update_one(
+            {"_id": oid},
+            {"$set": {
+                f"outputs.{node_id}": file_url,
+                f"execution.outputs.{node_id}": file_url,
+                "updated_at": datetime.now(timezone.utc)
+            }}
+        )
+
+        return {"url": file_url, "presigned_url": storage.get_presigned_url(file_url)}
+
+    except Exception as e:
+        print(f"Error uploading rendered video: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

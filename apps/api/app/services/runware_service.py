@@ -19,7 +19,7 @@ class RunwareService:
     async def _post(self, tasks: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Send a JSON array of tasks to Runware API and return the first response."""
         if not self.api_key:
-            return {"success": False, "error": "RUNWARE_API_KEY is not configured in .env.local"}
+            return {"success": False, "error": "RUNWARE_API_KEY environment variable is not set"}
             
         headers = {
             "Content-Type": "application/json",
@@ -42,7 +42,11 @@ class RunwareService:
                 if response.status_code != 200:
                     try:
                         error_data = response.json()
-                        err_msg = error_data.get("error", {}).get("message", response.text)
+                        err_msg = error_data.get("error", {}).get("message")
+                        if not err_msg and "errors" in error_data and error_data["errors"]:
+                            err_msg = error_data["errors"][0].get("message")
+                        if not err_msg:
+                            err_msg = response.text
                     except Exception:
                         err_msg = response.text
                     return {"success": False, "error": f"Runware API HTTP {response.status_code}: {err_msg}"}
@@ -94,9 +98,16 @@ class RunwareService:
             resp = await self._post([poll_task])
             
             if not resp["success"]:
+                error_msg = resp.get("error", "")
+                
+                # If it's a 4xx error (like 400 Bad Request) or explicit API error, it's likely permanent (e.g. content moderation)
+                if "HTTP 4" in error_msg or "Runware error:" in error_msg or "Runware task error:" in error_msg:
+                    print(f"[RunwareService] Permanent error during polling: {error_msg}")
+                    return {"success": False, "error": error_msg}
+                
                 # Sometimes a transient network error happens while polling. 
                 # Let's log it, wait, and try again, rather than failing immediately.
-                print(f"[RunwareService] Warning: Poll request failed: {resp.get('error')}")
+                print(f"[RunwareService] Warning: Poll request failed (likely transient): {error_msg}")
                 await asyncio.sleep(delay)
                 continue
                 
@@ -186,17 +197,39 @@ class RunwareService:
             "model": model
         }
 
+    # Per-model dimension overrides: some models only accept specific resolutions.
+    # Keys are model ID prefixes (matched via str.startswith); each value maps
+    # aspect_ratio -> (width, height).  Falls back to _DEFAULT_DIMENSIONS if no
+    # model-specific entry is found.
+    _DEFAULT_DIMENSIONS = {
+        "16:9": (1280, 720),
+        "9:16": (720, 1280),
+        "1:1":  (960, 960),
+        "4:3":  (960, 720),
+        "3:4":  (720, 960),
+    }
+    _MODEL_DIMENSIONS: Dict[str, Dict[str, tuple]] = {
+        # Kling 3 Pro only accepts 1920x1080, 1080x1920, or 1440x1440
+        "klingai:kling-video@3-pro": {
+            "16:9": (1920, 1080),
+            "9:16": (1080, 1920),
+            "1:1":  (1440, 1440),
+            "4:3":  (1440, 1080),
+            "3:4":  (1080, 1440),
+        },
+    }
+
+    def _resolve_dimensions(self, model: str, aspect_ratio: str) -> tuple:
+        """Return (width, height) for the given model and aspect ratio."""
+        for prefix, dim_map in self._MODEL_DIMENSIONS.items():
+            if model.startswith(prefix):
+                return dim_map.get(aspect_ratio, dim_map.get("16:9", (1920, 1080)))
+        return self._DEFAULT_DIMENSIONS.get(aspect_ratio, (1280, 720))
+
     async def generate_video(self, prompt: str, model: str = "klingai:kling-video@3-standard", duration: int = 5, aspect_ratio: str = "16:9") -> dict:
         """Generate a video from text."""
-        # Convert aspect ratio to width/height
-        dimensions = {
-            "16:9": (1280, 720),
-            "9:16": (720, 1280),
-            "1:1":  (960, 960),
-            "4:3":  (960, 720),
-            "3:4":  (720, 960)
-        }
-        width, height = dimensions.get(aspect_ratio, (1280, 720))
+        width, height = self._resolve_dimensions(model, aspect_ratio)
+        print(f"[VideoGenerator] Resolved dimensions for {model} ({aspect_ratio}): {width}x{height}")
 
         task = {
             "taskType": "videoInference",
@@ -250,50 +283,151 @@ class RunwareService:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 resp = await client.get(url)
                 if resp.status_code == 200:
-                    content_type = resp.headers.get("Content-Type", "image/jpeg")
-                    # Fallback to image/jpeg if it's application/octet-stream or text/plain
-                    if "image" not in content_type:
+                    raw_content_type = resp.headers.get("Content-Type", "image/jpeg")
+                    content_type = raw_content_type.split(";")[0].strip()
+
+                    # ⚠️ Guard: never wrap a video file as an image data URI.
+                    # This can happen when ffprobe fails and a video URL leaks through
+                    # as a start_image input — the MP4 would be labelled image/jpeg silently.
+                    if content_type.startswith("video/"):
+                        print(f"[RunwareService] _url_to_data_uri: ⚠️ URL is a video ({content_type}), not an image — returning raw URL. Frame extraction may have failed.")
+                        return url
+
+                    # Fallback to image/jpeg if it's not an image type
+                    if not content_type.startswith("image/"):
                         content_type = "image/jpeg"
                         
                     b64_data = base64.b64encode(resp.content).decode("utf-8")
-                    return f"data:{content_type};base64,{b64_data}"
+                    data_uri = f"data:{content_type};base64,{b64_data}"
+                    print(f"[RunwareService] _url_to_data_uri: ✅ converted to data URI ({content_type}, {len(resp.content)} bytes)")
+                    return data_uri
+                else:
+                    print(f"[RunwareService] _url_to_data_uri: ⚠️ HTTP {resp.status_code} — falling back to raw URL")
         except Exception as e:
-            print(f"[RunwareService] Error converting URL to Data URI: {e}")
+            print(f"[RunwareService] _url_to_data_uri: ⚠️ Exception ({type(e).__name__}: {e}) — falling back to raw URL")
             
         # Fallback to the original URL if fetching fails
+        print(f"[RunwareService] _url_to_data_uri: ⚠️ Using raw URL as fallback (may fail if not publicly accessible)")
         return url
 
-    async def image_to_video(self, image_url: str, prompt: str, model: str = "klingai:kling-video@3-standard", duration: int = 5) -> dict:
-        """Generate a video from a starting image."""
+    async def _upload_image_to_runware(self, image_data: str) -> Optional[str]:
+        """Upload an image to Runware and return the imageUUID for use in video tasks.
         
-        # Safe-encode the URL to a Data URI because Runware rejects URLs lacking image Content-Type headers
-        safe_image_data = await self._url_to_data_uri(image_url)
+        Accepts: data URI, base64 string, or publicly accessible URL.
+        Returns: imageUUID string, or None on failure.
         
+        Using imageUpload is the RELIABLE way to pass images to Runware video models.
+        Passing data URIs directly in frameImages is inconsistently supported across providers.
+        """
         task = {
+            "taskType": "imageUpload",
+            "image": image_data,
+        }
+        print(f"[RunwareService] Uploading image to Runware (imageUpload)...")
+        resp = await self._post([task])
+        if resp.get("success"):
+            image_uuid = resp.get("data", {}).get("imageUUID")
+            if image_uuid:
+                print(f"[RunwareService] ✅ Image uploaded to Runware: {image_uuid}")
+                return image_uuid
+            print(f"[RunwareService] ⚠️ imageUpload succeeded but no imageUUID in response: {resp}")
+        else:
+            print(f"[RunwareService] ⚠️ imageUpload failed: {resp.get('error')} — will use data URI as fallback")
+        return None
+
+    async def image_to_video(self, image_url: str, prompt: str, model: str = "klingai:kling-video@3-standard", duration: int = 5, aspect_ratio: str = "16:9") -> dict:
+        """Generate a video from a starting image.
+        
+        Flow:
+        1. Convert image URL → data URI (handles localhost, S3 signed URLs, etc.)
+        2. Upload to Runware via imageUpload → get stable imageUUID
+        3. Pass imageUUID in provider-specific frameImages param
+        
+        Provider payload structure:
+        - klingai / runway:   task["inputs"]["frameImages"] = [{"image": uuid, "frame": "first"}]
+        - bytedance / minimax / pixverse:  task["frameImages"] = [{"inputImage": uuid, "frame": "first"}]
+        - alibaba (wan):      task["inputs"]["frameImages"] = [uuid]
+        - google (veo):       NOT supported — returns clear error
+        """
+        # Convert aspect ratio to width/height (respects per-model overrides)
+        width, height = self._resolve_dimensions(model, aspect_ratio)
+
+        # Google Veo does not support image-to-video via Runware
+        if model.startswith("google:"):
+            return {
+                "success": False,
+                "error": f"Google Veo models ({model}) do not support image-to-video. Please use a text-to-video workflow or switch to a Kling / Runway / Seedance model.",
+            }
+
+        print(f"[RunwareService] image_to_video: model={model}, aspect_ratio={aspect_ratio}")
+
+        # Step 1: Convert the URL to a data URI so it can be uploaded to Runware
+        # (handles localhost URLs, S3 pre-signed URLs, etc.)
+        data_uri = await self._url_to_data_uri(image_url)
+
+        # Step 2: Upload to Runware's imageUpload API to get a stable UUID.
+        # This is the most reliable way to pass images to video models — direct data URIs
+        # in frameImages are inconsistently validated across providers.
+        image_ref = await self._upload_image_to_runware(data_uri)
+        if not image_ref:
+            # Fallback: use data URI directly if upload failed
+            print(f"[RunwareService] Falling back to data URI directly in frameImages")
+            image_ref = data_uri
+
+        # ── Pre-flight guard ──────────────────────────────────────────────────
+        # If image_ref is still a raw video URL (e.g. frame extraction failed because
+        # ffprobe is not installed), fail immediately with a clear message rather than
+        # sending an MP4 URL to Runware and getting an opaque HTTP 400.
+        is_data_uri = isinstance(image_ref, str) and image_ref.startswith("data:")
+        is_uuid_ref = isinstance(image_ref, str) and len(image_ref) == 36 and image_ref.count("-") == 4
+        is_video_url = isinstance(image_ref, str) and (
+            ".mp4" in image_ref or
+            ".webm" in image_ref or
+            "vm.runware.ai" in image_ref
+        )
+        if not is_data_uri and not is_uuid_ref and is_video_url:
+            return {
+                "success": False,
+                "error": (
+                    "Cannot use a video as a frame image. "
+                    "The 'start_frame'/'end_frame' extraction requires ffmpeg (ffprobe) to be installed. "
+                    "Deploy the Docker image with ffmpeg to enable video-to-video chaining."
+                )
+            }
+
+        task: Dict[str, Any] = {
             "taskType": "videoInference",
             "model": model,
             "outputType": "URL",
             "outputFormat": "MP4",
             "positivePrompt": prompt,
             "duration": duration,
-            "inputs": {
-                "frameImages": [
-                    {
-                        "image": safe_image_data,
-                        "frame": "first"
-                    }
-                ]
-            }
         }
-        
-        # Add Google Veo-specific provider settings (native audio generation)
-        if model.startswith("google:"):
-            task["providerSettings"] = {
-                "google": {
-                    "generateAudio": True,
-                }
+
+        provider = model.split(":")[0].lower() if ":" in model else ""
+
+        if provider in ("klingai", "runway"):
+            # KlingAI & Runway: nested under inputs, key is "image"
+            # Kling infers dimensions from the image; Runway needs explicit dimensions.
+            if provider == "runway":
+                task["width"] = width
+                task["height"] = height
+            task["inputs"] = {
+                "frameImages": [{"image": image_ref, "frame": "first"}]
             }
-        
+
+        elif provider == "alibaba":
+            # Wan 2.6 / Flash: inputs.frameImages is a plain string list + resolution param
+            task["inputs"] = {"frameImages": [image_ref]}
+            task["resolution"] = "720p"
+
+        else:
+            # Bytedance (Seedance), MiniMax (Hailuo), PixVerse:
+            # top-level frameImages with inputImage key
+            task["width"] = width
+            task["height"] = height
+            task["frameImages"] = [{"inputImage": image_ref, "frame": "first"}]
+
         resp = await self._post([task])
         if not resp["success"]:
             return resp

@@ -119,30 +119,40 @@ class VideoGenerator:
     async def _fetch_and_upload(self, url: str) -> Optional[str]:
         """Fetch file from URL and save to StorageService, returning the storage URL."""
         if not url: return None
+        print(f"[VideoGenerator] Fetching video for S3 upload: {url[:80]}...")
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.get(url, timeout=300.0)
                 if response.status_code == 200:
                     filename = f"generated_video_{int(time.time())}.mp4"
                     storage_url = await self.storage.upload_file(response.content, filename, "video/mp4")
+                    print(f"[VideoGenerator] ✅ Video uploaded to S3: {storage_url}")
                     return storage_url
+                else:
+                    print(f"[VideoGenerator] ⚠️ Failed to fetch video for S3 (HTTP {response.status_code}) — falling back to Runware CDN URL (may expire!)")
         except Exception as e:
-            print(f"[VideoGenerator] Error fetching video {url}: {e}")
-        return url # fallback to runware url
+            print(f"[VideoGenerator] ⚠️ S3 upload failed ({type(e).__name__}: {e}) — falling back to Runware CDN URL (may expire!)")
+        return url  # fallback to runware url
 
     def _get_model(self, model_name: Optional[str]) -> str:
         """Map frontend model display name to Runware internal ID.
         Returns '__lipsync__' sentinel for Kling Lip Sync so callers can route correctly.
         """
+        print(f"[VideoGenerator] Resolving model for input: '{model_name}'")
         if not model_name:
+            print(f"[VideoGenerator] Model name empty, using default: '{self.default_model}'")
             return self.default_model
         # Exact match first
         if model_name in _MODEL_MAP:
+            print(f"[VideoGenerator] Exact match found mapping '{model_name}' -> '{_MODEL_MAP[model_name]}'")
             return _MODEL_MAP[model_name]
         # Substring fallback for any legacy names
         for key, val in _MODEL_MAP.items():
             if key in model_name or model_name in key:
+                print(f"[VideoGenerator] Substring match found mapping '{model_name}' -> '{val}' (matched key: '{key}')")
                 return val
+        
+        print(f"[VideoGenerator] No match found for '{model_name}', using default: '{self.default_model}'")
         return self.default_model
 
 
@@ -221,6 +231,7 @@ class VideoGenerator:
                 prompt=prompt,
                 model=target_model,
                 duration=duration,
+                aspect_ratio=aspect_ratio,
             )
             
             # Optionally add lip-sync
@@ -270,6 +281,7 @@ class VideoGenerator:
         first_frame_path: str,
         last_frame_path: str,
         duration: int = 5,
+        aspect_ratio: str = "16:9",
         model_name: Optional[str] = None,
     ) -> dict:
         """Generate video by specifying first and last frames."""
@@ -278,6 +290,7 @@ class VideoGenerator:
             prompt=prompt,
             image_path=first_frame_path,
             duration=duration,
+            aspect_ratio=aspect_ratio,
             model_name=model_name
         )
 

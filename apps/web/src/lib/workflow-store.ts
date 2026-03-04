@@ -54,6 +54,7 @@ interface WorkflowState {
     runWorkflowAsync: () => Promise<void>;
     runNode: (nodeId: string) => Promise<void>;
     clearExecutionStates: () => void;
+    uploadRenderedVideo: (nodeId: string, file: File) => Promise<string | null>;
 
     // Reset
     reset: () => void;
@@ -676,6 +677,30 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
         // 2. If dependencies ready, run the target node (always run target node when explicitly requested)
         if (dependenciesReady) {
             await executeNodeApi(nodeId);
+        }
+    },
+
+    // Upload rendered video to S3 and save to node output
+    uploadRenderedVideo: async (nodeId: string, file: File) => {
+        const { id } = get();
+        if (!id) return null;
+
+        try {
+            const res = await workflowApi.uploadRenderedVideo(id, nodeId, file);
+            const data = res.data;
+
+            if (data.url) {
+                // Update outputs
+                get().setNodeOutput(nodeId, data.url);
+                // The URL returned might be unsigned. Since we want to display it immediately,
+                // we should use the presigned URL if provided, or the signed flow will handle it.
+                return data.presigned_url || data.url;
+            }
+            return null;
+        } catch (error) {
+            console.error("[WorkflowStore] Upload rendered video error:", error);
+            toast.error("Failed to upload rendered video");
+            return null;
         }
     },
 

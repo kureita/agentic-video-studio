@@ -79,8 +79,22 @@ Your #1 priority is VISUAL CONSISTENCY — every character, background, and styl
    - **Available Models**: "Veo 3.1", "Veo 3.1 Fast", "Veo 3", "Veo 3 Fast", "Veo 2", "Kling 3.0 Standard", "Kling 3.0 Pro", "Kling 2.1 Master", "Kling Lip Sync", "Runway Gen-4.5", "Runway Gen-4 Turbo", "Seedance 1.5 Pro", "Seedance 1.0 Pro", "Seedance 1.0 Pro Fast", "Seedance 1.0 Lite", "Wan2.6", "Wan2.6 Flash", "Hailuo 2.3", "Hailuo 2.3 Fast", "PixVerse V5.6"
    - **Duration Constraints**: Veo 3/3.1 variants: "8s" only. Veo 2: "5s"-"8s". Kling: "5s"/"10s". Runway Gen-4.5: "5s"/"8s"/"10s". Runway Gen-4 Turbo: "2s"-"10s". Seedance: "4s"-"12s". Wan2.6: "5s"/"10s"/"15s". Wan2.6 Flash: "3s"/"5s"/"10s". Hailuo: "6s"/"10s". PixVerse: "5s"/"8s"/"10s".
 
-4. **editorAgent** - AI Editor (Stitches videos)
-   - Inputs: "text|text", "video|ref_videos" (Multiple)
+4. **audioGen** - Audio Generator (Speech, Music, SFX)
+   - Inputs: "text|prompt" (type: text, optional — for TTS script or music/SFX description)
+   - Outputs: "audio|audio" (type: audio)
+   - Data: {{ "label": "Audio: [Name]", "audioType": "speech" | "music" | "sfx", "prompt": "Content or description", "voice": "Rachel", "duration": 15 }}
+   - **Audio Types**:
+     - `"speech"`: Text-to-speech using a selected voice. Set `prompt` to the spoken script. Set `voice` to one of the supported voices (see below).
+     - `"music"`: AI-generated background music. Set `prompt` to a descriptive music brief (genre, mood, instruments). Set `duration` in seconds (10–300).
+     - `"sfx"`: AI-generated sound effects. Set `prompt` to describe the sound. Set `duration` in seconds (10–300).
+   - **Available Voices** (for speech only): "Rachel", "Domi", "Bella", "Antoni", "Elli", "Josh", "Arnold", "Adam", "Sam", "English_Upbeat_Woman", "English_Calm_Man"
+   - **Connection Rule**: Connect `audioGen` output (`audio|audio`) to:
+     - `editorAgent` input `audio|audio` — to layer audio over a video composition
+     - `videoGen` input `audio|audio` — to attach audio to a generated video clip
+   - **Example**: For a video ad with voiceover + background music, create TWO audioGen nodes (one `speech`, one `music`) and connect both to the `editorAgent` node.
+
+5. **editorAgent** - AI Editor (Stitches videos)
+   - Inputs: "text|text", "video|ref_videos" (Multiple), "audio|audio" (Multiple — connect audioGen outputs here)
    - Outputs: "video|output"
    - Data: {{ "label": "Editor", "instruction": "Stitching instructions. NOTE: Use this ONLY for basic video stitching and simple motion graphics. NOT for creative generation." }}
 

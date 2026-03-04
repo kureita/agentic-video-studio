@@ -7,7 +7,7 @@ Description: >
 
 Globals:
   Function:
-    Timeout: 600
+    Timeout: 900
     MemorySize: 2048
     Environment:
       Variables:
@@ -15,6 +15,8 @@ Globals:
         API_V1_STR: "api"
         PROJECT_NAME: "Kureita API"
         STORAGE_TYPE: "s3"
+        # Internal secret for Lambda self-invocation (override in Lambda console for production)
+        LAMBDA_INVOKE_SECRET: "kureita-internal-2025"
         # Secrets (Set these in Lambda console or via parameters)
         # MONGODB_URL: ""
         # MONGODB_DATABASE: "kureita_mvp"

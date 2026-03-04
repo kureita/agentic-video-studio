@@ -54,5 +54,6 @@ apps/api/static/videos/*
 apps/api/static/audios/*.aws-sam/
 
 scripts/deploy-api.sh
+scripts/cloudwatch_logs_stream.sh
 
 apps/api/static/*

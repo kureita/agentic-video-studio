@@ -44,11 +44,23 @@ class NodeRunner:
         
         # Resolve inputs from connected nodes
         raw_inputs = self._resolve_inputs(node_id, nodes, edges, outputs)
-        inputs = self._presign_s3_urls(raw_inputs)
+        
+        # editorAgent embeds URLs directly into TSX code that gets saved to MongoDB.
+        # Presigned URLs expire (even at 7 days), so we must give the editor raw S3
+        # URLs. The Remotion renderer on the frontend will call our /presign endpoint
+        # to freshen them at render time.
+        # All other node types receive presigned URLs as usual (they consume them immediately).
+        if node_type == "editorAgent":
+            inputs = raw_inputs  # raw S3 URLs — permanent, never expire
+        else:
+            inputs = self._presign_s3_urls(raw_inputs)
         
         # Apply overrides if provided
         if input_overrides:
-            inputs.update(self._presign_s3_urls(input_overrides))
+            if node_type == "editorAgent":
+                inputs.update(input_overrides)
+            else:
+                inputs.update(self._presign_s3_urls(input_overrides))
         
         print(f"[NodeRunner] Running node {node_id} (type: {node_type})")
         print(f"[NodeRunner] Resolved inputs: {list(inputs.keys())}")
@@ -156,7 +168,16 @@ class NodeRunner:
                                 source_output = frame_url
                                 print(f"[NodeRunner] Extracted {source_handle_name} from video: {frame_url[:80]}...")
                             else:
-                                print(f"[NodeRunner] Warning: Failed to extract {source_handle_name} from video")
+                                # ⚠️ Frame extraction failed (ffprobe missing or video unreadable).
+                                # Set source_output to None — DO NOT pass the raw MP4 URL as a
+                                # frame image. Runware will reject it with HTTP 400.
+                                print(f"[NodeRunner] ❌ Failed to extract {source_handle_name} from video — skipping this input (deploy with ffmpeg to fix)")
+                                source_output = None
+
+                    # Skip None outputs (e.g. failed frame extraction)
+                    if source_output is None:
+                        print(f"[NodeRunner] Skipping input '{target_input_name}' — source output is None")
+                        continue
                     
                     # For inputs that can accept multiple connections, collect into list
                     if target_input_name in ["ref_videos", "ref_images", "audio"]:
@@ -531,7 +552,7 @@ class NodeRunner:
         if resolution not in ("720p", "1080p"):
             resolution = "720p"
         
-        print(f"[NodeRunner] Generating video: prompt='{prompt[:50]}...', duration={duration}s, ratio={ratio}, resolution={resolution}, fast={use_fast_model}")
+        print(f"[NodeRunner] Generating video: prompt='{prompt[:50]}...', model='{model_str}', duration={duration}s, ratio={ratio}, resolution={resolution}, fast={use_fast_model}")
         print(f"[NodeRunner] Inputs: start_image={bool(start_image)}, end_image={bool(end_image)}, ref_images={bool(reference_images)}, ref_video={bool(reference_video)}")
         
         try:
@@ -547,6 +568,7 @@ class NodeRunner:
                     first_frame_path=start_image,
                     last_frame_path=end_image,
                     duration=duration,
+                    aspect_ratio=ratio,
                     model_name=model_str,
                 )
             

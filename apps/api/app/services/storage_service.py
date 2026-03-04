@@ -220,7 +220,7 @@ class S3StorageService(StorageService):
             return self.s3_client.generate_presigned_url(
                 ClientMethod='get_object',
                 Params={'Bucket': self.bucket, 'Key': path},
-                ExpiresIn=3600  # 1 hour expiry
+                ExpiresIn=604800  # 7 days — long enough for Remotion rendering
             )
         except Exception as e:
             print(f"S3 Presigned URL Error: {e}")

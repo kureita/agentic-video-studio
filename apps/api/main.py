@@ -87,4 +87,6 @@ async def health_check():
 
 
 # Include API routes
+from app.api.routes import internal_router
+app.include_router(internal_router, prefix="/api")
 app.include_router(api_router, prefix="/api")

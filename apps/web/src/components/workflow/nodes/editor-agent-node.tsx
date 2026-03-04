@@ -8,7 +8,7 @@ import { useClientRender } from "@/lib/remotion/useClientRender";
 
 export const EditorAgentNode = memo(({ id, selected, data }: NodeProps) => {
     const { deleteElements, updateNodeData } = useReactFlow();
-    const { runNode, clearNodeOutput, outputs, runningNodeId } = useWorkflowStore();
+    const { runNode, clearNodeOutput, outputs, runningNodeId, uploadRenderedVideo } = useWorkflowStore();
 
     const isRunning = runningNodeId === id;
 
@@ -39,12 +39,40 @@ export const EditorAgentNode = memo(({ id, selected, data }: NodeProps) => {
 
     // Auto-render when new code arrives — but NOT for scene-only nodes
     const lastRenderedCodeRef = useRef<string | null>(null);
+    const hasUploadedRef = useRef<boolean>(false);
+
     useEffect(() => {
         if (compositionCode && !isScene && compositionCode !== lastRenderedCodeRef.current && !renderState.isRendering) {
             lastRenderedCodeRef.current = compositionCode;
+            hasUploadedRef.current = false; // Reset upload flag for new render
             renderFromCode(compositionCode);
         }
     }, [compositionCode, isScene, renderState.isRendering, renderFromCode]);
+
+    // Automatically upload rendered MP4 to S3 when done
+    useEffect(() => {
+        // If we have a successful render blob, it's not a scene, we haven't uploaded yet, and there's no error
+        if (renderState.blobUrl && !renderState.isRendering && !isScene && !hasUploadedRef.current) {
+            const upload = async () => {
+                hasUploadedRef.current = true; // Prevent multiple uploads
+                try {
+                    // Fetch the blob out of browser memory
+                    const res = await fetch(renderState.blobUrl!);
+                    const blob = await res.blob();
+
+                    // Convert to File
+                    const file = new File([blob], `render_${id}.mp4`, { type: 'video/mp4' });
+
+                    // Upload to S3 and save to MongoDB outputs
+                    await uploadRenderedVideo(id, file);
+                } catch (err) {
+                    console.error("Failed to auto-upload rendered video:", err);
+                    hasUploadedRef.current = false; // allow retry if needed
+                }
+            };
+            upload();
+        }
+    }, [renderState.blobUrl, renderState.isRendering, isScene, id, uploadRenderedVideo]);
 
     // Manual re-render
     const handleReRender = useCallback(async () => {
