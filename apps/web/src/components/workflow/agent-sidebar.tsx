@@ -874,7 +874,13 @@ export function AgentSidebar() {
             'image/gif',
             'video/mp4',
             'video/webm',
-            'video/quicktime' // .mov
+            'video/quicktime', // .mov
+            'audio/mpeg',
+            'audio/wav',
+            'audio/ogg',
+            'audio/aac',
+            'audio/webm',
+            'audio/flac'
         ];
 
         const newAttachments: Attachment[] = [];
@@ -895,7 +901,7 @@ export function AgentSidebar() {
         }
 
         if (hasInvalidFiles) {
-            toast.error("Format not supported. Please use JPG, PNG, WEBP, MP4, WEBM, or MOV.");
+            toast.error("Format not supported. Please use accepted image, video, or audio formats.");
         }
 
         if (newAttachments.length > 0) {
