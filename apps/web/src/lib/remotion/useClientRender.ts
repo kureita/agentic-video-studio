@@ -87,6 +87,12 @@ export function useClientRender(): UseClientRender {
                 console.warn("[useClientRender] URL presigning failed, using original URLs:", err);
             }
 
+            // Inject crossOrigin="anonymous" to <Video> and <Audio> tags if missing
+            // to bypass opaque response caching making WebAudio extraction fail with CORS.
+            resolvedCode = resolvedCode.replace(
+                /<(Video|Audio)\b(?![^>]*crossOrigin)/g,
+                '<$1 crossOrigin="anonymous"'
+            );
 
             // ──── 1. Compile the TSX code ────
             let meta;

@@ -12,6 +12,7 @@ import { transform } from "sucrase";
 import React from "react";
 import * as Remotion from "remotion";
 import * as RemotionMedia from "@remotion/media";
+import * as LucideReact from "lucide-react";
 
 export interface CompositionMeta {
     component: React.FC;
@@ -69,6 +70,7 @@ export function compileComposition(tsxCode: string): CompositionMeta {
         if (mod === "react") return React;
         if (mod === "remotion") return Remotion;
         if (mod === "@remotion/media") return RemotionMedia;
+        if (mod === "lucide-react") return LucideReact;
 
         // Handle common variations/subpaths if needed
         if (mod === "remotion/media") return RemotionMedia;

@@ -1,6 +1,6 @@
 import React, { memo } from "react";
 import { NodeProps, useReactFlow } from "@xyflow/react";
-import { Music, Loader2, Download, ChevronDown, Mic, Sparkles, Volume2, Upload } from "lucide-react";
+import { Music, Loader2, Download, ChevronDown, Mic, Volume2 } from "lucide-react";
 import { NodeWrapper } from "@/components/workflow/node-wrapper";
 import { usePresignedUrl } from "@/lib/use-presigned-url";
 import { useWorkflowStore } from "@/lib/workflow-store";
@@ -9,7 +9,7 @@ type AudioType = "speech" | "music" | "sfx";
 
 const AUDIO_TYPE_OPTIONS: { value: AudioType; label: string; icon: React.ReactNode; description: string }[] = [
     { value: "speech", label: "Speech", icon: <Mic className="w-3 h-3" />, description: "Text-to-speech with voice selection" },
-    { value: "music", label: "Music", icon: <Sparkles className="w-3 h-3" />, description: "Generate music from a description" },
+    { value: "music", label: "Music", icon: <Music className="w-3 h-3" />, description: "Generate music from a description" },
     { value: "sfx", label: "Sound FX", icon: <Volume2 className="w-3 h-3" />, description: "Generate sound effects" },
 ];
 
@@ -21,23 +21,9 @@ const PLACEHOLDER_MAP: Record<AudioType, string> = {
 
 export const AudioGenNode = memo(({ id, selected, data }: NodeProps) => {
     const { deleteElements, updateNodeData } = useReactFlow();
-    const { runNode, clearNodeOutput, outputs, runningNodeId, setNodeOutput } = useWorkflowStore();
+    const { runNode, clearNodeOutput, outputs, runningNodeId } = useWorkflowStore();
 
-    const fileInputRef = React.useRef<HTMLInputElement>(null);
 
-    const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
-        const file = event.target.files?.[0];
-        if (!file) return;
-
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            const result = e.target?.result as string;
-            if (result) {
-                setNodeOutput(id, result);
-            }
-        };
-        reader.readAsDataURL(file);
-    };
 
     const isRunning = runningNodeId === id;
     const rawOutput = (outputs[id] as string | undefined) || (data.output as string | undefined);
@@ -174,7 +160,7 @@ export const AudioGenNode = memo(({ id, selected, data }: NodeProps) => {
                         </div>
                     ) : (
                         <div className="flex items-center justify-center text-muted-foreground/50">
-                            {audioType === "music" ? <Sparkles className="w-8 h-8" /> : audioType === "sfx" ? <Volume2 className="w-8 h-8" /> : <Mic className="w-8 h-8" />}
+                            {audioType === "music" ? <Music className="w-8 h-8" /> : audioType === "sfx" ? <Volume2 className="w-8 h-8" /> : <Mic className="w-8 h-8" />}
                         </div>
                     )}
                 </div>
@@ -282,21 +268,7 @@ export const AudioGenNode = memo(({ id, selected, data }: NodeProps) => {
                             </div>
                         )}
 
-                        {/* Upload Pill */}
-                        <button
-                            onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
-                            className="h-7 w-7 flex flex-shrink-0 items-center justify-center bg-black/40 backdrop-blur-sm border border-white/10 rounded-full text-white/90 hover:bg-black/60 transition-colors cursor-pointer"
-                            title="Upload Audio"
-                        >
-                            <Upload className="w-3 h-3" />
-                        </button>
-                        <input
-                            ref={fileInputRef}
-                            type="file"
-                            accept="audio/*"
-                            onChange={handleFileSelect}
-                            className="hidden"
-                        />
+
                     </div>
                 </div>
             </div>

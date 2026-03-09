@@ -29,8 +29,17 @@ WORKDIR /app
 
 RUN apt-get update && apt-get install -y \
     curl \
-    ffmpeg \
+    xz-utils \
     && rm -rf /var/lib/apt/lists/*
+    
+# Download and install static ffmpeg for arm64 (aarch64) to avoid Lambda "exec format error"
+RUN curl -L https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-arm64-static.tar.xz > ffmpeg.tar.xz \
+    && tar -xvf ffmpeg.tar.xz \
+    && rm ffmpeg.tar.xz \
+    && mv ffmpeg-*-static/ffmpeg /usr/local/bin/ \
+    && mv ffmpeg-*-static/ffprobe /usr/local/bin/ \
+    && chmod +x /usr/local/bin/ffmpeg /usr/local/bin/ffprobe \
+    && rm -rf ffmpeg-*-static
 
 # Copy project files
 COPY pyproject.toml .

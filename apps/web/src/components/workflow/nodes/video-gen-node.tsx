@@ -1,11 +1,13 @@
-import { memo, useState, useRef, useMemo, ChangeEvent } from "react";
+import { memo, useState, useRef, useMemo, ChangeEvent, useCallback, useEffect } from "react";
 import { NodeProps, useReactFlow } from "@xyflow/react";
-import { Video, Clock, ChevronDown, Square, Loader2, Download, Monitor, Upload } from "lucide-react";
+import { Video, Clock, ChevronDown, Square, Loader2, Download, Monitor, MoreVertical } from "lucide-react";
 import { NodeWrapper } from "@/components/workflow/node-wrapper";
 import { HighlightedTextarea } from "@/components/workflow/nodes/highlighted-textarea";
 import { usePresignedUrl } from "@/lib/use-presigned-url";
-
+import { workflowApi } from "@/lib/workflow-api";
 import { useWorkflowStore } from "@/lib/workflow-store";
+import { toast } from "sonner";
+import { extractFrameFromVideo } from "@/lib/video-utils";
 
 const MODEL_CONFIGS: Record<string, { durations: string[], inputs: { id: string, label: string, type: "text" | "image" | "video" | "audio" }[] }> = {
     "Veo 3.1": { durations: ["8s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }, { id: "end_image", label: "End Image", type: "image" }] },
@@ -32,23 +34,99 @@ const MODEL_CONFIGS: Record<string, { durations: string[], inputs: { id: string,
 
 export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
     const { deleteElements, updateNodeData } = useReactFlow();
-    const { nodes, setNodes, runNode, clearNodeOutput, outputs, runningNodeId, setNodeOutput } = useWorkflowStore();
+    const { nodes, setNodes, runNode, clearNodeOutput, outputs, runningNodeId, setRawOutput } = useWorkflowStore();
 
-    const fileInputRef = useRef<HTMLInputElement>(null);
+    // Derive workflowId from the URL query param: /dashboard/workflow?id=<workflowId>
+    const workflowId = useMemo(() => new URLSearchParams(window.location.search).get('id') || '', []);
 
-    const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
-        const file = event.target.files?.[0];
-        if (!file) return;
+    const [extractingHandle, setExtractingHandle] = useState<string | null>(null);
+    const [extractionError, setExtractionError] = useState<string | null>(null);
+    const [menuOpen, setMenuOpen] = useState(false);
+    const menuRef = useRef<HTMLDivElement>(null);
 
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            const result = e.target?.result as string;
-            if (result) {
-                setNodeOutput(id, result);
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+                setMenuOpen(false);
             }
         };
-        reader.readAsDataURL(file);
-    };
+        if (menuOpen) {
+            document.addEventListener("mousedown", handleClickOutside);
+        }
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, [menuOpen]);
+
+    const isRunning = runningNodeId === id;
+    const rawOutput = (outputs[id] as string | undefined) || (data.output as string | undefined);
+
+    // Get presigned URL for S3 video assets
+    const { url: presignedOutput } = usePresignedUrl(rawOutput);
+    const output = presignedOutput || rawOutput;
+
+    const handleExtractFrames = useCallback(async (handleId: string) => {
+        if (!workflowId || extractingHandle || !output) return;
+        console.log('[ExtractFrames] Starting client-side extraction for node', id, 'workflow', workflowId, 'handle', handleId);
+        setExtractingHandle(handleId);
+        setExtractionError(null);
+        try {
+            const timeRatio = handleId === 'end_frame' ? 1 : 0;
+            const base64Image = await extractFrameFromVideo(output, timeRatio);
+
+            const startFramePayload = handleId === 'start_frame' ? base64Image : undefined;
+            const endFramePayload = handleId === 'end_frame' ? base64Image : undefined;
+
+            const res = await workflowApi.extractFrames(workflowId, id, startFramePayload, endFramePayload);
+            console.log('[ExtractFrames] Save Response:', res.data);
+
+            setRawOutput(`${id}__${handleId}`, base64Image);
+        } catch (err: unknown) {
+            console.error('[ExtractFrames] Error:', err);
+            const msg = err instanceof Error ? err.message : 'Could not extract frame from video element (CORS or timeout)';
+            setExtractionError(msg);
+            toast.error(msg);
+        } finally {
+            setExtractingHandle(null);
+        }
+    }, [workflowId, id, extractingHandle, output, setRawOutput]);
+
+    // Automatically extract frames whenever a new video is generated
+    useEffect(() => {
+        if (!workflowId || !output || !output.startsWith('http')) return;
+
+        // Check if we already have frames for this video to avoid endless extraction loops
+        const hasStartFrame = outputs[`${id}__start_frame`];
+        const hasEndFrame = outputs[`${id}__end_frame`];
+
+        if (!hasStartFrame || !hasEndFrame) {
+            console.log(`[VideoNode ${id}] New output detected, auto-extracting frames...`);
+            // We give the video a tiny delay to ensure the browser has loaded the blob URL metadata
+            const timer = setTimeout(async () => {
+                try {
+                    let startFramePayload = undefined;
+                    let endFramePayload = undefined;
+
+                    if (!hasStartFrame) {
+                        startFramePayload = await extractFrameFromVideo(output, 0);
+                        setRawOutput(`${id}__start_frame`, startFramePayload);
+                    }
+
+                    if (!hasEndFrame) {
+                        endFramePayload = await extractFrameFromVideo(output, 1);
+                        setRawOutput(`${id}__end_frame`, endFramePayload);
+                    }
+
+                    if (startFramePayload || endFramePayload) {
+                        await workflowApi.extractFrames(workflowId, id, startFramePayload, endFramePayload);
+                        console.log(`[VideoNode ${id}] Auto-extraction complete and saved to backend.`);
+                    }
+                } catch (err) {
+                    console.error(`[VideoNode ${id}] Auto-extraction failed:`, err);
+                }
+            }, 1000);
+            return () => clearTimeout(timer);
+        }
+    }, [workflowId, id, output, outputs, setRawOutput]);
+
 
     // Sync node data to workflow store
     const updateData = (updates: Record<string, unknown>) => {
@@ -59,13 +137,6 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
             )
         );
     };
-
-    const isRunning = runningNodeId === id;
-    const rawOutput = (outputs[id] as string | undefined) || (data.output as string | undefined);
-
-    // Get presigned URL for S3 video assets
-    const { url: presignedOutput } = usePresignedUrl(rawOutput);
-    const output = presignedOutput || rawOutput;
 
     const currentModel = (typeof data.model === 'string' ? data.model : "Kling 3.0 Standard");
     // Ensure the current model exists in configs, fallback to default
@@ -175,6 +246,11 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
         }
     };
 
+    // Frame previews extracted by the backend after video generation
+    const startFramePreview = (outputs[`${id}__start_frame`] as string | undefined) || undefined;
+    const endFramePreview = (outputs[`${id}__end_frame`] as string | undefined) || undefined;
+    const hasVideoOutput = !!output;
+
     return (
         <NodeWrapper
             title={`Video Generator #${useWorkflowStore((state) =>
@@ -187,8 +263,22 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
             inputs={config.inputs}
             outputs={[
                 { id: "video", label: "Video", type: "video" },
-                { id: "start_frame", label: "Start Frame", type: "image" },
-                { id: "end_frame", label: "End Frame", type: "image" },
+                {
+                    id: "start_frame", label: "Start Frame", type: "image",
+                    framePreview: startFramePreview,
+                    hasVideoOutput,
+                    onExtractFrames: () => handleExtractFrames('start_frame'),
+                    isExtractingFrames: extractingHandle === 'start_frame',
+                    extractionError: extractionError || undefined,
+                },
+                {
+                    id: "end_frame", label: "End Frame", type: "image",
+                    framePreview: endFramePreview,
+                    hasVideoOutput,
+                    onExtractFrames: () => handleExtractFrames('end_frame'),
+                    isExtractingFrames: extractingHandle === 'end_frame',
+                    extractionError: extractionError || undefined,
+                },
             ]}
             contentClassName="p-0 overflow-hidden isolate"
             onDelete={() => deleteElements({ nodes: [{ id }] })}
@@ -306,9 +396,9 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
                 {/* Controls Bar */}
                 <div className="absolute bottom-3 left-3 right-3 flex items-center gap-1 opacity-0 group-hover/video:opacity-100 transition-all duration-300 translate-y-2 group-hover/video:translate-y-0 z-20">
                     {/* Duration Pill */}
-                    <div className="relative h-7 flex items-center gap-1.5 bg-black/60 backdrop-blur-md border border-white/10 rounded-full px-2 text-white/90 hover:bg-black/70 transition-colors">
+                    <div className="relative h-7 flex items-center gap-1.5 bg-black/60 backdrop-blur-md border border-white/10 rounded-full px-2 text-white/90 hover:bg-black/70 transition-colors flex-shrink-0">
                         <Clock className="w-2.5 h-2.5 text-white/70 flex-shrink-0" />
-                        <span className="text-[10px] font-medium truncate">{effectiveDuration}</span>
+                        <span className="text-[10px] font-medium whitespace-nowrap">{effectiveDuration}</span>
                         <ChevronDown className="w-2.5 h-2.5 text-white/50 flex-shrink-0" />
                         <select
                             className="absolute inset-0 opacity-0 cursor-pointer"
@@ -322,8 +412,8 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
                     </div>
 
                     {/* Model Pill */}
-                    <div className="relative h-7 flex items-center gap-1.5 bg-black/60 backdrop-blur-md border border-white/10 rounded-full px-2 text-white/90 hover:bg-black/70 transition-colors min-w-0 flex-grow max-w-[100px]">
-                        <span className="text-[10px] font-medium truncate">{currentModel}</span>
+                    <div className="relative h-7 flex items-center gap-1.5 bg-black/60 backdrop-blur-md border border-white/10 rounded-full px-2 text-white/90 hover:bg-black/70 transition-colors min-w-0 flex-grow">
+                        <span className="text-[10px] font-medium truncate flex-grow text-left">{currentModel}</span>
                         <ChevronDown className="w-2.5 h-2.5 text-white/50 flex-shrink-0" />
                         <select
                             className="absolute inset-0 opacity-0 cursor-pointer"
@@ -353,52 +443,60 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
                         </select>
                     </div>
 
-                    {/* Ratio Pill */}
-                    <div className="relative h-7 flex items-center gap-1.5 bg-black/60 backdrop-blur-md border border-white/10 rounded-full px-2 text-white/90 hover:bg-black/70 transition-colors flex-shrink-0">
-                        <Square className="w-2.5 h-2.5 text-white/70 flex-shrink-0" />
-                        <span className="text-[10px] font-medium">{typeof data.ratio === 'string' ? data.ratio : "16:9"}</span>
-                        <ChevronDown className="w-2.5 h-2.5 text-white/50 flex-shrink-0" />
-                        <select
-                            className="absolute inset-0 opacity-0 cursor-pointer"
-                            value={typeof data.ratio === 'string' ? data.ratio : "16:9"}
-                            onChange={(e) => updateData({ ratio: e.target.value })}
-                        >
-                            <option value="16:9">16:9</option>
-                            <option value="9:16">9:16</option>
-                            <option value="1:1">1:1</option>
-                        </select>
-                    </div>
-
-                    {/* Resolution Pill */}
-                    <div className="relative h-7 flex items-center gap-1.5 bg-black/60 backdrop-blur-md border border-white/10 rounded-full px-2 text-white/90 hover:bg-black/70 transition-colors flex-shrink-0">
-                        <Monitor className="w-2.5 h-2.5 text-white/70 flex-shrink-0" />
-                        <span className="text-[10px] font-medium">{typeof data.resolution === 'string' ? data.resolution : "720p"}</span>
-                        <ChevronDown className="w-2.5 h-2.5 text-white/50 flex-shrink-0" />
-                        <select
-                            className="absolute inset-0 opacity-0 cursor-pointer"
-                            value={typeof data.resolution === 'string' ? data.resolution : "720p"}
-                            onChange={(e) => updateData({ resolution: e.target.value })}
-                        >
-                            <option value="720p">720p</option>
-                            <option value="1080p">1080p</option>
-                        </select>
-                    </div>
-
-                    {/* Upload Pill */}
-                    <button
-                        onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
-                        className="h-7 w-7 flex items-center justify-center bg-black/60 backdrop-blur-md border border-white/10 rounded-full text-white/90 hover:bg-black/70 transition-colors flex-shrink-0 cursor-pointer"
-                        title="Upload Video"
+                    {/* Kebab Menu for Settings */}
+                    <div
+                        className="relative flex-shrink-0"
+                        ref={menuRef}
                     >
-                        <Upload className="w-3 h-3" />
-                    </button>
-                    <input
-                        ref={fileInputRef}
-                        type="file"
-                        accept="video/*"
-                        onChange={handleFileSelect}
-                        className="hidden"
-                    />
+                        <button
+                            className="h-7 w-7 flex items-center justify-center bg-black/60 backdrop-blur-md border border-white/10 rounded-full text-white/90 hover:bg-black/70 transition-colors"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setMenuOpen(!menuOpen);
+                            }}
+                        >
+                            <MoreVertical className="w-3.5 h-3.5" />
+                        </button>
+
+                        {menuOpen && (
+                            <div className="absolute bottom-full right-0 mb-2 w-32 bg-black/80 backdrop-blur-md border border-white/10 rounded-lg p-2 flex flex-col gap-2.5 z-50 shadow-xl pointer-events-auto">
+                                <div className="text-[10px] font-medium text-white/50 uppercase tracking-wider px-1">Settings</div>
+
+                                {/* Ratio Dropdown in Menu */}
+                                <div className="flex flex-col gap-1.5">
+                                    <label className="text-[10px] text-white/70 flex items-center gap-1.5 px-1">
+                                        <Square className="w-3 h-3" /> Ratio
+                                    </label>
+                                    <select
+                                        className="bg-black/60 text-white/90 text-[10px] rounded border border-white/10 p-1.5 outline-none cursor-pointer w-full"
+                                        value={typeof data.ratio === 'string' ? data.ratio : "16:9"}
+                                        onChange={(e) => updateData({ ratio: e.target.value })}
+                                        onClick={(e) => e.stopPropagation()}
+                                    >
+                                        <option value="16:9">16:9</option>
+                                        <option value="9:16">9:16</option>
+                                        <option value="1:1">1:1</option>
+                                    </select>
+                                </div>
+
+                                {/* Resolution Dropdown in Menu */}
+                                <div className="flex flex-col gap-1.5">
+                                    <label className="text-[10px] text-white/70 flex items-center gap-1.5 px-1">
+                                        <Monitor className="w-3 h-3" /> Resolution
+                                    </label>
+                                    <select
+                                        className="bg-black/60 text-white/90 text-[10px] rounded border border-white/10 p-1.5 outline-none cursor-pointer w-full"
+                                        value={typeof data.resolution === 'string' ? data.resolution : "720p"}
+                                        onChange={(e) => updateData({ resolution: e.target.value })}
+                                        onClick={(e) => e.stopPropagation()}
+                                    >
+                                        <option value="720p">720p</option>
+                                        <option value="1080p">1080p</option>
+                                    </select>
+                                </div>
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
         </NodeWrapper>

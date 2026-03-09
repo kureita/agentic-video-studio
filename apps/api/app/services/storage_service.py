@@ -30,12 +30,17 @@ class StorageService(ABC):
         """Delete a file by its URL."""
         pass
 
+    @abstractmethod
+    def generate_presigned_upload_url(self, filename: str, content_type: str = "video/mp4") -> dict:
+        """Generate a presigned URL for direct file uploading."""
+        raise NotImplementedError
+
 
 class LocalStorageService(StorageService):
     """Stores files in the local static directory."""
     
     def __init__(self):
-        self.upload_dir = Path("static/uploads")
+        self.upload_dir = Path("tmp/kureita_uploads")
         self.upload_dir.mkdir(parents=True, exist_ok=True)
         # Ensure other static dirs exist too, just in case
         Path("static/videos").mkdir(parents=True, exist_ok=True)
@@ -61,19 +66,27 @@ class LocalStorageService(StorageService):
         file_path = self.upload_dir / safe_filename
         
         # Handle UploadFile vs bytes
-        if isinstance(file_data, UploadFile):
-            with open(file_path, "wb") as buffer:
-                shutil.copyfileobj(file_data.file, buffer)
-        else:
-            with open(file_path, "wb") as buffer:
-                buffer.write(file_data)
+        try:
+            if hasattr(file_data, "read"):
+                # It's an UploadFile or similar file object
+                # Read into memory fully before writing
+                file_bytes = await file_data.read()
+                with open(file_path, "wb") as buffer:
+                    buffer.write(file_bytes)
+            else:
+                # file_data is already bytes
+                with open(file_path, "wb") as buffer:
+                    buffer.write(file_data)
+        except Exception as e:
+            print(f"Error saving to local storage: {e}")
+            raise e
                 
         # Construct URL
         base_url = settings.api_base_url or ""
         if base_url.endswith("/"):
             base_url = base_url[:-1]
             
-        return f"{base_url}/static/uploads/{safe_filename}"
+        return f"{base_url}/tmp_uploads/{safe_filename}"
         
     def get_presigned_url(self, file_url: str) -> str:
         return file_url
@@ -90,6 +103,10 @@ class LocalStorageService(StorageService):
         except Exception as e:
             print(f"Error deleting file {file_url}: {e}")
         return False
+
+    def generate_presigned_upload_url(self, filename: str, content_type: str = "video/mp4") -> dict:
+        """Local stub: frontend will just use the standard POST endpoint."""
+        return {"is_local": True}
 
 
 class S3StorageService(StorageService):
@@ -228,3 +245,28 @@ class S3StorageService(StorageService):
         except Exception as e:
             print(f"S3 Presigned URL Error: {e}")
             return file_url
+
+    def generate_presigned_upload_url(self, filename: str, content_type: str = "video/mp4") -> dict:
+        date_prefix = datetime.now().strftime("%Y/%m/%d")
+        key = f"uploads/{date_prefix}/{filename}"
+        
+        presigned_url = self.s3_client.generate_presigned_url(
+            ClientMethod='put_object',
+            Params={
+                'Bucket': self.bucket,
+                'Key': key,
+                'ContentType': content_type
+            },
+            ExpiresIn=3600
+        )
+        
+        # Unsigned URL for reading
+        file_url = f"https://{self.bucket}.s3.{self.region}.amazonaws.com/{key}"
+        if settings.s3_endpoint:
+            file_url = f"{settings.s3_endpoint}/{self.bucket}/{key}"
+            
+        return {
+            "upload_url": presigned_url,
+            "file_url": file_url,
+            "key": key
+        }

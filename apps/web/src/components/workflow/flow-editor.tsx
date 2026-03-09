@@ -69,7 +69,7 @@ function FlowEditorInner({ workflowId }: FlowEditorProps) {
         nodeExecutionStates,
     } = useWorkflowStore();
 
-    const [activeTool, setActiveTool] = useState("pointer");
+    const [activeTool, setActiveTool] = useState("hand");
     const [isInitialized, setIsInitialized] = useState(false);
     const flowWrapperRef = useRef<HTMLDivElement>(null);
 
@@ -222,8 +222,8 @@ function FlowEditorInner({ workflowId }: FlowEditorProps) {
                 style: { width: 200, height: 100 },
             };
             setNodes([...nodes, newNode]);
-            // Switch back to pointer after placing
-            setActiveTool("pointer");
+            // Switch back to hand after placing
+            setActiveTool("hand");
         }
     }, [activeTool, getFlowPosition, nodes, edges, setNodes, takeSnapshot]);
 
@@ -234,10 +234,25 @@ function FlowEditorInner({ workflowId }: FlowEditorProps) {
     const handleAddNode = useCallback((type: string) => {
         takeSnapshot(nodes, edges);
         const id = Math.random().toString(36).substring(7);
-        const position = {
+
+        let position = {
             x: Math.random() * 400 + 100,
             y: Math.random() * 400 + 100
         };
+
+        if (flowWrapperRef.current) {
+            const rect = flowWrapperRef.current.getBoundingClientRect();
+            const x = rect.left + rect.width / 2;
+            const y = rect.top + rect.height / 2;
+
+            const offsetX = (Math.random() - 0.5) * 50;
+            const offsetY = (Math.random() - 0.5) * 50;
+
+            position = reactFlowInstance.screenToFlowPosition({
+                x: x + offsetX,
+                y: y + offsetY
+            });
+        }
 
         const newNode: Node = {
             id,
@@ -247,7 +262,7 @@ function FlowEditorInner({ workflowId }: FlowEditorProps) {
         };
 
         setNodes([...nodes, newNode]);
-    }, [nodes, edges, setNodes, takeSnapshot]);
+    }, [nodes, edges, setNodes, takeSnapshot, reactFlowInstance]);
 
     // ============================================
     // Undo / Redo handlers
@@ -336,7 +351,6 @@ function FlowEditorInner({ workflowId }: FlowEditorProps) {
                 fitView
                 className={cn(
                     "bg-background-secondary",
-                    activeTool === "pointer" && "[&_.react-flow__pane]:!cursor-default [&_.react-flow__pane.selection]:!cursor-default [&_.react-flow__node]:!cursor-default",
                     activeTool === "cut" && "[&_.react-flow__pane]:!cursor-crosshair [&_.react-flow__pane.selection]:!cursor-crosshair [&_.react-flow__node]:!cursor-crosshair [&_.react-flow__edge:hover_.react-flow__edge-path]:!stroke-[#ef4444] [&_.react-flow__edge:hover_.react-flow__edge-path]:!stroke-[4px]",
                     activeTool === "hand" && "[&_.react-flow__pane]:!cursor-grab [&_.react-flow__pane.selection]:!cursor-grab [&_.react-flow__node]:!cursor-grab",
                     activeTool === "comment" && "[&_.react-flow__pane]:!cursor-cell [&_.react-flow__pane.selection]:!cursor-cell",
@@ -344,7 +358,7 @@ function FlowEditorInner({ workflowId }: FlowEditorProps) {
                 minZoom={0.01}
                 maxZoom={10}
                 panOnDrag={activeTool === "hand"}
-                selectionOnDrag={activeTool === "pointer"}
+                selectionOnDrag={false}
                 selectionMode={"partial" as never}
                 panOnScroll={true}
                 nodesDraggable={activeTool !== "cut" && activeTool !== "comment"}
@@ -358,7 +372,7 @@ function FlowEditorInner({ workflowId }: FlowEditorProps) {
                     style: {
                         stroke: 'var(--primary)',
                         strokeWidth: 2,
-                        cursor: activeTool === 'cut' ? 'crosshair' : (activeTool === 'pointer' ? 'default' : 'pointer'),
+                        cursor: activeTool === 'cut' ? 'crosshair' : 'pointer',
                     },
                 }}
             >

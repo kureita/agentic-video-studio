@@ -104,6 +104,8 @@ class RunNodeResponse(BaseModel):
     node_id: str
     output: Optional[Any] = None
     error: Optional[str] = None
+    start_frame: Optional[str] = None  # Extracted first frame (videoGen only)
+    end_frame: Optional[str] = None    # Extracted last frame (videoGen only)
 
 
 class RunWorkflowResponse(BaseModel):
@@ -523,6 +525,14 @@ async def run_node(
         current_outputs = workflow.get("outputs", {})
         current_outputs[node_id] = result.get("output")
         
+        # Also store extracted frames for videoGen nodes
+        start_frame = result.get("start_frame")
+        end_frame = result.get("end_frame")
+        if start_frame:
+            current_outputs[f"{node_id}__start_frame"] = start_frame
+        if end_frame:
+            current_outputs[f"{node_id}__end_frame"] = end_frame
+        
         # Update the entire outputs object to avoid creating separate fields
         await collection.update_one(
             {"_id": oid},
@@ -543,7 +553,98 @@ async def run_node(
         node_id=node_id,
         output=output_val,
         error=result.get("error"),
+        start_frame=result.get("start_frame"),
+        end_frame=result.get("end_frame"),
     )
+
+
+class ExtractFramesRequest(BaseModel):
+    start_frame: Optional[str] = None
+    end_frame: Optional[str] = None
+
+from app.services.storage_service import StorageService
+from app.core.dependencies import get_storage_service
+
+@router.post("/{workflow_id}/nodes/{node_id}/extract-frames")
+async def extract_frames(
+    workflow_id: str,
+    node_id: str,
+    payload: ExtractFramesRequest,
+    current_user: dict = Depends(get_current_user),
+    storage: StorageService = Depends(get_storage_service)
+):
+    """Save client-extracted frames for a node's video output.
+    
+    The frames are expected to be base64 data URIs.
+    """
+    collection = get_workflows_collection()
+    
+    try:
+        oid = ObjectId(workflow_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid workflow ID")
+    
+    user_id = current_user.get("_id")
+    workflow = await collection.find_one({
+        "_id": oid,
+        "$or": [{"user_id": user_id}, {"user_id": {"$exists": False}}]
+    })
+    
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    
+    outputs = workflow.get("outputs", {})
+    video_url = outputs.get(node_id)
+    
+    if not video_url or not isinstance(video_url, str):
+        raise HTTPException(status_code=400, detail="Node has no video output to extract frames from")
+    
+    # Return cached frames if already extracted
+    existing_start = outputs.get(f"{node_id}__start_frame")
+    existing_end = outputs.get(f"{node_id}__end_frame")
+    if existing_start and existing_end:
+        print(f"[ExtractFrames] Returning cached frames for node {node_id}")
+        return {"success": True, "start_frame": existing_start, "end_frame": existing_end, "cached": True}
+    
+    # Helper to decode base64 and save to storage
+    import base64
+    import uuid
+    async def _save_frame(b64_str: str, prefix: str) -> str:
+        if not b64_str.startswith("data:image"):
+            return b64_str
+        try:
+            header, encoded = b64_str.split(",", 1)
+            ext = ".jpg" if "jpeg" in header or "jpg" in header else ".png"
+            content_type = header.split(";")[0].split(":")[1]
+            file_bytes = base64.b64decode(encoded)
+            filename = f"{prefix}_{uuid.uuid4().hex[:8]}{ext}"
+            return await storage.upload_file(file_bytes, filename, content_type)
+        except Exception as e:
+            print(f"Failed to save frame: {e}")
+            return b64_str
+
+    # Persist client-provided frames instantly
+    set_fields: Dict[str, Any] = {"updated_at": datetime.now(timezone.utc)}
+    start_frame_url = payload.start_frame
+    end_frame_url = payload.end_frame
+
+    if start_frame_url:
+        start_frame_url = await _save_frame(start_frame_url, f"frame_start_{node_id}")
+        set_fields[f"outputs.{node_id}__start_frame"] = start_frame_url
+    if end_frame_url:
+        end_frame_url = await _save_frame(end_frame_url, f"frame_end_{node_id}")
+        set_fields[f"outputs.{node_id}__end_frame"] = end_frame_url
+    
+    if len(set_fields) > 1:
+        await collection.update_one({"_id": oid}, {"$set": set_fields})
+    
+    print(f"[ExtractFrames] Done saving frames for node {node_id}")
+    return {
+        "success": True, 
+        "start_frame": start_frame_url, 
+        "end_frame": end_frame_url, 
+        "cached": False
+    }
 
 
 @router.post("/{workflow_id}/run", response_model=RunWorkflowResponse)
@@ -848,17 +949,31 @@ async def _execute_node_async(workflow_id: str, node_id: str, run_id: str, input
         if result.get("success"):
             new_output = result.get("output")
             
+            # Build the set of fields to persist in MongoDB
+            set_fields: Dict[str, Any] = {
+                f"execution.node_states.{node_id}.status": "completed",
+                f"execution.node_states.{node_id}.completed_at": completed_at,
+                f"execution.outputs.{node_id}": new_output,
+                f"outputs.{node_id}": new_output,
+                "execution.status": "completed",
+                "updated_at": datetime.now(timezone.utc),
+            }
+            
+            # For videoGen nodes, also store extracted frames under special keys so
+            # the frontend can auto-fill connected imageGen nodes without an extra run.
+            start_frame = result.get("start_frame")
+            end_frame = result.get("end_frame")
+            if start_frame:
+                set_fields[f"outputs.{node_id}__start_frame"] = start_frame
+                set_fields[f"execution.outputs.{node_id}__start_frame"] = start_frame
+            if end_frame:
+                set_fields[f"outputs.{node_id}__end_frame"] = end_frame
+                set_fields[f"execution.outputs.{node_id}__end_frame"] = end_frame
+            
             # Use dot notation to update specific fields directly
             await collection.update_one(
                 {"_id": oid},
-                {"$set": {
-                    f"execution.node_states.{node_id}.status": "completed",
-                    f"execution.node_states.{node_id}.completed_at": completed_at,
-                    f"execution.outputs.{node_id}": new_output,
-                    f"outputs.{node_id}": new_output,
-                    "execution.status": "completed",
-                    "updated_at": datetime.now(timezone.utc),
-                }}
+                {"$set": set_fields}
             )
             print(f"[NodeAsync] Node {node_id} completed successfully")
         else:
@@ -1321,6 +1436,93 @@ async def cleanup_presigned_urls(current_user: dict = Depends(get_current_user))
     print(f"[Cleanup] Done. Cleaned {cleaned_count}/{len(workflows)} workflows.")
     return {"cleaned": cleaned_count, "total": len(workflows)}
 
+class UploadRenderPresignRequest(BaseModel):
+    filename: str
+    content_type: str = "video/mp4"
+
+@router.post("/{workflow_id}/nodes/{node_id}/upload-render/presign")
+async def get_upload_render_presigned_url(
+    workflow_id: str,
+    node_id: str,
+    request: UploadRenderPresignRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Get a presigned URL to upload a client-rendered video blob directly to S3.
+    This bypasses AWS API Gateway's 10MB payload size limit.
+    """
+    try:
+        oid = ObjectId(workflow_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid workflow ID")
+
+    collection = get_workflows_collection()
+    user_id = current_user.get("_id")
+
+    workflow = await collection.find_one({
+        "_id": oid,
+        "$or": [{"user_id": user_id}, {"user_id": {"$exists": False}}]
+    })
+
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    from app.services.storage_service import S3StorageService, LocalStorageService
+    # Use LocalStorageService if configured without S3
+    from app.core.dependencies import get_storage_service
+    storage = get_storage_service()
+
+    safe_filename = f"editor_render_{workflow_id}_{node_id}_{int(datetime.now().timestamp())}.mp4"
+    return storage.generate_presigned_upload_url(safe_filename, request.content_type)
+
+
+class ConfirmUploadRequest(BaseModel):
+    file_url: str
+
+
+@router.post("/{workflow_id}/nodes/{node_id}/upload-render/confirm")
+async def confirm_upload_render(
+    workflow_id: str,
+    node_id: str,
+    request: ConfirmUploadRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Confirm that the client has successfully uploaded a rendered video to S3 
+    using the presigned URL, and save the resulting URL to the workflow's database outputs.
+    """
+    try:
+        oid = ObjectId(workflow_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid workflow ID")
+
+    collection = get_workflows_collection()
+    user_id = current_user.get("_id")
+
+    workflow = await collection.find_one({
+        "_id": oid,
+        "$or": [{"user_id": user_id}, {"user_id": {"$exists": False}}]
+    })
+
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    from app.services.storage_service import S3StorageService
+    file_url = S3StorageService.strip_presigned_params(request.file_url)
+
+    await collection.update_one(
+        {"_id": oid},
+        {"$set": {
+            f"outputs.{node_id}": file_url,
+            f"execution.outputs.{node_id}": file_url,
+            "updated_at": datetime.now(timezone.utc)
+        }}
+    )
+
+    storage = S3StorageService()
+    return {"url": file_url, "presigned_url": storage.get_presigned_url(file_url)}
+
+
 @router.post("/{workflow_id}/nodes/{node_id}/upload-render")
 async def upload_rendered_video(
     workflow_id: str,
@@ -1329,8 +1531,7 @@ async def upload_rendered_video(
     current_user: dict = Depends(get_current_user)
 ):
     """
-    Endpoint for the frontend to upload a client-rendered video blob to S3.
-    This saves the raw S3 URL back into the workflow's outputs and node data.
+    Legacy and local-fallback endpoint for the frontend to upload a client-rendered video blob.
     """
     try:
         oid = ObjectId(workflow_id)
@@ -1349,23 +1550,20 @@ async def upload_rendered_video(
     if not workflow:
         raise HTTPException(status_code=404, detail="Workflow not found")
 
-    from app.services.storage_service import S3StorageService
-    storage = S3StorageService()
-
-    # Upload to S3
+    from app.core.dependencies import get_storage_service
+    storage = get_storage_service()
+    
+    # Upload to S3 (or local)
     filename = f"editor_render_{workflow_id}_{node_id}_{int(datetime.now().timestamp())}.mp4"
-    print(f"[{workflow_id}/{node_id}] Uploading rendered video to S3 as {filename}")
+    print(f"[{workflow_id}/{node_id}] Uploading rendered video locally as {filename}")
 
     try:
-        # Read file bytes eagerly to avoid UploadFile isinstance mismatches in Lambda/Mangum
         file_bytes = await file.read()
-        print(f"[{workflow_id}/{node_id}] Read {len(file_bytes)} bytes from upload")
         file_url = await storage.upload_file(file_bytes, filename, content_type="video/mp4")
         
-        # Strip just in case it returned a presigned URL by accident
+        from app.services.storage_service import S3StorageService
         file_url = S3StorageService.strip_presigned_params(file_url)
 
-        # Update MongoDB with the new raw S3 URL, overwriting the TSX code output
         await collection.update_one(
             {"_id": oid},
             {"$set": {

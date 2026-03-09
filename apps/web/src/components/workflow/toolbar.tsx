@@ -9,7 +9,6 @@ import {
     Undo2,
     Redo2,
     Settings,
-    MousePointer2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -73,9 +72,6 @@ export function WorkflowToolbar({
                     <div className="w-full h-[1px] bg-border my-1" />
 
                     {/* Primary Tools */}
-                    <Button variant={activeTool === "pointer" ? "secondary" : "ghost"} size="icon" className="rounded-full w-10 h-10" onClick={() => onToolChange("pointer")}>
-                        <MousePointer2 className="w-5 h-5" />
-                    </Button>
                     <Button variant={activeTool === "hand" ? "secondary" : "ghost"} size="icon" className="rounded-full w-10 h-10" onClick={() => onToolChange("hand")}>
                         <Hand className="w-5 h-5" />
                     </Button>
@@ -151,9 +147,6 @@ export function WorkflowToolbar({
                     <div className="w-[1px] h-5 bg-border mx-0.5" />
 
                     {/* Primary Tools */}
-                    <Button variant={activeTool === "pointer" ? "secondary" : "ghost"} size="icon" className="rounded-full w-9 h-9" onClick={() => onToolChange("pointer")}>
-                        <MousePointer2 className="w-4 h-4" />
-                    </Button>
                     <Button variant={activeTool === "hand" ? "secondary" : "ghost"} size="icon" className="rounded-full w-9 h-9" onClick={() => onToolChange("hand")}>
                         <Hand className="w-4 h-4" />
                     </Button>

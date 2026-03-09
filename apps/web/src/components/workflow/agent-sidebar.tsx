@@ -358,6 +358,7 @@ interface Attachment {
     url: string;
     type: string;
     filename: string;
+    file?: File;
 }
 
 function CursorInput({
@@ -378,7 +379,7 @@ function CursorInput({
     isLoading: boolean;
     pendingAttachments: Attachment[];
     onRemoveAttachment: (index: number) => void;
-    onFileUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
+    onFileUpload: (files: FileList | null) => void;
     isUploading: boolean;
     selectedModel: string;
     onModelSelect: (model: string) => void;
@@ -386,6 +387,7 @@ function CursorInput({
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const [showContextMenu, setShowContextMenu] = useState(false);
     const [showModelMenu, setShowModelMenu] = useState(false);
+    const [isDragging, setIsDragging] = useState(false);
     const contextMenuRef = useRef<HTMLDivElement>(null);
     const modelMenuRef = useRef<HTMLDivElement>(null);
     const nodes = useWorkflowStore((state) => state.nodes);
@@ -427,6 +429,37 @@ function CursorInput({
 
     const hasAttachments = pendingAttachments.length > 0;
 
+    // Drag and drop handlers
+    const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!isDragging) setIsDragging(true);
+    };
+
+    const handleDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragging(true);
+    };
+
+    const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        // Only set false if we are actually leaving the container, not just entering child elements
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+            setIsDragging(false);
+        }
+    };
+
+    const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragging(false);
+        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+            onFileUpload(e.dataTransfer.files);
+        }
+    };
+
     // Insert node reference into the textarea
     const insertNodeReference = (nodeType: string, nodeIndex: number, nodeLabel: string) => {
         const ref = `@${nodeLabel}`;
@@ -464,13 +497,37 @@ function CursorInput({
         <div className="p-3">
             {/* Main Input Container - Cursor-style */}
             <div
+                onDragOver={handleDragOver}
+                onDragEnter={handleDragEnter}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
                 className={cn(
                     "relative rounded-xl border transition-all duration-200",
                     "bg-muted/30 border-border/50",
                     "focus-within:border-primary/40 focus-within:bg-muted/50",
-                    "shadow-sm focus-within:shadow-md focus-within:shadow-primary/5"
+                    "shadow-sm focus-within:shadow-md focus-within:shadow-primary/5",
+                    isDragging && "border-primary bg-primary/5 shadow-md ring-2 ring-primary/20"
                 )}
             >
+                {/* Drag Overlay */}
+                <AnimatePresence>
+                    {isDragging && (
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            transition={{ duration: 0.15 }}
+                            className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-background/80 backdrop-blur-[2px] border border-dashed border-primary/40 rounded-xl pointer-events-none overflow-hidden"
+                        >
+                            <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center mb-1.5">
+                                <Upload className="w-4 h-4 text-primary" />
+                            </div>
+                            <p className="text-xs font-medium text-foreground">Drop images or videos here</p>
+                            <p className="text-[10px] text-muted-foreground mt-0.5">Files will be added as attachments</p>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+
                 {/* Inline Attachment Previews */}
                 <AnimatePresence>
                     {hasAttachments && (
@@ -491,24 +548,33 @@ function CursorInput({
                                         className="group/att relative"
                                     >
                                         {att.type.startsWith("image") ? (
-                                            <div className="relative h-14 w-14 rounded-lg overflow-hidden border border-border/40 bg-muted/40">
-                                                <S3Image src={att.url} alt={att.filename} fill className="object-cover" unoptimized />
+                                            <div className="relative">
+                                                <div className="h-14 w-14 rounded-lg overflow-hidden border border-border/40 bg-muted/40">
+                                                    {att.url.startsWith('blob:') ? (
+                                                        // eslint-disable-next-line @next/next/no-img-element
+                                                        <img src={att.url} alt={att.filename} className="w-full h-full object-cover" />
+                                                    ) : (
+                                                        <S3Image src={att.url} alt={att.filename} fill className="object-cover" unoptimized />
+                                                    )}
+                                                </div>
                                                 <button
                                                     onClick={() => onRemoveAttachment(idx)}
-                                                    className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center opacity-0 group-hover/att:opacity-100 transition-opacity cursor-pointer shadow-sm"
+                                                    className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center opacity-0 group-hover/att:opacity-100 transition-opacity cursor-pointer shadow-sm z-10"
                                                 >
                                                     <X className="w-2.5 h-2.5" />
                                                 </button>
                                             </div>
                                         ) : att.type.startsWith("video") ? (
-                                            <div className="relative h-14 w-20 rounded-lg overflow-hidden border border-border/40 bg-muted/40">
-                                                <video src={att.url} className="h-full w-full object-cover" />
-                                                <div className="absolute inset-0 flex items-center justify-center bg-black/20">
-                                                    <Video className="w-4 h-4 text-white/80" />
+                                            <div className="relative">
+                                                <div className="h-14 w-20 rounded-lg overflow-hidden border border-border/40 bg-muted/40 relative">
+                                                    <video src={att.url} className="h-full w-full object-cover" />
+                                                    <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+                                                        <Video className="w-4 h-4 text-white/80" />
+                                                    </div>
                                                 </div>
                                                 <button
                                                     onClick={() => onRemoveAttachment(idx)}
-                                                    className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center opacity-0 group-hover/att:opacity-100 transition-opacity cursor-pointer shadow-sm"
+                                                    className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center opacity-0 group-hover/att:opacity-100 transition-opacity cursor-pointer shadow-sm z-10"
                                                 >
                                                     <X className="w-2.5 h-2.5" />
                                                 </button>
@@ -532,6 +598,12 @@ function CursorInput({
                                         <Loader2 className="w-4 h-4 animate-spin text-muted-foreground/50" />
                                     </div>
                                 )}
+                            </div>
+                            <div className="px-4 pb-2 pt-1 flex items-start gap-1.5 opacity-60">
+                                <div className="mt-[4px] w-1 h-1 rounded-full bg-muted-foreground"></div>
+                                <p className="text-[10px] text-muted-foreground leading-tight">
+                                    Media assets are routed directly to your workflow. AI analysis for images and videos is coming soon, we&apos;re working hard on it!
+                                </p>
                             </div>
                         </motion.div>
                     )}
@@ -686,7 +758,7 @@ function CursorInput({
                             <input
                                 type="file"
                                 className="hidden"
-                                onChange={onFileUpload}
+                                onChange={(e) => onFileUpload(e.target.files)}
                                 disabled={isUploading || isLoading}
                                 accept="image/*,video/*"
                                 multiple
@@ -696,7 +768,7 @@ function CursorInput({
                         {/* Submit button */}
                         <button
                             onClick={() => onSubmit()}
-                            disabled={(!value.trim() && pendingAttachments.length === 0) || isLoading}
+                            disabled={(!value.trim() && pendingAttachments.length === 0) || isLoading || isUploading}
                             className={cn(
                                 "p-1.5 rounded-lg transition-all duration-200 cursor-pointer",
                                 value.trim() || pendingAttachments.length > 0
@@ -792,36 +864,55 @@ export function AgentSidebar() {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [chatHistory, isLoading]);
 
-    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const files = e.target.files;
+    const handleFileUpload = async (files: FileList | null) => {
         if (!files || files.length === 0) return;
 
-        setIsUploading(true);
-        try {
-            for (const file of Array.from(files)) {
-                const formData = new FormData();
-                formData.append("file", file);
+        const allowedTypes = [
+            'image/jpeg',
+            'image/png',
+            'image/webp',
+            'image/gif',
+            'video/mp4',
+            'video/webm',
+            'video/quicktime' // .mov
+        ];
 
-                const response = await api.post("/api/assets/upload", formData, {
-                    headers: { "Content-Type": "multipart/form-data" },
-                });
+        const newAttachments: Attachment[] = [];
+        let hasInvalidFiles = false;
 
-                if (response.data.success) {
-                    const { filename, url, type } = response.data;
-                    setPendingAttachments((prev) => [...prev, { filename, url, type }]);
-                }
+        for (const file of Array.from(files)) {
+            if (!allowedTypes.includes(file.type)) {
+                hasInvalidFiles = true;
+                continue;
             }
-        } catch (error) {
-            console.error("Upload error:", error);
-            toast.error("Failed to upload file");
-        } finally {
-            setIsUploading(false);
-            e.target.value = "";
+
+            newAttachments.push({
+                filename: file.name,
+                url: URL.createObjectURL(file),
+                type: file.type,
+                file: file
+            });
         }
+
+        if (hasInvalidFiles) {
+            toast.error("Format not supported. Please use JPG, PNG, WEBP, MP4, WEBM, or MOV.");
+        }
+
+        if (newAttachments.length > 0) {
+            setPendingAttachments((prev) => [...prev, ...newAttachments]);
+        }
+        // Note: we can't easily reset the input generic value here unless we ref it, 
+        // but for drag&drop and controlled inputs it's usually fine.
     };
 
     const handleRemoveAttachment = (index: number) => {
-        setPendingAttachments((prev) => prev.filter((_, i) => i !== index));
+        setPendingAttachments((prev) => {
+            const att = prev[index];
+            if (att.url.startsWith('blob:')) {
+                URL.revokeObjectURL(att.url);
+            }
+            return prev.filter((_, i) => i !== index);
+        });
     };
 
     // Show welcome message if no chat history
@@ -838,20 +929,57 @@ export function AgentSidebar() {
 
     const handleSubmit = async (overrideMessage?: string | unknown) => {
         let userMessage: string;
+        const finalAttachments = [...pendingAttachments];
 
         if (overrideMessage && typeof overrideMessage === 'string') {
             // Auto-prompt: use the override directly
             userMessage = overrideMessage;
         } else {
             // Manual submit: build from input + attachments
-            if ((!input.trim() && pendingAttachments.length === 0) || isLoading) return;
+            if ((!input.trim() && pendingAttachments.length === 0) || isLoading || isUploading) return;
+
+            // Upload pending files first
+            const filesToUpload = finalAttachments.filter(a => a.file);
+            if (filesToUpload.length > 0) {
+                setIsUploading(true);
+                try {
+                    for (let i = 0; i < finalAttachments.length; i++) {
+                        const att = finalAttachments[i];
+                        if (att.file) {
+                            const formData = new FormData();
+                            formData.append("file", att.file);
+                            const response = await api.post("/api/assets/upload", formData, {
+                                headers: { "Content-Type": "multipart/form-data" },
+                            });
+                            if (response.data.success) {
+                                if (att.url.startsWith('blob:')) {
+                                    URL.revokeObjectURL(att.url);
+                                }
+                                finalAttachments[i] = {
+                                    filename: response.data.filename,
+                                    url: response.data.url,
+                                    type: response.data.type
+                                };
+                            } else {
+                                throw new Error("Upload failed for " + att.filename);
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.error("Upload error:", error);
+                    toast.error("Failed to upload attachments");
+                    setIsUploading(false);
+                    return;
+                }
+                setIsUploading(false);
+            }
 
             userMessage = input.trim();
-            if (pendingAttachments.length > 0) {
-                const attachmentLines = pendingAttachments.map(
+            if (finalAttachments.length > 0) {
+                const attachmentLines = finalAttachments.map(
                     (att) => `[Attached: ${att.filename}] (${att.type}) - URL: ${att.url}`
                 );
-                userMessage += '\n' + attachmentLines.join('\n');
+                userMessage += (userMessage ? '\n' : '') + attachmentLines.join('\n');
             }
 
             setInput("");

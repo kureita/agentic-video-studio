@@ -221,3 +221,48 @@ export function downloadVideo(url: string, filename?: string): void {
   link.click();
   document.body.removeChild(link);
 }
+
+/**
+ * Extract a specific frame from a video URL as a base64 Data URL.
+ * 
+ * @param videoUrl The URL of the video to extract from
+ * @param timeRatio The relative position in the video (0 for start, 1 for end, etc.)
+ * @returns A promise resolving to a base64 encoded JPEG image
+ */
+export const extractFrameFromVideo = (videoUrl: string, timeRatio: number): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const video = document.createElement('video');
+    video.crossOrigin = "anonymous";
+    video.src = videoUrl;
+
+    // Timeout safeguard
+    const timeoutId = setTimeout(() => reject(new Error("Video load timeout")), 15000);
+
+    video.onloadeddata = () => {
+      const targetTime = timeRatio === 1 ? Math.max(0, video.duration - 0.1) : 0;
+      video.currentTime = targetTime;
+    };
+
+    video.onseeked = () => {
+      clearTimeout(timeoutId);
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error("Failed to get canvas context");
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', 0.9));
+      } catch (err) {
+        reject(err);
+      }
+    };
+
+    video.onerror = () => {
+      clearTimeout(timeoutId);
+      reject(new Error("Video loading error (possible CORS issue)"));
+    };
+
+    video.load();
+  });
+};

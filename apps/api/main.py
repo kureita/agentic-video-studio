@@ -1,5 +1,7 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
+import tempfile
+import os
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,7 +23,6 @@ async def lifespan(app: FastAPI):
     Path("static/videos").mkdir(parents=True, exist_ok=True)
     Path("static/images").mkdir(parents=True, exist_ok=True)
     Path("static/audio").mkdir(parents=True, exist_ok=True)
-    Path("static/uploads").mkdir(parents=True, exist_ok=True)
     
     yield
     # Shutdown
@@ -77,8 +78,14 @@ async def cors_static_files(request: Request, call_next):
     return response
 
 
+# Ensure static and temp directories exist before mounting
+Path("static").mkdir(parents=True, exist_ok=True)
+tmp_uploads_path = "tmp/kureita_uploads"
+os.makedirs(tmp_uploads_path, exist_ok=True)
+
 # Mount static files for serving videos/images/audio
 app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/tmp_uploads", StaticFiles(directory=tmp_uploads_path), name="tmp_uploads")
 
 
 @app.get("/health")

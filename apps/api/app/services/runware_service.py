@@ -335,18 +335,27 @@ class RunwareService:
             print(f"[RunwareService] ⚠️ imageUpload failed: {resp.get('error')} — will use data URI as fallback")
         return None
 
-    async def image_to_video(self, image_url: str, prompt: str, model: str = "klingai:kling-video@3-standard", duration: int = 5, aspect_ratio: str = "16:9") -> dict:
-        """Generate a video from a starting image.
+    async def image_to_video(
+        self,
+        image_url: str,
+        prompt: str,
+        model: str = "klingai:kling-video@3-standard",
+        duration: int = 5,
+        aspect_ratio: str = "16:9",
+        end_image_url: Optional[str] = None,
+    ) -> dict:
+        """Generate a video from a starting image (and optional end image).
         
         Flow:
         1. Convert image URL → data URI (handles localhost, S3 signed URLs, etc.)
         2. Upload to Runware via imageUpload → get stable imageUUID
         3. Pass imageUUID in provider-specific frameImages param
+        4. Optionally upload end_image_url and add a second entry with frame="last"
         
         Provider payload structure:
-        - klingai / runway:   task["inputs"]["frameImages"] = [{"image": uuid, "frame": "first"}]
-        - bytedance / minimax / pixverse:  task["frameImages"] = [{"inputImage": uuid, "frame": "first"}]
-        - alibaba (wan):      task["inputs"]["frameImages"] = [uuid]
+        - klingai / runway:   task["inputs"]["frameImages"] = [{"image": uuid, "frame": "first"}, {"image": uuid2, "frame": "last"}]
+        - bytedance / minimax / pixverse:  task["frameImages"] = [{"inputImage": uuid, "frame": "first"}, {"inputImage": uuid2, "frame": "last"}]
+        - alibaba (wan):      task["inputs"]["frameImages"] = [uuid]  ← end-frame NOT supported
         - google (veo):       NOT supported — returns clear error
         """
         # Convert aspect ratio to width/height (respects per-model overrides)
@@ -359,25 +368,18 @@ class RunwareService:
                 "error": f"Google Veo models ({model}) do not support image-to-video. Please use a text-to-video workflow or switch to a Kling / Runway / Seedance model.",
             }
 
-        print(f"[RunwareService] image_to_video: model={model}, aspect_ratio={aspect_ratio}")
+        print(f"[RunwareService] image_to_video: model={model}, aspect_ratio={aspect_ratio}, has_end_image={bool(end_image_url)}")
 
-        # Step 1: Convert the URL to a data URI so it can be uploaded to Runware
-        # (handles localhost URLs, S3 pre-signed URLs, etc.)
+        # Step 1: Convert the start URL to a data URI
         data_uri = await self._url_to_data_uri(image_url)
 
         # Step 2: Upload to Runware's imageUpload API to get a stable UUID.
-        # This is the most reliable way to pass images to video models — direct data URIs
-        # in frameImages are inconsistently validated across providers.
         image_ref = await self._upload_image_to_runware(data_uri)
         if not image_ref:
-            # Fallback: use data URI directly if upload failed
             print(f"[RunwareService] Falling back to data URI directly in frameImages")
             image_ref = data_uri
 
         # ── Pre-flight guard ──────────────────────────────────────────────────
-        # If image_ref is still a raw video URL (e.g. frame extraction failed because
-        # ffprobe is not installed), fail immediately with a clear message rather than
-        # sending an MP4 URL to Runware and getting an opaque HTTP 400.
         is_data_uri = isinstance(image_ref, str) and image_ref.startswith("data:")
         is_uuid_ref = isinstance(image_ref, str) and len(image_ref) == 36 and image_ref.count("-") == 4
         is_video_url = isinstance(image_ref, str) and (
@@ -395,6 +397,16 @@ class RunwareService:
                 )
             }
 
+        # Step 3 (optional): Upload end image if provided
+        end_image_ref: Optional[str] = None
+        if end_image_url:
+            end_data_uri = await self._url_to_data_uri(end_image_url)
+            end_image_ref = await self._upload_image_to_runware(end_data_uri)
+            if not end_image_ref:
+                print(f"[RunwareService] End-image upload failed, falling back to data URI")
+                end_image_ref = end_data_uri
+            print(f"[RunwareService] End image ready: {str(end_image_ref)[:60]}")
+
         task: Dict[str, Any] = {
             "taskType": "videoInference",
             "model": model,
@@ -408,25 +420,31 @@ class RunwareService:
 
         if provider in ("klingai", "runway"):
             # KlingAI & Runway: nested under inputs, key is "image"
-            # Kling infers dimensions from the image; Runway needs explicit dimensions.
             if provider == "runway":
                 task["width"] = width
                 task["height"] = height
-            task["inputs"] = {
-                "frameImages": [{"image": image_ref, "frame": "first"}]
-            }
+            frame_images = [{"image": image_ref, "frame": "first"}]
+            if end_image_ref:
+                frame_images.append({"image": end_image_ref, "frame": "last"})
+                print(f"[RunwareService] Added end-frame to {provider} payload")
+            task["inputs"] = {"frameImages": frame_images}
 
         elif provider == "alibaba":
-            # Wan 2.6 / Flash: inputs.frameImages is a plain string list + resolution param
+            # Wan 2.6 / Flash: plain string list, end-frame not supported
+            if end_image_ref:
+                print(f"[RunwareService] ⚠️ Alibaba (Wan) does not support end-frame — ignoring end image")
             task["inputs"] = {"frameImages": [image_ref]}
             task["resolution"] = "720p"
 
         else:
             # Bytedance (Seedance), MiniMax (Hailuo), PixVerse:
-            # top-level frameImages with inputImage key
             task["width"] = width
             task["height"] = height
-            task["frameImages"] = [{"inputImage": image_ref, "frame": "first"}]
+            frame_images = [{"inputImage": image_ref, "frame": "first"}]
+            if end_image_ref:
+                frame_images.append({"inputImage": end_image_ref, "frame": "last"})
+                print(f"[RunwareService] Added end-frame to {provider} payload")
+            task["frameImages"] = frame_images
 
         resp = await self._post([task])
         if not resp["success"]:

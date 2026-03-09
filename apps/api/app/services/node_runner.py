@@ -158,23 +158,33 @@ class NodeRunner:
                     
                     # Handle start_frame / end_frame extraction from video nodes
                     if source_handle_name in ("start_frame", "end_frame"):
-                        source_node = next((n for n in nodes if n["id"] == source_id), None)
-                        if source_node and source_node.get("type") == "videoGen" and source_output:
-                            frame_url = self._extract_video_frame(
-                                source_output,
-                                frame_type=source_handle_name,
-                            )
-                            if frame_url:
-                                source_output = frame_url
-                                print(f"[NodeRunner] Extracted {source_handle_name} from video: {frame_url[:80]}...")
+                        # In the new architecture, frames are extracted in the browser using Canvas
+                        # and saved directly to the outputs object as base64 strings.
+                        frame_cache_key = f"{source_id}__{source_handle_name}"
+                        if frame_cache_key in outputs:
+                            source_output = outputs[frame_cache_key]
+                            print(f"[NodeRunner] Loaded client-extracted {source_handle_name} from outputs: {str(source_output)[:30]}...")
+                        else:
+                            # ⚠️ Backwards compatibility / Headless execution fallback:
+                            # If this is an autonomous "Run All", the client hasn't had a chance to extract it.
+                            # We fall back to server-side ffmpeg extraction on the fly.
+                            print(f"[NodeRunner] ⚙️ Missing {source_handle_name} for node {source_id} — falling back to server-side ffmpeg extraction.")
+                            source_node = next((n for n in nodes if n["id"] == source_id), None)
+                            if source_node and source_node.get("type") == "videoGen" and isinstance(source_output, str):
+                                frame_url = self._extract_video_frame(
+                                    source_output,
+                                    frame_type=source_handle_name,
+                                )
+                                if frame_url:
+                                    source_output = frame_url
+                                    print(f"[NodeRunner] Extracted {source_handle_name} from video: {frame_url[:80]}...")
+                                else:
+                                    print(f"[NodeRunner] ❌ Failed server-side extraction for {source_handle_name} (deploy with ffmpeg to fix)")
+                                    source_output = None
                             else:
-                                # ⚠️ Frame extraction failed (ffprobe missing or video unreadable).
-                                # Set source_output to None — DO NOT pass the raw MP4 URL as a
-                                # frame image. Runware will reject it with HTTP 400.
-                                print(f"[NodeRunner] ❌ Failed to extract {source_handle_name} from video — skipping this input (deploy with ffmpeg to fix)")
                                 source_output = None
 
-                    # Skip None outputs (e.g. failed frame extraction)
+                    # Skip None outputs (e.g. missing extracted frame)
                     if source_output is None:
                         print(f"[NodeRunner] Skipping input '{target_input_name}' — source output is None")
                         continue
@@ -207,14 +217,8 @@ class NodeRunner:
 
     def _extract_video_frame(self, video_url: str, frame_type: str = "start_frame") -> Optional[str]:
         """
-        Extract the first or last frame from a video URL and return it as a data URI.
-        
-        Args:
-            video_url: URL of the video to extract frame from
-            frame_type: "start_frame" for first frame, "end_frame" for last frame
-            
-        Returns:
-            Base64 data URI of the extracted frame image, or None on failure
+        Fallback server-side extraction for headless workflows.
+        Extract the first or last frame from a video URL and return it as a Base64 data URI.
         """
         import tempfile
         import subprocess
@@ -230,16 +234,15 @@ class NodeRunner:
                     print(f"[NodeRunner] Failed to download video for frame extraction: HTTP {resp.status_code}")
                     return None
                 
-                with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp_video:
+                os.makedirs("tmp", exist_ok=True)
+                with tempfile.NamedTemporaryFile(suffix=".mp4", dir="tmp", delete=False) as tmp_video:
                     tmp_video.write(resp.content)
                     tmp_video_path = tmp_video.name
             
-            # Create temp output path for the frame
             tmp_frame_path = tmp_video_path.replace(".mp4", "_frame.jpg")
             
             try:
                 if frame_type == "end_frame":
-                    # For last frame: first get duration, then seek to near the end
                     duration_result = subprocess.run(
                         ["ffprobe", "-v", "error", "-show_entries", "format=duration",
                          "-of", "default=noprint_wrappers=1:nokey=1", tmp_video_path],
@@ -254,7 +257,6 @@ class NodeRunner:
                         capture_output=True, timeout=30
                     )
                 else:
-                    # For first frame: just grab the first frame
                     subprocess.run(
                         ["ffmpeg", "-y", "-i", tmp_video_path,
                          "-frames:v", "1", "-q:v", "2", tmp_frame_path],
@@ -271,7 +273,6 @@ class NodeRunner:
                     return None
                     
             finally:
-                # Clean up temp files
                 for path in [tmp_video_path, tmp_frame_path]:
                     try:
                         if os.path.exists(path):
@@ -282,6 +283,7 @@ class NodeRunner:
         except Exception as e:
             print(f"[NodeRunner] Frame extraction error: {e}")
             return None
+
 
     async def _run_text_node(
         self,
@@ -622,9 +624,28 @@ class NodeRunner:
                 )
             
             if result.get("success"):
+                video_url = result.get("video_url")
+                
+                # Proactively extract start & end frames so connected imageGen nodes
+                # can be auto-filled by the frontend without an extra run.
+                print(f"[NodeRunner] Extracting start/end frames from generated video...")
+                start_frame = self._extract_video_frame(video_url, "start_frame")
+                end_frame = self._extract_video_frame(video_url, "end_frame")
+                
+                if start_frame:
+                    print(f"[NodeRunner] ✅ Start frame extracted ({len(start_frame)} chars)")
+                else:
+                    print(f"[NodeRunner] ⚠️ Start frame extraction failed (ffmpeg may not be installed)")
+                if end_frame:
+                    print(f"[NodeRunner] ✅ End frame extracted ({len(end_frame)} chars)")
+                else:
+                    print(f"[NodeRunner] ⚠️ End frame extraction failed (ffmpeg may not be installed)")
+                
                 return {
                     "success": True,
-                    "output": result.get("video_url"),
+                    "output": video_url,
+                    "start_frame": start_frame,
+                    "end_frame": end_frame,
                 }
             else:
                 return {

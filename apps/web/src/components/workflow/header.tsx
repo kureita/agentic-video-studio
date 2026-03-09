@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Loader2, CheckCircle2, Cloud, MessageSquare } from "lucide-react";
+import { ArrowLeft, Loader2, CheckCircle2, Cloud, MessageSquare, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useWorkflowStore } from "@/lib/workflow-store";
@@ -10,7 +10,7 @@ import { useMobileTab } from "@/app/dashboard/layout";
 
 export function WorkflowHeader() {
     const router = useRouter();
-    const { name, setName, isSaving, isDirty, saveWorkflow } = useWorkflowStore();
+    const { name, setName, isSaving, isDirty, saveWorkflow, isRunning, runWorkflow } = useWorkflowStore();
     const [editingName, setEditingName] = useState(name);
     const { setActiveTab } = useMobileTab();
 
@@ -74,6 +74,22 @@ export function WorkflowHeader() {
             </div>
 
             <div className="flex items-center gap-2">
+                {/* Run All Button (Visible on all screens) */}
+                <Button
+                    onClick={runWorkflow}
+                    disabled={isRunning}
+                    className="h-8 shadow-sm gap-2"
+                    variant="default"
+                >
+                    {isRunning ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                        <Play className="w-4 h-4 fill-current" />
+                    )}
+                    <span className="hidden sm:inline">Run All</span>
+                    <span className="sm:hidden">Run</span>
+                </Button>
+
                 {/* Mobile: Switch to AI Chat */}
                 <button
                     onClick={() => setActiveTab("chat")}

@@ -25,7 +25,7 @@ Follow these rules EXACTLY:
 
 ### Module Structure
 Your code MUST:
-1. Import from 'react', 'remotion', and '@remotion/media' ONLY.
+1. Import from 'react', 'remotion', '@remotion/media', and 'lucide-react' ONLY.
 2. Export metadata constants: `fps`, `width`, `height`, `durationInFrames`
 3. Export a default function component as the composition.
 
@@ -33,6 +33,7 @@ Your code MUST:
 import React from 'react';
 import { AbsoluteFill, Sequence, useCurrentFrame, useVideoConfig, interpolate, spring, Easing } from 'remotion';
 import { Video, Audio } from '@remotion/media';
+import { Sparkles, ArrowRight, Star } from 'lucide-react';
 
 export const fps = 30;
 export const width = 1080; // MUST match project aspect ratio! (1080 for 9:16, 1920 for 16:9)
@@ -66,6 +67,7 @@ From 'remotion':
 From '@remotion/media':
 - `<Video>` - Video element. Props:
   - `src` (string, required) - video URL
+  - `crossOrigin` (string) - MUST ALWAYS BE SET TO "anonymous"
   - `trimBefore` (number, frames) - trim start of video
   - `trimAfter` (number, frames) - trim end of video
   - `playbackRate` (number) - speed: 1=normal, 0.5=slow, 2=fast. MUST be > 0. DO NOT use negative values for reverse.
@@ -74,9 +76,9 @@ From '@remotion/media':
   - `muted` (boolean)
 - `<Audio>` - Audio element. Props:
   - `src` (string, required)
+  - `crossOrigin` (string) - MUST ALWAYS BE SET TO "anonymous"
   - `volume` (number 0-1, or function)
   - `trimBefore` (number, frames)
-
 ### Web Renderer Limitations (CRITICAL)
 The following CSS properties are NOT supported in web rendering:
 - NO `filter` (blur, brightness, contrast, etc.)
@@ -103,14 +105,15 @@ The following ARE supported:
 
 Your output MUST meet these professional standards. Failure to follow these will produce unusable output.
 
-### 1. ABSOLUTELY NO EMOJIS
+### 1. NO EMOJIS — USE PROFESSIONAL ICONS
 - NEVER use emoji characters (e.g. no fire, heart, star, crying face, etc.) in ANY text overlay.
 - NEVER use unicode symbols as decorative elements.
 - Emojis are unprofessional and make video content look amateurish and template-generated.
-- Instead of emojis, use WORDS. Write copy that is sharp, witty, and confident without relying on pictograms.
+- Instead of emojis, use professional SVG icons from 'lucide-react'. They provide a premium, modern aesthetic.
+- Ensure icons match the text color and proportions, feeling like a natural extension of the typography.
 - Bad: "This product is fire 🔥🔥🔥"  Good: "This changes everything."
-- Bad: "Wait for it... 😱"  Good: "Wait for it."
-- Bad: "✨ Glow up ✨"  Good: "The glow up."
+- Bad: "Wait for it... 😱"  Good: "Wait for it. <ArrowRight size={24} />"
+- Bad: "✨ Glow up ✨"  Good: "<Sparkles size={28} style={{ marginRight: 12 }} /> The glow up."
 
 ### 2. BRAND-INTELLIGENT TYPOGRAPHY
 Choose fonts that match the brand identity and project context. DO NOT default to Inter for everything.
@@ -176,6 +179,7 @@ Never mix more than 2 font families total. Use weight variations (300, 400, 500,
 
 ### 5. ANIMATION & MOTION DESIGN
 - Animations should feel EFFORTLESS and CONFIDENT, never flashy or desperate.
+- USE ABUNDANT MOTION GRAPHICS. Elevate plain video clips with elegant text overlays, animated transitions, or branded graphical elements to keep the viewer constantly engaged.
 - Preferred easing: cubic-bezier(0.16, 1, 0.3, 1) for entries (expo-out), never linear.
 - Text entries: fade + subtle translateY (10-20px max). Never bounce, never spin, never zoom from 0.
 - Hold text on screen for minimum 1.5 seconds for readability.
@@ -312,7 +316,8 @@ const scale = interpolate(frame, [0, durationInFrames], [1, 1.3], { extrapolateR
 ### AUDIO HANDLING RULES (CRITICAL)
 When audio tracks are provided, FOLLOW THESE RULES:
 1. **Duration alignment**: Set `durationInFrames` to AT LEAST `longest_audio_duration_seconds × fps`.
-   If video clips are shorter than audio, extend the last scene or hold the final frame.
+   If video clips/scenes are shorter than the audio, DO NOT leave a blank black screen and DO NOT simply hold a frozen frame. Instead, you MUST add an engaging, branded motion graphics outro (using text, solid/gradient backgrounds, animations, and brand context) to fill the remaining duration.
+   **CRITICAL OUTRO AESTHETICS:** The outro MUST be professional, clean, elegant, and aesthetic. NO AI clichés, NO emojis EVER (use lucide-react icons instead if needed). Use brand-matching typography (e.g., elegant serif for luxury/aesthetic brands, clean geometric sans for tech). Treat it as a high-end commercial sign-off.
 2. **Layer by type**:
    - **Music/Score**: Plays for FULL composition duration at volume 0.15–0.30. Place `<Audio>` at root level, OUTSIDE any `<Sequence>`.
    - **Speech/Voiceover**: Plays at volume 0.9–1.0. Start from beginning or sync to scenes with `<Sequence>`.
@@ -372,8 +377,8 @@ Follow these rules:
 1. Copy each scene's component function and `sceneDurationInFrames` into the output.
 2. Use `<Sequence from={offset} durationInFrames={sceneDuration}>` for each scene.
 3. Add crossfade transitions between scenes (overlapping Sequences with opacity interpolation).
-4. Export: `fps`, `width`, `height`, `durationInFrames` (sum of all scenes), and a `default` component.
-5. Calculate total `durationInFrames` by summing all scene durations.
+4. Export: `fps`, `width`, `height`, `durationInFrames` (sum of all scenes PLUS any added outro time needed to match audio), and a `default` component.
+5. Calculate total `durationInFrames` by summing all scene durations. If the audio is longer than this sum, pad the end with an animated motion graphics outro to match the audio length perfectly.
 
 ### Compositor Inspiration
 ```tsx
@@ -591,11 +596,11 @@ Audio Tracks ({len(audio_tracks)} total):
 
 ### CRITICAL REMINDERS
 - DIMENSIONS: Read the instruction carefully to determine the aspect ratio (9:16 vertical = width 1080, height 1920). Set the exported `width` and `height` exactly as requested.
-- ZERO emojis in any text overlay. Write professional copy only.
-- Choose brand-appropriate fonts from the typography guide. Do NOT default to Inter unless the brand is tech/SaaS.
+- ZERO emojis in any text overlay. Write professional copy and use 'lucide-react' icons exclusively.
+- Choose brand-appropriate fonts from the typography guide. Do NOT default to Inter unless the brand is tech/SaaS. For aesthetic brands, use elegant or refined typefaces.
 - Keep animations subtle and confident. No bouncing, spinning, or flashy effects.
 - Embrace negative space. Less is more. Premium compositions breathe.
-{"- AUDIO: Set durationInFrames to AT LEAST " + str(max((t.get('duration_seconds', 0) for t in audio_tracks), default=0)) + " × fps to fit all audio tracks." if audio_tracks else ""}
+{"- AUDIO: Set durationInFrames to AT LEAST " + str(max((t.get('duration_seconds', 0) for t in audio_tracks), default=0)) + " × fps to fit the audio. If the video clips fall short, YOU MUST ADD A HIGH-QUALITY MOTION GRAPHICS OUTRO to fill the void. This outro MUST be hyper-professional, clean, elegant, matched strictly to brand fonts, with ZERO emojis (use lucide-react icons)." if audio_tracks else ""}
 {"- AUDIO: Include ALL " + str(len(audio_tracks)) + " audio track(s) as <Audio> elements. Do NOT drop any." if audio_tracks else ""}
 {"- AUDIO: Music at volume 0.15-0.30 (full duration). Voiceover at 0.9-1.0. SFX in <Sequence> at specific moments." if audio_tracks else ""}
 """
@@ -630,7 +635,7 @@ Return ONLY the TSX code. No markdown fences, no explanations.
 1. Write COMPLETE, VALID TSX code. No placeholders, no TODOs.
 2. INLINE all upstream scene component functions directly in your code.
 3. Export: `fps`, `width`, `height`, `durationInFrames`, and `default` component.
-4. Calculate `durationInFrames` as the sum of all scene durations.
+4. Calculate `durationInFrames` carefully. If audio is longer than the sum of all scenes, you MUST add an extra `<Sequence>` at the end containing an engaging motion graphics outro to pad the duration so it matches the longest audio perfectly. Never leave a black screen.
 5. Use `<Sequence>` to arrange scenes chronologically.
 6. Add fade transitions between scenes (overlapping Sequences with opacity interpolation).
 7. Use ONLY supported CSS properties (no filter, clip-path, z-index, etc.).

@@ -157,6 +157,16 @@ export const workflowApi = {
         }),
 
     /**
+     * Save pre-extracted start/end frames from a video node to the workflow state.
+     * Extraction happens on the client via canvas.
+     */
+    extractFrames: (workflowId: string, nodeId: string, startFrame?: string, endFrame?: string) =>
+        api.post<{ success: boolean; start_frame?: string; end_frame?: string; cached: boolean }>(
+            `/api/workflows/${workflowId}/nodes/${nodeId}/extract-frames`,
+            { start_frame: startFrame, end_frame: endFrame }
+        ),
+
+    /**
      * Start async node execution (returns immediately)
      */
     runNodeAsync: (workflowId: string, nodeId: string, inputOverrides?: Record<string, unknown>) =>
@@ -184,16 +194,44 @@ export const workflowApi = {
         api.get<WorkflowRunStatus>(`/api/workflows/${id}/run-status`),
 
     /**
-     * Upload a client-rendered video blob to S3 and save to node output
+     * Upload a client-rendered video blob to S3 via presigned URL, and save to node output.
+     * Bypasses the 10MB API Gateway limit.
      */
     uploadRenderedVideo: async (workflowId: string, nodeId: string, file: File) => {
-        const formData = new FormData();
-        formData.append("file", file);
-        
+        // 1. Get presigned upload URL
+        const presignRes = await api.post<{ upload_url?: string; file_url?: string; is_local?: boolean }>(
+            `/api/workflows/${workflowId}/nodes/${nodeId}/upload-render/presign`,
+            { filename: file.name, content_type: file.type }
+        );
+
+        const data = presignRes.data;
+
+        if (data.is_local) {
+            // Local fallback (direct upload to FastAPI, no 10MB limit in dev)
+            const formData = new FormData();
+            formData.append("file", file);
+            return api.post<{ url: string; presigned_url: string }>(
+                `/api/workflows/${workflowId}/nodes/${nodeId}/upload-render`,
+                formData,
+                { headers: { "Content-Type": "multipart/form-data" } }
+            );
+        }
+
+        // 2. Upload directly to S3 using the presigned URL
+        if (!data.upload_url || !data.file_url) throw new Error("Missing upload URL from backend");
+
+        await fetch(data.upload_url, {
+            method: "PUT",
+            body: file,
+            headers: {
+                "Content-Type": file.type
+            }
+        });
+
+        // 3. Confirm upload with the backend so it saves the URL to the DB
         return api.post<{ url: string; presigned_url: string }>(
-            `/api/workflows/${workflowId}/nodes/${nodeId}/upload-render`,
-            formData,
-            { headers: { "Content-Type": "multipart/form-data" } }
+            `/api/workflows/${workflowId}/nodes/${nodeId}/upload-render/confirm`,
+            { file_url: data.file_url }
         );
     },
 

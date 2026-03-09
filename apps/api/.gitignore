@@ -1,2 +1,3 @@
 .aws-sam/
 scripts/topup_credits.py
+tmp/

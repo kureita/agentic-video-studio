@@ -39,6 +39,7 @@ interface WorkflowState {
     setNodes: (nodes: Node[]) => void;
     setEdges: (edges: Edge[]) => void;
     setNodeOutput: (nodeId: string, output: string) => void;
+    setRawOutput: (key: string, value: string) => void;
     clearNodeOutput: (nodeId: string) => void;
     addChatMessage: (message: ChatMessage) => void;
     setChatHistory: (messages: ChatMessage[]) => void;
@@ -213,6 +214,12 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
                 isDirty: true
             };
         });
+    },
+
+    setRawOutput: (key: string, value: string) => {
+        // Write directly to the outputs map without touching node.data.output.
+        // Used for auxiliary keys like `{nodeId}__start_frame`.
+        set((state) => ({ outputs: { ...state.outputs, [key]: value } }));
     },
 
     clearNodeOutput: (nodeId: string) => {
@@ -588,12 +595,45 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
                     set((state) => {
                         const newOutputs = { ...state.outputs, [targetId]: storeOutput };
 
+                        // ── Auto-fill start_frame / end_frame connected imageGen nodes ──
+                        // When a videoGen node finishes, the backend extracts the first/last
+                        // frame and stores them as `{nodeId}__start_frame` / `{nodeId}__end_frame`
+                        // in outputs. We find connected image nodes on those handles and
+                        // auto-set their output so the user sees the frame immediately.
+                        const targetNode = state.nodes.find(n => n.id === targetId);
+                        if (targetNode?.type === 'videoGen') {
+                            const startFrameData = finalStatus.outputs[`${targetId}__start_frame`] as string | undefined;
+                            const endFrameData = finalStatus.outputs[`${targetId}__end_frame`] as string | undefined;
+
+                            state.edges.forEach(edge => {
+                                if (edge.source !== targetId) return;
+                                const srcHandle = edge.sourceHandle || '';
+                                const isStartFrame = srcHandle.endsWith('start_frame');
+                                const isEndFrame = srcHandle.endsWith('end_frame');
+
+                                if (isStartFrame && startFrameData) {
+                                    console.log(`[WorkflowStore] Auto-filling node ${edge.target} with start_frame`);
+                                    newOutputs[edge.target] = startFrameData;
+                                } else if (isEndFrame && endFrameData) {
+                                    console.log(`[WorkflowStore] Auto-filling node ${edge.target} with end_frame`);
+                                    newOutputs[edge.target] = endFrameData;
+                                }
+                            });
+                        }
+
                         // Also update node data for persistence
                         const newNodes = state.nodes.map((node) => {
                             if (node.id === targetId) {
                                 return {
                                     ...node,
                                     data: { ...node.data, output: storeOutput },
+                                };
+                            }
+                            // Update any auto-filled image nodes too
+                            if (newOutputs[node.id] && newOutputs[node.id] !== state.outputs[node.id]) {
+                                return {
+                                    ...node,
+                                    data: { ...node.data, output: newOutputs[node.id] },
                                 };
                             }
                             return node;

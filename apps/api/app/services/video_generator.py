@@ -216,22 +216,28 @@ class VideoGenerator:
         aspect_ratio: str = "16:9",
         model_name: Optional[str] = None,
         audio_url: Optional[str] = None,
+        end_image_url: Optional[str] = None,
     ) -> dict:
-        """Generate video using an image as the starting frame."""
+        """Generate video using an image as the starting frame.
+        
+        Args:
+            end_image_url: Optional URL/data-URI for the last frame (interpolation).
+                           Supported by Kling, Seedance, PixVerse, Runway models.
+        """
         if self.use_mock:
             return await self._mock_generate(f"[Image-to-Video] {prompt}", duration)
             
         target_model = self._get_model(model_name)
-        print(f"[VideoGenerator] Generating img-to-vid with {target_model}: {prompt[:100]}")
+        print(f"[VideoGenerator] Generating img-to-vid with {target_model}: {prompt[:100]}, has_end_image={bool(end_image_url)}")
 
         try:
-            # First frame provided
             result = await self.runware.image_to_video(
                 image_url=image_path,
                 prompt=prompt,
                 model=target_model,
                 duration=duration,
                 aspect_ratio=aspect_ratio,
+                end_image_url=end_image_url,
             )
             
             # Optionally add lip-sync
@@ -284,14 +290,20 @@ class VideoGenerator:
         aspect_ratio: str = "16:9",
         model_name: Optional[str] = None,
     ) -> dict:
-        """Generate video by specifying first and last frames."""
-        print("[VideoGenerator] Runware does not currently support explicit end-frame natively in standard tasks, using first frame.")
+        """Generate video by specifying first and last frames (interpolation).
+        
+        Both frames are uploaded to Runware as frameImages entries.
+        Supported by: Kling, Seedance, PixVerse, Runway, Veo 3 Fast, Veo 2.
+        Unsupported providers (Alibaba/Wan) will silently use only the start frame.
+        """
+        print(f"[VideoGenerator] Using start+end frame interpolation with model={model_name}")
         return await self.generate_from_image(
             prompt=prompt,
             image_path=first_frame_path,
+            end_image_url=last_frame_path,
             duration=duration,
             aspect_ratio=aspect_ratio,
-            model_name=model_name
+            model_name=model_name,
         )
 
     async def extend_video(

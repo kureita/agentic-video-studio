@@ -1,15 +1,22 @@
-import { memo, useRef, useEffect } from "react";
+import { memo, useRef, useEffect, useState } from "react";
 import { NodeProps, useReactFlow } from "@xyflow/react";
-import { Upload, Image as ImageIcon, Video, Music } from "lucide-react";
+import { Upload, Image as ImageIcon, Video, Music, Loader2 } from "lucide-react";
 import { NodeWrapper } from "@/components/workflow/node-wrapper";
 import { S3Image } from "@/components/ui/s3-image";
 import { usePresignedUrl } from "@/lib/use-presigned-url";
 import { useWorkflowStore } from "@/lib/workflow-store";
+import { api } from "@/lib/api";
+import { toast } from "sonner";
+import { workflowApi } from "@/lib/workflow-api";
+import { extractFrameFromVideo } from "@/lib/video-utils";
 
 export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
     const { deleteElements } = useReactFlow();
-    const { runNode, clearNodeOutput, outputs, runningNodeId, setNodeOutput } = useWorkflowStore();
+    const { runNode, clearNodeOutput, outputs, runningNodeId, setNodeOutput, setRawOutput } = useWorkflowStore();
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const [isUploading, setIsUploading] = useState(false);
+    const [extractingHandle, setExtractingHandle] = useState<string | null>(null);
+    const [extractionError, setExtractionError] = useState<string | null>(null);
 
     const isRunning = runningNodeId === id;
     const rawOutput = (outputs[id] as string | undefined) || (data.output as string | undefined);
@@ -17,6 +24,9 @@ export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
     // Get presigned URL for S3 assets
     const { url: presignedOutput } = usePresignedUrl(rawOutput);
     const output = presignedOutput || rawOutput;
+
+    // Derive workflowId from the URL query param
+    const workflowId = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('id') || '' : '';
 
     // Determine media type from data or current output
     const mediaType = data.mediaType || (output ? (
@@ -66,40 +76,100 @@ export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
         }
     }, [output, data.aspectRatio, id, mediaType]);
 
-    const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const handleExtractFrames = async (handleId: string, videoUrl: string) => {
+        if (!workflowId || extractingHandle || !videoUrl) return;
+        setExtractingHandle(handleId);
+        setExtractionError(null);
+        try {
+            const timeRatio = handleId === 'end_frame' ? 1 : 0;
+            const base64Image = await extractFrameFromVideo(videoUrl, timeRatio);
+
+            const startFramePayload = handleId === 'start_frame' ? base64Image : undefined;
+            const endFramePayload = handleId === 'end_frame' ? base64Image : undefined;
+
+            await workflowApi.extractFrames(workflowId, id, startFramePayload, endFramePayload);
+            setRawOutput(`${id}__${handleId}`, base64Image);
+        } catch (err: unknown) {
+            console.error('[ExtractFrames] Error:', err);
+            const msg = err instanceof Error ? err.message : 'Could not extract frame';
+            setExtractionError(msg);
+            toast.error(msg);
+        } finally {
+            setExtractingHandle(null);
+        }
+    };
+
+    const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
         if (!file) return;
 
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            const result = e.target?.result as string;
-            if (!result) return;
+        setIsUploading(true);
+        const { setNodes, nodes } = useWorkflowStore.getState();
 
-            if (file.type.startsWith('image/')) {
-                const img = new Image();
-                img.onload = () => {
-                    const ar = img.naturalWidth / img.naturalHeight;
-                    setNodeOutput(id, result);
-                    // Update note data with aspect ratio
-                    const { setNodes, nodes } = useWorkflowStore.getState();
-                    setNodes(nodes.map(n => n.id === id ? { ...n, data: { ...n.data, aspectRatio: ar } } : n));
-                };
-                img.src = result;
-            } else if (file.type.startsWith('video/')) {
-                const video = document.createElement('video');
-                video.onloadedmetadata = () => {
-                    const ar = video.videoWidth / video.videoHeight;
-                    setNodeOutput(id, result);
-                    // Update note data with aspect ratio
-                    const { setNodes, nodes } = useWorkflowStore.getState();
-                    setNodes(nodes.map(n => n.id === id ? { ...n, data: { ...n.data, aspectRatio: ar } } : n));
-                };
-                video.src = result;
-            } else {
-                setNodeOutput(id, result);
+        try {
+            const formData = new FormData();
+            formData.append("file", file);
+
+            const response = await api.post("/api/assets/upload", formData, {
+                headers: { "Content-Type": "multipart/form-data" },
+            });
+
+            if (response.data.success) {
+                const uploadedUrl = response.data.url;
+                const uploadedType = file.type.split('/')[0];
+
+                // Update mediaType and ratio locally before output
+                setNodes(nodes.map(n => n.id === id ? {
+                    ...n,
+                    data: { ...n.data, mediaType: uploadedType, output: uploadedUrl }
+                } : n));
+
+                setNodeOutput(id, uploadedUrl);
+
+                // Clear any running state for this node forcefully after a short delay
+                // since this node type completes instantaneously and may outpace the poller
+                const { nodeExecutionStates } = useWorkflowStore.getState();
+                useWorkflowStore.setState({
+                    runningNodeId: null,
+                    nodeExecutionStates: {
+                        ...nodeExecutionStates,
+                        [id]: { status: "completed" }
+                    }
+                });
+
+                // Auto-evaluate the node
+                runNode(id);
+
+                // For videos, start auto-extraction
+                if (uploadedType === 'video') {
+                    setTimeout(async () => {
+                        try {
+                            const startFrame = await extractFrameFromVideo(uploadedUrl, 0);
+                            setRawOutput(`${id}__start_frame`, startFrame);
+                            const endFrame = await extractFrameFromVideo(uploadedUrl, 1);
+                            setRawOutput(`${id}__end_frame`, endFrame);
+
+                            if (workflowId) {
+                                await workflowApi.extractFrames(workflowId, id, startFrame, endFrame);
+                            }
+                        } catch (err) {
+                            console.error('[VideoNode auto-extraction] Error:', err);
+                        }
+                    }, 1000);
+                }
             }
-        };
-        reader.readAsDataURL(file);
+        } catch (error: unknown) {
+            console.error("Upload error:", error);
+            const axiosError = error as { response?: { status?: number } };
+            if (axiosError.response?.status === 413) {
+                toast.error("File is too large.");
+            } else {
+                toast.error("An error occurred during upload.");
+            }
+        } finally {
+            setIsUploading(false);
+            if (fileInputRef.current) fileInputRef.current.value = '';
+        }
     };
 
     const handleUploadClick = () => {
@@ -132,6 +202,34 @@ export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
         type: (mediaType || 'any') as "video" | "audio" | "image" | "any" | "text"
     }];
 
+    // Add start and end frames for video uploads
+    if (mediaType === 'video') {
+        nodeHandles.push({
+            id: "start_frame",
+            label: "Start (Frame 0)",
+            type: "image",
+            // Custom props handled inside NodeWrapper
+            framePreview: outputs[`${id}__start_frame`] as string | undefined,
+            hasVideoOutput: true,
+            onExtractFrames: () => output && handleExtractFrames('start_frame', output as string),
+            isExtractingFrames: extractingHandle === 'start_frame',
+            extractionError: extractionError || undefined,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } as any);
+        nodeHandles.push({
+            id: "end_frame",
+            label: "End (Last Frame)",
+            type: "image",
+            // Custom props handled inside NodeWrapper
+            framePreview: outputs[`${id}__end_frame`] as string | undefined,
+            hasVideoOutput: true,
+            onExtractFrames: () => output && handleExtractFrames('end_frame', output as string),
+            isExtractingFrames: extractingHandle === 'end_frame',
+            extractionError: extractionError || undefined,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } as any);
+    }
+
     return (
         <NodeWrapper
             title={`Asset #${useWorkflowStore((state) =>
@@ -144,10 +242,9 @@ export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
             outputs={nodeHandles}
             contentClassName="p-0 h-full"
             onDelete={() => deleteElements({ nodes: [{ id }] })}
-            onRun={() => runNode(id)}
             onClear={output ? handleClear : undefined}
             isRunning={isRunning}
-            executionStatus={data.executionStatus as "queued" | "running" | "completed" | "failed" | null}
+            executionStatus={null}
             style={{ width: nodeWidth, height: nodeHeight }}
         >
             <div className="h-full flex flex-col">
@@ -209,10 +306,16 @@ export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
                         <div className="absolute inset-0 border-2 border-dashed border-muted-foreground/20 group-hover/upload:border-primary/50 transition-colors m-2 rounded-lg" />
 
                         <div className="relative z-10 flex flex-col items-center animate-in fade-in zoom-in duration-500">
-                            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500/20 to-blue-500/5 flex items-center justify-center mb-3 shadow-inner group-hover/upload:scale-110 transition-transform duration-300">
-                                <Upload className="w-5 h-5 text-blue-500" />
-                            </div>
-                            <p className="text-xs font-medium text-foreground mb-1">Upload Image or Video</p>
+                            {isUploading ? (
+                                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500/20 to-blue-500/5 flex items-center justify-center mb-3 shadow-inner group-hover/upload:scale-110 transition-transform duration-300">
+                                    <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />
+                                </div>
+                            ) : (
+                                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500/20 to-blue-500/5 flex items-center justify-center mb-3 shadow-inner group-hover/upload:scale-110 transition-transform duration-300">
+                                    <Upload className="w-5 h-5 text-blue-500" />
+                                </div>
+                            )}
+                            <p className="text-xs font-medium text-foreground mb-1">{isUploading ? "Uploading..." : "Upload Image or Video"}</p>
                             <p className="text-[10px] text-muted-foreground text-center max-w-[160px]">
                                 Drag & drop or click to browse
                             </p>

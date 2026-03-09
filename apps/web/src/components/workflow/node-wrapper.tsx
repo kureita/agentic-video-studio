@@ -1,6 +1,6 @@
-import { memo } from "react";
+import { memo, useState, useRef } from "react";
 import { Handle, Position } from "@xyflow/react";
-import { Copy, Trash2, Play, Type, Image as ImageIcon, Video, Music, Loader2, Eraser } from "lucide-react";
+import { Copy, Trash2, Play, Type, Image as ImageIcon, Video, Music, Loader2, Eraser, Scan } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
@@ -9,6 +9,16 @@ interface NodeHandle {
     label?: string;
     type?: "text" | "image" | "video" | "audio" | "any";
     style?: React.CSSProperties;
+    /** Frame preview data-URI. When set, hovering shows the image. */
+    framePreview?: string;
+    /** True if a video exists and frames can be extracted (shows Generate Preview button). */
+    hasVideoOutput?: boolean;
+    /** Callback to trigger frame extraction — wired up by the parent node */
+    onExtractFrames?: () => void;
+    /** Whether frame extraction is currently in-flight */
+    isExtractingFrames?: boolean;
+    /** Error message to display if extraction failed */
+    extractionError?: string;
 }
 
 interface NodeWrapperProps {
@@ -54,6 +64,18 @@ export const NodeWrapper = memo(({
     style,
     inputBaseOffset = 75,
 }: NodeWrapperProps) => {
+
+    // ── Per-handle hover state (avoids CSS group-hover bleed between adjacent handles) ──
+    const [activeHandle, setActiveHandle] = useState<string | null>(null);
+    const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const openCard = (id: string) => {
+        if (hideTimer.current) clearTimeout(hideTimer.current);
+        setActiveHandle(id);
+    };
+    const scheduleClose = () => {
+        hideTimer.current = setTimeout(() => setActiveHandle(null), 100);
+    };
 
     // Execution status styles
     const executionBorderClass = executionStatus === "completed"
@@ -187,32 +209,156 @@ export const NodeWrapper = memo(({
             ))}
 
             {/* Output Handles - Top Right Bias */}
-            {outputs.map((output, index) => (
-                <div key={output.id} className="absolute -right-[14px] nodrag" style={output.style || { top: `${25 + index * 15}%`, transform: 'translateY(-50%)' }}>
-                    <div className="relative w-7 h-7 z-50 group/handle cursor-crosshair">
-                        {/* Visual Ring & BG */}
-                        <div className="absolute inset-0 rounded-full border-2 border-border bg-background shadow-sm transition-colors group-hover/handle:border-primary pointer-events-none" />
+            {outputs.map((output, index) => {
+                const hasCard = !!(output.framePreview || (output.hasVideoOutput && output.onExtractFrames));
+                const isCardOpen = activeHandle === output.id || !!output.isExtractingFrames;
+                const isActive = activeHandle === output.id;
 
-                        {/* Icon */}
-                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground group-hover/handle:text-primary transition-colors flex items-center justify-center">
-                            {getHandleIcon(output.type)}
+                return (
+                    <div
+                        key={output.id}
+                        className="absolute -right-[14px] nodrag"
+                        style={output.style || { top: `${25 + index * 15}%`, transform: 'translateY(-50%)' }}
+                    >
+                        {/* Dot — 28×28px, no overlap with other handles */}
+                        <div
+                            className="relative w-7 h-7 z-50 cursor-crosshair"
+                            onMouseEnter={() => hasCard && openCard(output.id)}
+                            onMouseLeave={() => hasCard && scheduleClose()}
+                        >
+                            {/* Visual ring */}
+                            <div className={cn(
+                                "absolute inset-0 rounded-full border-2 bg-background shadow-sm transition-colors pointer-events-none",
+                                isActive ? "border-primary" : "border-border"
+                            )} />
+                            {/* Icon */}
+                            <div className={cn(
+                                "absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none transition-colors flex items-center justify-center",
+                                isActive ? "text-primary" : "text-muted-foreground"
+                            )}>
+                                {getHandleIcon(output.type)}
+                            </div>
+                            {/* ReactFlow handle hit area */}
+                            <Handle
+                                type="source"
+                                position={Position.Right}
+                                id={`${output.type || 'any'}|${output.id}`}
+                                className="!w-full !h-full !absolute !top-0 !left-0 !opacity-0 !rounded-full !border-none !bg-transparent z-50 cursor-crosshair !transform-none"
+                            />
+                            {/* Plain label tooltip — only for handles without a card */}
+                            {!hasCard && (
+                                <div className="absolute right-full mr-2 px-2 py-1 bg-popover text-popover-foreground text-[10px] rounded border shadow-sm opacity-0 group-hover/handle:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50">
+                                    {output.label}
+                                </div>
+                            )}
                         </div>
 
-                        {/* Actual Handle - HIT AREA */}
-                        <Handle
-                            type="source"
-                            position={Position.Right}
-                            id={`${output.type || 'any'}|${output.id}`}
-                            className="!w-full !h-full !absolute !top-0 !left-0 !opacity-0 !rounded-full !border-none !bg-transparent z-50 cursor-crosshair !transform-none"
-                        />
-
-                        {/* Tooltip */}
-                        <div className="absolute right-full mr-2 px-2 py-1 bg-popover text-popover-foreground text-[10px] rounded border shadow-sm opacity-0 group-hover/handle:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50">
-                            {output.label}
-                        </div>
+                        {/* Popup card — sibling to the dot, controlled by React state */}
+                        {hasCard && (
+                            <div
+                                className={cn(
+                                    "absolute z-[100] transition-all duration-150 nopan nodrag nowheel",
+                                    isCardOpen
+                                        ? "opacity-100 translate-x-0 pointer-events-auto"
+                                        : "opacity-0 translate-x-1 pointer-events-none"
+                                )}
+                                style={{
+                                    top: '50%',
+                                    transform: 'translateY(-50%)',
+                                    right: '38px',  // 28px dot + 10px gap
+                                    width: 164,
+                                }}
+                                onMouseEnter={() => openCard(output.id)}
+                                onMouseLeave={scheduleClose}
+                                onMouseDown={(e) => e.stopPropagation()}
+                            >
+                                {output.framePreview ? (
+                                    /* ── State 1: frame image ready ── */
+                                    <div className="bg-popover border border-border/60 rounded-xl shadow-2xl overflow-hidden">
+                                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                                        <img
+                                            src={output.framePreview}
+                                            alt={output.label || 'Frame'}
+                                            className="w-full object-cover block"
+                                            style={{ maxHeight: 104 }}
+                                        />
+                                        <div className="px-2.5 py-1.5 flex items-center gap-1.5">
+                                            <div className="w-1.5 h-1.5 rounded-full bg-green-500 flex-shrink-0" />
+                                            <span className="text-[9px] font-medium text-muted-foreground">{output.label}</span>
+                                        </div>
+                                    </div>
+                                ) : output.extractionError ? (
+                                    /* ── State 2x: extraction failed ── */
+                                    <div className="bg-destructive/10 border border-destructive/20 rounded-xl shadow-2xl overflow-hidden">
+                                        <div className="px-3 pt-3 pb-2 text-center">
+                                            <div className="w-6 h-6 rounded-full bg-destructive/20 text-destructive flex items-center justify-center mx-auto mb-2">
+                                                <Scan className="w-3.5 h-3.5" />
+                                            </div>
+                                            <span className="text-[10px] font-semibold text-destructive">{output.extractionError}</span>
+                                        </div>
+                                        <div className="px-3 pb-3">
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    e.preventDefault();
+                                                    output.onExtractFrames?.();
+                                                }}
+                                                onMouseDown={(e) => e.stopPropagation()}
+                                                className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-destructive text-destructive-foreground text-[9px] font-semibold transition-all hover:bg-destructive/90 active:scale-[0.97] shadow-sm nopan nodrag nowheel cursor-pointer"
+                                            >
+                                                Retry Capture
+                                            </button>
+                                        </div>
+                                    </div>
+                                ) : output.isExtractingFrames ? (
+                                    /* ── State 2a: currently extracting ── */
+                                    <div className="bg-popover border border-border/60 rounded-xl shadow-2xl overflow-hidden">
+                                        <div className="relative overflow-hidden bg-muted/60" style={{ height: 80 }}>
+                                            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent animate-shimmer" style={{ backgroundSize: '200% 100%' }} />
+                                            <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5">
+                                                <Loader2 className="w-5 h-5 text-primary animate-spin" />
+                                                <span className="text-[9px] font-medium text-muted-foreground">Capturing frame…</span>
+                                            </div>
+                                        </div>
+                                        <div className="px-2.5 py-1.5 flex items-center gap-1.5">
+                                            <div className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse flex-shrink-0" />
+                                            <span className="text-[9px] font-medium text-muted-foreground">{output.label}</span>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    /* ── State 2b: video exists, extract button ── */
+                                    <div className="bg-popover border border-border/60 rounded-xl shadow-2xl overflow-hidden">
+                                        <div className="px-3 pt-3 pb-1">
+                                            <div className="flex items-center gap-2 mb-1.5">
+                                                <Scan className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+                                                <span className="text-[10px] font-semibold text-foreground">{output.label}</span>
+                                            </div>
+                                            <p className="text-[9px] text-muted-foreground/70 leading-relaxed mb-2">
+                                                Preview the extracted frame, then drag to connect.
+                                            </p>
+                                        </div>
+                                        <div className="px-3 pb-3">
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    e.preventDefault();
+                                                    console.log('[ExtractFrames] Button clicked!');
+                                                    output.onExtractFrames?.();
+                                                }}
+                                                onMouseDown={(e) => e.stopPropagation()}
+                                                className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-primary text-primary-foreground text-[9px] font-semibold transition-all hover:bg-primary/90 active:scale-[0.97] shadow-sm nopan nodrag nowheel cursor-pointer"
+                                            >
+                                                <Scan className="w-3 h-3" />
+                                                Generate Preview
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
                     </div>
-                </div>
-            ))}
+                );
+            })}
         </div>
     );
 });
