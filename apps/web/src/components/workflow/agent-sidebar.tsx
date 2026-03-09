@@ -760,7 +760,7 @@ function CursorInput({
                                 className="hidden"
                                 onChange={(e) => onFileUpload(e.target.files)}
                                 disabled={isUploading || isLoading}
-                                accept="image/*,video/*"
+                                accept="image/*,video/*,audio/*"
                                 multiple
                             />
                         </label>

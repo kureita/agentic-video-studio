@@ -15,6 +15,8 @@ export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
     const { runNode, clearNodeOutput, outputs, runningNodeId, setNodeOutput, setRawOutput } = useWorkflowStore();
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [isUploading, setIsUploading] = useState(false);
+    const [uploadProgress, setUploadProgress] = useState<number>(0);
+    const [isDragOver, setIsDragOver] = useState<boolean>(false);
     const [extractingHandle, setExtractingHandle] = useState<string | null>(null);
     const [extractionError, setExtractionError] = useState<string | null>(null);
 
@@ -99,11 +101,9 @@ export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
         }
     };
 
-    const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
-        const file = event.target.files?.[0];
-        if (!file) return;
-
+    const processFile = async (file: File) => {
         setIsUploading(true);
+        setUploadProgress(0);
         const { setNodes, nodes } = useWorkflowStore.getState();
 
         try {
@@ -112,6 +112,10 @@ export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
 
             const response = await api.post("/api/assets/upload", formData, {
                 headers: { "Content-Type": "multipart/form-data" },
+                onUploadProgress: (progressEvent) => {
+                    const percentCompleted = progressEvent.total ? Math.round((progressEvent.loaded * 100) / progressEvent.total) : 0;
+                    setUploadProgress(percentCompleted);
+                }
             });
 
             if (response.data.success) {
@@ -142,11 +146,14 @@ export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
 
                 // For videos, start auto-extraction
                 if (uploadedType === 'video') {
+                    // Create a blob URL for safe local extraction without CORS
+                    const safeBlobUrl = URL.createObjectURL(file);
+
                     setTimeout(async () => {
                         try {
-                            const startFrame = await extractFrameFromVideo(uploadedUrl, 0);
+                            const startFrame = await extractFrameFromVideo(safeBlobUrl, 0);
                             setRawOutput(`${id}__start_frame`, startFrame);
-                            const endFrame = await extractFrameFromVideo(uploadedUrl, 1);
+                            const endFrame = await extractFrameFromVideo(safeBlobUrl, 1);
                             setRawOutput(`${id}__end_frame`, endFrame);
 
                             if (workflowId) {
@@ -154,6 +161,8 @@ export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
                             }
                         } catch (err) {
                             console.error('[VideoNode auto-extraction] Error:', err);
+                        } finally {
+                            URL.revokeObjectURL(safeBlobUrl);
                         }
                     }, 1000);
                 }
@@ -168,7 +177,36 @@ export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
             }
         } finally {
             setIsUploading(false);
+            setUploadProgress(0);
             if (fileInputRef.current) fileInputRef.current.value = '';
+        }
+    };
+
+    const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+        await processFile(file);
+    };
+
+    const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragOver(true);
+    };
+
+    const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragOver(false);
+    };
+
+    const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragOver(false);
+        const file = e.dataTransfer.files?.[0];
+        if (file) {
+            await processFile(file);
         }
     };
 
@@ -300,25 +338,43 @@ export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
                     </div>
                 ) : (
                     <div
-                        className="flex-1 flex flex-col items-center justify-center p-4 bg-muted/20 hover:bg-muted/40 transition-colors cursor-pointer group/upload relative overflow-hidden"
+                        className={`flex-1 flex flex-col items-center justify-center p-4 transition-colors cursor-pointer group/upload relative overflow-hidden ${isDragOver ? "bg-primary/5 border-primary" : "bg-muted/20 hover:bg-muted/40"}`}
                         onClick={handleUploadClick}
+                        onDragOver={handleDragOver}
+                        onDragLeave={handleDragLeave}
+                        onDrop={handleDrop}
                     >
-                        <div className="absolute inset-0 border-2 border-dashed border-muted-foreground/20 group-hover/upload:border-primary/50 transition-colors m-2 rounded-lg" />
+                        <div className={`absolute inset-0 border-2 border-dashed transition-colors m-2 rounded-lg ${isDragOver ? "border-primary/50" : "border-muted-foreground/20 group-hover/upload:border-primary/50"}`} />
 
                         <div className="relative z-10 flex flex-col items-center animate-in fade-in zoom-in duration-500">
                             {isUploading ? (
-                                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500/20 to-blue-500/5 flex items-center justify-center mb-3 shadow-inner group-hover/upload:scale-110 transition-transform duration-300">
-                                    <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />
-                                </div>
+                                <>
+                                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500/20 to-blue-500/5 flex items-center justify-center mb-3 shadow-inner">
+                                        <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />
+                                    </div>
+                                    <p className="text-xs font-medium text-foreground mb-1">
+                                        Uploading... {uploadProgress > 0 && `${uploadProgress}%`}
+                                    </p>
+                                    <div className="w-24 h-1.5 bg-muted rounded-full mt-1 overflow-hidden">
+                                        <div
+                                            className="h-full bg-blue-500 transition-all duration-300 ease-out rounded-full"
+                                            style={{ width: `${uploadProgress}%` }}
+                                        />
+                                    </div>
+                                </>
                             ) : (
-                                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500/20 to-blue-500/5 flex items-center justify-center mb-3 shadow-inner group-hover/upload:scale-110 transition-transform duration-300">
-                                    <Upload className="w-5 h-5 text-blue-500" />
-                                </div>
+                                <>
+                                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500/20 to-blue-500/5 flex items-center justify-center mb-3 shadow-inner group-hover/upload:scale-110 transition-transform duration-300">
+                                        <Upload className="w-5 h-5 text-blue-500" />
+                                    </div>
+                                    <p className="text-xs font-medium text-foreground mb-1">Upload Image or Video</p>
+                                </>
                             )}
-                            <p className="text-xs font-medium text-foreground mb-1">{isUploading ? "Uploading..." : "Upload Image or Video"}</p>
-                            <p className="text-[10px] text-muted-foreground text-center max-w-[160px]">
-                                Drag & drop or click to browse
-                            </p>
+                            {!isUploading && (
+                                <p className="text-[10px] text-muted-foreground text-center max-w-[160px]">
+                                    Drag & drop or click to browse
+                                </p>
+                            )}
                             <div className="flex items-center gap-2 mt-3">
                                 <div className="flex items-center gap-1 px-2 py-1 rounded bg-muted/50 text-[9px] text-muted-foreground">
                                     <ImageIcon className="w-2.5 h-2.5" />

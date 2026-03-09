@@ -170,7 +170,7 @@ class NodeRunner:
                             # We fall back to server-side ffmpeg extraction on the fly.
                             print(f"[NodeRunner] ⚙️ Missing {source_handle_name} for node {source_id} — falling back to server-side ffmpeg extraction.")
                             source_node = next((n for n in nodes if n["id"] == source_id), None)
-                            if source_node and source_node.get("type") == "videoGen" and isinstance(source_output, str):
+                            if source_node and source_node.get("type") in ("videoGen", "mediaUpload") and isinstance(source_output, str):
                                 frame_url = self._extract_video_frame(
                                     source_output,
                                     frame_type=source_handle_name,
@@ -956,11 +956,23 @@ class NodeRunner:
                 "error": "No media uploaded",
             }
         
-        return {
+        result = {
             "success": True,
             "output": file_url,
             "mediaType": media_type,
         }
+        
+        if media_type == "video":
+            print(f"[NodeRunner] Extracting start/end frames from mediaUpload video...")
+            start_frame = self._extract_video_frame(file_url, "start_frame")
+            end_frame = self._extract_video_frame(file_url, "end_frame")
+            
+            if start_frame:
+                result["start_frame"] = start_frame
+            if end_frame:
+                result["end_frame"] = end_frame
+                
+        return result
 
     # Legacy node (deprecated)
     async def _run_assistant_node(

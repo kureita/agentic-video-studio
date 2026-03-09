@@ -56,7 +56,7 @@ async def cors_static_files(request: Request, call_next):
     sub-applications. This middleware explicitly handles CORS for /static paths.
     """
     # Handle preflight OPTIONS requests for static files
-    if request.method == "OPTIONS" and request.url.path.startswith("/static"):
+    if request.method == "OPTIONS" and (request.url.path.startswith("/static") or request.url.path.startswith("/tmp_uploads")):
         return Response(
             status_code=204,
             headers={
@@ -70,7 +70,7 @@ async def cors_static_files(request: Request, call_next):
     response = await call_next(request)
 
     # Inject CORS headers into static file responses
-    if request.url.path.startswith("/static"):
+    if request.url.path.startswith("/static") or request.url.path.startswith("/tmp_uploads"):
         response.headers["Access-Control-Allow-Origin"] = "*"
         response.headers["Access-Control-Allow-Methods"] = "GET, HEAD, OPTIONS"
         response.headers["Access-Control-Allow-Headers"] = "*"
@@ -80,7 +80,7 @@ async def cors_static_files(request: Request, call_next):
 
 # Ensure static and temp directories exist before mounting
 Path("static").mkdir(parents=True, exist_ok=True)
-tmp_uploads_path = "tmp/kureita_uploads"
+tmp_uploads_path = "/tmp/kureita_uploads"
 os.makedirs(tmp_uploads_path, exist_ok=True)
 
 # Mount static files for serving videos/images/audio

@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kureita — Asset Node Code Analysis</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        :root {
+            --bg: #ffffff;
+            --bg-card: #f8f8fa;
+            --bg-card-alt: #f1f1f5;
+            --bg-accent: #eeeef2;
+            --border: #e0e0e8;
+            --border-subtle: #ececf0;
+            --text: #1a1a2e;
+            --text-secondary: #4a4a65;
+            --text-muted: #8888a0;
+            --accent: #5b4cdb;
+            --accent-light: #5b4cdb;
+            --accent-glow: rgba(91, 76, 219, 0.07);
+            --green: #0d9668;
+            --green-bg: rgba(13, 150, 104, 0.07);
+            --red: #c0392b;
+            --red-bg: rgba(192, 57, 43, 0.06);
+            --amber: #b8860b;
+            --amber-bg: rgba(184, 134, 11, 0.07);
+            --blue: #2e7bbf;
+            --blue-bg: rgba(46, 123, 191, 0.07);
+            --radius: 10px;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.75;
+            -webkit-font-smoothing: antialiased;
+            font-size: 15px;
+        }
+
+        .page-wrapper {
+            min-height: 100vh;
+        }
+
+        .sidebar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 240px;
+            height: 100vh;
+            overflow-y: auto;
+            border-right: 1px solid var(--border);
+            padding: 32px 0;
+            background: var(--bg-card);
+            z-index: 100;
+        }
+
+        .sidebar::-webkit-scrollbar {
+            width: 3px;
+        }
+
+        .sidebar::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 3px;
+        }
+
+        .sidebar-title {
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1.8px;
+            color: var(--text-muted);
+            padding: 0 20px;
+            margin-bottom: 16px;
+        }
+
+        .toc {
+            list-style: none;
+        }
+
+        .toc li a {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 9px 20px;
+            font-size: 12.5px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            text-decoration: none;
+            border-left: 2px solid transparent;
+            transition: all 0.15s;
+        }
+
+        .toc li a:hover {
+            color: var(--accent-light);
+            background: var(--accent-glow);
+            border-left-color: var(--accent);
+        }
+
+        .toc li a .toc-num {
+            font-size: 10px;
+            font-weight: 700;
+            color: var(--text-muted);
+            min-width: 16px;
+        }
+
+        .main {
+            margin-left: 240px;
+            max-width: 860px;
+            padding: 48px 56px 80px;
+        }
+
+        .header-section {
+            margin-bottom: 48px;
+            padding-bottom: 32px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .header-section h1 {
+            font-size: 28px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+            margin-bottom: 6px;
+        }
+
+        .header-section .subtitle {
+            color: var(--text-muted);
+            font-size: 14px;
+            font-weight: 400;
+        }
+
+        .header-section .date {
+            color: var(--text-muted);
+            font-size: 12px;
+            margin-top: 8px;
+        }
+
+        .section {
+            margin-bottom: 44px;
+        }
+
+        .section-title {
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 18px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+
+        .section-title i {
+            color: var(--accent);
+            font-size: 14px;
+        }
+
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius);
+            padding: 20px 24px;
+            margin-bottom: 14px;
+        }
+
+        .card-title {
+            font-size: 13px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        p,
+        li {
+            font-size: 14px;
+            color: var(--text-secondary);
+        }
+
+        li {
+            margin-bottom: 4px;
+        }
+
+        ul {
+            padding-left: 20px;
+            margin-top: 6px;
+        }
+
+        code {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            background: var(--bg-accent);
+            padding: 2px 6px;
+            border-radius: 4px;
+            color: var(--accent);
+        }
+
+        .tag {
+            display: inline-block;
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            padding: 3px 8px;
+            border-radius: 5px;
+        }
+
+        .tag-bug {
+            background: var(--red-bg);
+            color: var(--red);
+        }
+
+        .tag-medium {
+            background: var(--amber-bg);
+            color: var(--amber);
+        }
+
+        .tag-low {
+            background: var(--blue-bg);
+            color: var(--blue);
+        }
+
+        .tag-ok {
+            background: var(--green-bg);
+            color: var(--green);
+        }
+
+        .flow-box {
+            background: var(--bg-card-alt);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius);
+            padding: 14px 18px;
+            margin: 10px 0;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            color: var(--text-secondary);
+            line-height: 1.9;
+            white-space: pre-wrap;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 12px 0;
+            font-size: 13px;
+        }
+
+        th,
+        td {
+            text-align: left;
+            padding: 10px 14px;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+
+        th {
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-muted);
+            background: var(--bg-card);
+        }
+
+        td {
+            color: var(--text-secondary);
+        }
+
+        td code {
+            font-size: 11px;
+        }
+
+        .verdict {
+            font-weight: 600;
+            font-size: 13px;
+            margin-top: 8px;
+        }
+
+        .verdict.pass {
+            color: var(--green);
+        }
+
+        .verdict.fail {
+            color: var(--red);
+        }
+
+        @media (max-width: 900px) {
+            .sidebar {
+                display: none;
+            }
+
+            .main {
+                margin-left: 0;
+                padding: 32px 20px 60px;
+            }
+        }
+    </style>
+
+
+</head>
+
+<body>
+    <div class="page-wrapper">
+
+        <!-- Sidebar -->
+        <nav class="sidebar">
+            <div class="sidebar-title">Asset Node Analysis</div>
+            <ul class="toc">
+                <li><a href="#overview"><span class="toc-num">01</span> Overview</a></li>
+                <li><a href="#image-upload"><span class="toc-num">02</span> Image Upload</a></li>
+                <li><a href="#video-upload"><span class="toc-num">03</span> Video Upload</a></li>
+                <li><a href="#ai-assistant"><span class="toc-num">04</span> AI Assistant</a></li>
+                <li><a href="#issues"><span class="toc-num">05</span> Issues Found</a></li>
+                <li><a href="#files"><span class="toc-num">06</span> Key Files</a></li>
+            </ul>
+        </nav>
+
+        <!-- Main Content -->
+        <div class="main">
+
+            <div class="header-section">
+                <h1>Asset Node — Code Analysis</h1>
+                <div class="subtitle">Upload flows for image & video via canvas tool node and AI assistant</div>
+                <div class="date">March 9, 2026</div>
+            </div>
+
+            <!-- 01 Overview -->
+            <div class="section" id="overview">
+                <div class="section-title"><i class="fa-solid fa-layer-group"></i> Overview</div>
+                <p>The <code>mediaUpload</code> node handles user-uploaded assets (images, videos, audio). Two entry
+                    points exist:</p>
+                <ul>
+                    <li><strong>Canvas tool node</strong> — user adds node via toolbar, then uploads a file directly.
+                    </li>
+                    <li><strong>AI assistant</strong> — user attaches files via paperclip or drag &amp; drop; the agent
+                        creates <code>mediaUpload</code> nodes automatically.</li>
+                </ul>
+                <p style="margin-top:10px;">Both paths use a single backend endpoint:
+                    <code>POST /api/assets/upload</code>, which delegates to <code>LocalStorageService</code> or
+                    <code>S3StorageService</code> based on the <code>STORAGE_TYPE</code> env var.</p>
+            </div>
+
+            <!-- 02 Image Upload -->
+            <div class="section" id="image-upload">
+                <div class="section-title"><i class="fa-solid fa-image"></i> Image Upload</div>
+
+                <div class="card">
+                    <div class="card-title"><i class="fa-solid fa-desktop" style="color:var(--blue)"></i> Local</div>
+                    <div class="flow-box">User selects file → POST /api/assets/upload
+
+                        → saved to tmp/kureita_uploads/{uuid}.{ext}
+                        → URL: {api_base_url}/tmp_uploads/{uuid}.{ext}
+                        → served via StaticFiles mount</div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title"><i class="fa-brands fa-aws" style="color:var(--amber)"></i> Production (S3)
+                    </div>
+                    <div class="flow-box">User selects file → POST /api/assets/upload
+
+                        → uploaded to s3://{bucket}/uploads/{YYYY/MM/DD}/{uuid}.{ext}
+                        → raw URL returned → displayed via presigned GET URL</div>
+                </div>
+
+                <p class="verdict pass"><i class="fa-solid fa-circle-check"></i> Working correctly in both environments.
+                </p>
+            </div>
+
+            <!-- 03 Video Upload -->
+            <div class="section" id="video-upload">
+                <div class="section-title"><i class="fa-solid fa-film"></i> Video Upload + Frame Extraction</div>
+
+                <p>Video upload follows the same path as images. After upload succeeds, the node auto-extracts
+                    <strong>start frame</strong> and <strong>end frame</strong>.</p>
+
+                <div class="card">
+                    <div class="card-title"><i class="fa-solid fa-camera" style="color:var(--green)"></i> Client-side
+                        extraction (primary)</div>
+                    <div class="flow-box">Upload completes → setTimeout 1s
+
+                        → extractFrameFromVideo(url, 0) → canvas toDataURL → base64 start frame
+                        → extractFrameFromVideo(url, 1) → canvas toDataURL → base64 end frame
+                        → POST /api/workflows/{id}/nodes/{nodeId}/extract-frames
+                        → backend decodes base64, saves via StorageService (local or S3)
+                        → stored as outputs.{nodeId}__start_frame / __end_frame in MongoDB</div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title"><i class="fa-solid fa-server" style="color:var(--text-muted)"></i>
+                        Server-side fallback (headless runs)</div>
+                    <div class="flow-box">_resolve_inputs() checks outputs for {nodeId}__start_frame
+
+                        → if missing, falls back to ffmpeg/ffprobe extraction
+                        → downloads video → extracts frame → returns base64</div>
+                    <p style="margin-top:8px;"><span class="tag tag-bug">Bug</span> Fallback only triggers for
+                        <code>videoGen</code> nodes, not <code>mediaUpload</code>.</p>
+                </div>
+
+                <p class="verdict fail"><i class="fa-solid fa-triangle-exclamation"></i> Partial — client path works,
+                    server fallback broken for mediaUpload.</p>
+            </div>
+
+            <!-- 04 AI Assistant -->
+            <div class="section" id="ai-assistant">
+                <div class="section-title"><i class="fa-solid fa-robot"></i> AI Assistant (Attachment &amp; Drag/Drop)
+                </div>
+
+                <div class="card">
+                    <div class="card-title"><i class="fa-solid fa-paperclip" style="color:var(--accent)"></i> Paperclip
+                        / Drag &amp; Drop</div>
+                    <div class="flow-box">User attaches file (paperclip or drag&amp;drop)
+
+                        → validated against allowlist (jpeg, png, webp, gif, mp4, webm, mov)
+                        → blob preview created → stored as pendingAttachment
+                        → on submit: uploaded to POST /api/assets/upload
+                        → message constructed: [Attached: file.mp4] (video/mp4) - URL: https://...
+                        → sent to agent → agent creates mediaUpload node with that URL</div>
+                </div>
+
+                <p class="verdict pass"><i class="fa-solid fa-circle-check"></i> Working correctly. Upload, message
+                    format, and agent interpretation all consistent.</p>
+            </div>
+
+            <!-- 05 Issues -->
+            <div class="section" id="issues">
+                <div class="section-title"><i class="fa-solid fa-bug"></i> Issues Found</div>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Severity</th>
+                            <th>Area</th>
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>1</td>
+                            <td><span class="tag tag-bug">Bug</span></td>
+                            <td>Server</td>
+                            <td>Frame extraction fallback in <code>_resolve_inputs</code> only checks
+                                <code>videoGen</code> — skips <code>mediaUpload</code> nodes entirely. Headless runs
+                                lose start/end frames.</td>
+                        </tr>
+                        <tr>
+                            <td>2</td>
+                            <td><span class="tag tag-medium">Medium</span></td>
+                            <td>Prod</td>
+                            <td>Client frame extraction uses raw S3 URL with <code>crossOrigin="anonymous"</code>. If S3
+                                bucket CORS isn't configured, canvas is tainted and extraction fails silently.</td>
+                        </tr>
+                        <tr>
+                            <td>3</td>
+                            <td><span class="tag tag-medium">Medium</span></td>
+                            <td>UX</td>
+                            <td>Agent sidebar rejects audio files (<code>accept="image/*,video/*"</code>) but the canvas
+                                MediaUploadNode accepts <code>audio/*</code>. Inconsistent behavior.</td>
+                        </tr>
+                        <tr>
+                            <td>4</td>
+                            <td><span class="tag tag-medium">Medium</span></td>
+                            <td>UX</td>
+                            <td>MediaUploadNode shows "Drag &amp; drop or click to browse" but has zero drag/drop
+                                handlers. Only click works.</td>
+                        </tr>
+                        <tr>
+                            <td>5</td>
+                            <td><span class="tag tag-medium">Medium</span></td>
+                            <td>Race</td>
+                            <td><code>extractFrames</code> endpoint reads video URL from DB, but the auto-save may not
+                                have flushed yet (1s delay). Can return 400.</td>
+                        </tr>
+                        <tr>
+                            <td>6</td>
+                            <td><span class="tag tag-medium">Medium</span></td>
+                            <td>Local</td>
+                            <td>CORS middleware covers <code>/static</code> paths but not <code>/tmp_uploads</code>.
+                                Local video frame extraction may fail with tainted canvas.</td>
+                        </tr>
+                        <tr>
+                            <td>7</td>
+                            <td><span class="tag tag-low">Low</span></td>
+                            <td>UX</td>
+                            <td>No upload progress indicator for large video files — only a boolean spinner.</td>
+                        </tr>
+                        <tr>
+                            <td>8</td>
+                            <td><span class="tag tag-low">Low</span></td>
+                            <td>Server</td>
+                            <td><code>_run_media_upload_node</code> doesn't return frames (by design), making headless
+                                runs dependent on prior client extraction.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- 06 Key Files -->
+            <div class="section" id="files">
+                <div class="section-title"><i class="fa-solid fa-folder-tree"></i> Key Files</div>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>File</th>
+                            <th>Role</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>apps/web/.../nodes/media-upload-node.tsx</code></td>
+                            <td>Canvas asset node — upload UI, frame extraction trigger</td>
+                        </tr>
+                        <tr>
+                            <td><code>apps/web/.../agent-sidebar.tsx</code></td>
+                            <td>AI chat — attachment, drag/drop, upload on submit</td>
+                        </tr>
+                        <tr>
+                            <td><code>apps/web/src/lib/video-utils.ts</code></td>
+                            <td>Client-side frame extraction via canvas</td>
+                        </tr>
+                        <tr>
+                            <td><code>apps/web/src/lib/workflow-api.ts</code></td>
+                            <td>API client — <code>extractFrames()</code></td>
+                        </tr>
+                        <tr>
+                            <td><code>apps/api/.../endpoints/assets.py</code></td>
+                            <td>Upload endpoint — <code>POST /api/assets/upload</code></td>
+                        </tr>
+                        <tr>
+                            <td><code>apps/api/.../services/storage_service.py</code></td>
+                            <td>Local + S3 storage implementations</td>
+                        </tr>
+                        <tr>
+                            <td><code>apps/api/.../services/node_runner.py</code></td>
+                            <td>Node execution — <code>_run_media_upload_node</code>, frame fallback</td>
+                        </tr>
+                        <tr>
+                            <td><code>apps/api/.../endpoints/workflow.py</code></td>
+                            <td>Extract-frames endpoint, frame persistence</td>
+                        </tr>
+                        <tr>
+                            <td><code>apps/api/main.py</code></td>
+                            <td>CORS middleware, static file mounts</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+        </div>
+    </div>
+
+
+</body>
+
+</html>

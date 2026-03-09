@@ -40,7 +40,7 @@ class LocalStorageService(StorageService):
     """Stores files in the local static directory."""
     
     def __init__(self):
-        self.upload_dir = Path("tmp/kureita_uploads")
+        self.upload_dir = Path("/tmp/kureita_uploads")
         self.upload_dir.mkdir(parents=True, exist_ok=True)
         # Ensure other static dirs exist too, just in case
         Path("static/videos").mkdir(parents=True, exist_ok=True)

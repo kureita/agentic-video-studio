@@ -594,10 +594,6 @@ async def extract_frames(
         raise HTTPException(status_code=404, detail="Workflow not found")
     
     outputs = workflow.get("outputs", {})
-    video_url = outputs.get(node_id)
-    
-    if not video_url or not isinstance(video_url, str):
-        raise HTTPException(status_code=400, detail="Node has no video output to extract frames from")
     
     # Return cached frames if already extracted
     existing_start = outputs.get(f"{node_id}__start_frame")
