@@ -9,6 +9,7 @@ import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { workflowApi } from "@/lib/workflow-api";
 import { extractFrameFromVideo } from "@/lib/video-utils";
+import { ALLOWED_MEDIA_TYPES } from "@/lib/utils";
 
 export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
     const { deleteElements } = useReactFlow();
@@ -102,6 +103,11 @@ export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
     };
 
     const processFile = async (file: File) => {
+        if (!ALLOWED_MEDIA_TYPES.includes(file.type)) {
+            toast.error("Format not supported. Please use accepted image, video, or audio formats.");
+            return;
+        }
+
         setIsUploading(true);
         setUploadProgress(0);
         const { setNodes, nodes } = useWorkflowStore.getState();
@@ -188,16 +194,24 @@ export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
         await processFile(file);
     };
 
-    const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    const handleDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
         e.preventDefault();
         e.stopPropagation();
         setIsDragOver(true);
     };
 
+    const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!isDragOver) setIsDragOver(true);
+    };
+
     const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
         e.preventDefault();
         e.stopPropagation();
-        setIsDragOver(false);
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+            setIsDragOver(false);
+        }
     };
 
     const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
@@ -340,6 +354,7 @@ export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
                     <div
                         className={`flex-1 flex flex-col items-center justify-center p-4 transition-colors cursor-pointer group/upload relative overflow-hidden ${isDragOver ? "bg-primary/5 border-primary" : "bg-muted/20 hover:bg-muted/40"}`}
                         onClick={handleUploadClick}
+                        onDragEnter={handleDragEnter}
                         onDragOver={handleDragOver}
                         onDragLeave={handleDragLeave}
                         onDrop={handleDrop}
@@ -367,7 +382,7 @@ export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
                                     <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500/20 to-blue-500/5 flex items-center justify-center mb-3 shadow-inner group-hover/upload:scale-110 transition-transform duration-300">
                                         <Upload className="w-5 h-5 text-blue-500" />
                                     </div>
-                                    <p className="text-xs font-medium text-foreground mb-1">Upload Image or Video</p>
+                                    <p className="text-xs font-medium text-foreground mb-1">Upload Image, Video or Audio</p>
                                 </>
                             )}
                             {!isUploading && (
@@ -384,6 +399,10 @@ export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
                                     <Video className="w-2.5 h-2.5" />
                                     <span>MP4, MOV</span>
                                 </div>
+                                <div className="flex items-center gap-1 px-2 py-1 rounded bg-muted/50 text-[9px] text-muted-foreground">
+                                    <Music className="w-2.5 h-2.5" />
+                                    <span>MP3, WAV</span>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -394,7 +413,7 @@ export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
             <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/*,video/*,audio/*"
+                accept={ALLOWED_MEDIA_TYPES.join(',')}
                 onChange={handleFileSelect}
                 className="hidden"
             />

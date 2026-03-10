@@ -1,39 +1,31 @@
-
 import json
 import os
 import time
 from typing import Dict, Any, List, Optional
 from pydantic import BaseModel
-from google import genai
-from google.genai import types
 from openai import AsyncOpenAI
-from anthropic import AsyncAnthropic
 
 from app.core.config import settings
 from app.services.firecrawl_service import FirecrawlService
 
 class AgentService:
     def __init__(self):
-        self.google_api_key = settings.google_ai_key
-        self.openai_api_key = settings.openai_api_key
-        self.anthropic_api_key = settings.anthropic_api_key
+        self.openrouter_api_key = settings.openrouter_api_key
         
-        self.google_client = None
-        if self.google_api_key:
-            os.environ["GEMINI_API_KEY"] = self.google_api_key
-            self.google_client = genai.Client()
-            
-        self.openai_client = None
-        if self.openai_api_key:
-            self.openai_client = AsyncOpenAI(api_key=self.openai_api_key)
-            
-        self.anthropic_client = None
-        if self.anthropic_api_key:
-            self.anthropic_client = AsyncAnthropic(api_key=self.anthropic_api_key)
+        self.openrouter_client = None
+        if self.openrouter_api_key:
+            self.openrouter_client = AsyncOpenAI(
+                base_url="https://openrouter.ai/api/v1",
+                api_key=self.openrouter_api_key,
+                default_headers={
+                    "HTTP-Referer": settings.api_base_url,
+                    "X-Title": "Kureita"
+                }
+            )
             
         self.firecrawl_service = FirecrawlService()
-            
-    async def generate_workflow(self, prompt: str, model: str = "Gemini 2.5 Flash", current_nodes: List[Dict] = [], current_edges: List[Dict] = [], chat_history: List[Dict] = []) -> Dict[str, Any]:
+        
+    async def generate_workflow(self, prompt: str, model: str = "Gemini 3.1 Flash Lite Preview (Low)", current_nodes: List[Dict] = [], current_edges: List[Dict] = [], chat_history: List[Dict] = []) -> Dict[str, Any]:
         """
         Generate a workflow based on a user prompt using the selected model.
         """
@@ -48,13 +40,23 @@ class AgentService:
             "edges": []
         }
         
+        # Define OpenRouter mapping
+        MODEL_MAPPING = {
+            "Gemini 3.1 Pro Preview (High)": "google/gemini-3.1-pro-preview",
+            "Gemini 3.1 Flash Lite Preview (Low)": "google/gemini-3.1-flash-lite-preview",
+            "Claude 4.6 Opus (High)": "anthropic/claude-opus-4.6",
+            "Claude 4.6 Sonnet (Medium)": "anthropic/claude-sonnet-4.6",
+            "Claude 4.5 Haiku (Low)": "anthropic/claude-haiku-4.5",
+            "GPT-5.4 Pro (High)": "openai/gpt-5.4-pro",
+            "GPT-5 Mini (Medium)": "openai/gpt-5-mini",
+            "GPT-5 Nano (Low)": "openai/gpt-5-nano"
+        }
+        
         # Verify Key Availability
-        if "Gemini" in model and not self.google_client:
+        if not self.openrouter_client:
              return failure_response
-        if "GPT" in model and not self.openai_client:
-             return failure_response
-        if "Claude" in model and not self.anthropic_client:
-             return failure_response
+             
+        mapped_model = MODEL_MAPPING.get(model, "google/gemini-3.1-flash-lite-preview")
 
         start_prompt = f"""
 You are an expert AI Video Agent that builds workflows for a visual node-based video generation studio.
@@ -216,6 +218,7 @@ Every `text` node prompt for a scene MUST follow this exact structure:
 - You MUST create a `mediaUpload` node for EVERY attached file.
 - The `mediaType` of the `mediaUpload` node should be set to `"video"`, `"audio"`, or `"image"` based on the attachment `(type)`.
 - The `output` field of the `mediaUpload` node `data` MUST be set to the exact provided `URL`.
+- **NEVER call `search_web` on attachment URLs.** These are private S3 links that are only accessible by the system internally. Do NOT try to fetch, scrape, or visit them. Just copy them verbatim into the `output` field.
 - ALWAYS connect this new `mediaUpload` node to an appropriate downstream node:
   - If they attach a video and ask to edit it: Connect its `video|output` to `editorAgent`'s `video|ref_videos`.
   - If they attach an image and want to animate it: Connect its `image|output` to `videoGen`'s `image|start_image`.
@@ -268,6 +271,7 @@ the generator node's prompt/instruction field MUST reference the connected text 
 
 ## 11. PROACTIVE WEB SEARCH (MANDATORY)
 **RULE: If the user mentions ANY website URL or domain name (e.g., "regulify.ai", "example.com", https://...), you MUST call the `search_web` tool IMMEDIATELY to fetch and read its content. Do NOT ask the user for permission. Do NOT skip this step.**
+- **EXCEPTION:** NEVER call `search_web` on S3 URLs or attachment URLs (e.g., URLs containing `.s3.`, `.s3-`, `s3.amazonaws.com`, or URLs from `[Attached: ...]` lines). These are private internal storage links and will return AccessDenied. Just use them directly in `mediaUpload` node `output` fields.
 - **Query format**: Pass ONLY the bare domain or URL as the query — e.g., `"regulify.ai"` or `"https://regulify.ai"`. Do NOT add `site:` operators, `OR`, or any other modifiers. The backend handles scraping automatically.
 - Use the scraped content (brand, tagline, features, visuals) to ground your response in real, accurate information.
 - After fetching, summarize what you found in your `thinking` field, and reference it in your `message`.
@@ -342,146 +346,13 @@ Note: If `action` is "update", you ONLY need to return the `updates` object. Lea
             
             token_usage = {"input": 0, "output": 0}
             
-            if "Gemini" in model:
-                # Map frontend string to actual valid genai model string
-                mapped_model = 'gemini-3.1-pro-preview' if '(High)' in model else 'gemini-3-pro-preview' if '(Medium)' in model else 'gemini-3-flash-preview'
-                
-                # Gemini native tool calling requires a python function reference
-                async def search_web(query: str) -> str:
-                    """Searches the web for current information, news, or facts to help answer user queries or build context."""
-                    return await self.firecrawl_service.search_web(query)
-
-                # First pass - might just return text, or might return a function call
-                response = self.google_client.models.generate_content(
-                    model=mapped_model,
-                    contents=start_prompt,
-                    config=types.GenerateContentConfig(
-                        response_mime_type='application/json',
-                        max_output_tokens=65536,
-                        tools=[search_web]
-                    )
-                )
-
-                # Check if Gemini actually decided to call the tool
-                if response.function_calls:
-                    for function_call in response.function_calls:
-                        if function_call.name == "search_web":
-                            query = function_call.args.get("query")
-                            print(f"[Gemini] Executing Tool Call: search_web(query='{query}')")
-                            
-                            # Execute the search
-                            search_result = await self.firecrawl_service.search_web(query)
-                            
-                            # Second pass - send the result back to Gemini
-                            # Constructing the expected structure for Gemini's function response
-                            function_response_part = types.Part.from_function_response(
-                                name="search_web",
-                                response={"result": search_result}
-                            )
-                            
-                            response = self.google_client.models.generate_content(
-                                model=mapped_model,
-                                contents=[
-                                    start_prompt,
-                                    types.Part.from_function_call(name="search_web", args={"query": query}),
-                                    function_response_part
-                                ],
-                                config=types.GenerateContentConfig(
-                                    response_mime_type='application/json',
-                                    max_output_tokens=65536,
-                                    tools=[search_web]
-                                )
-                            )
-                
-                if hasattr(response, 'usage_metadata') and response.usage_metadata:
-                    token_usage["input"] += getattr(response.usage_metadata, 'prompt_token_count', 0)
-                    token_usage["output"] += getattr(response.usage_metadata, 'candidates_token_count', 0)
-                
-                response_text = response.text
-                
-            elif "GPT" in model:
-                # Map frontend string to actual model string
-                mapped_model = 'gpt-5.2-pro' if '(High)' in model else 'gpt-5-mini' if '(Medium)' in model else 'gpt-4.1-nano'
-                
-                tools = [
-                    {
-                        "type": "function",
-                        "function": {
-                            "name": "search_web",
-                            "description": "Searches the web for current information, news, or facts to help answer user queries or build context.",
-                            "parameters": {
-                                "type": "object",
-                                "properties": {
-                                    "query": {
-                                        "type": "string",
-                                        "description": "The search query to look up on the internet."
-                                    }
-                                },
-                                "required": ["query"]
-                            }
-                        }
-                    }
-                ]
-
-                messages = [
-                    {"role": "system", "content": "You must respond with valid JSON only."},
-                    {"role": "user", "content": start_prompt}
-                ]
-                
-                response = await self.openai_client.chat.completions.create(
-                    model=mapped_model,
-                    messages=messages,
-                    response_format={"type": "json_object"},
-                    tools=tools
-                )
-                
-                # Check for tool call
-                response_message = response.choices[0].message
-                if response_message.tool_calls:
-                    messages.append(response_message)
-                    
-                    for tool_call in response_message.tool_calls:
-                        if tool_call.function.name == "search_web":
-                            args = json.loads(tool_call.function.arguments)
-                            query = args.get("query")
-                            print(f"[OpenAI] Executing Tool Call: search_web(query='{query}')")
-                            
-                            # Execute search
-                            search_result = await self.firecrawl_service.search_web(query)
-                            
-                            messages.append({
-                                "role": "tool",
-                                "tool_call_id": tool_call.id,
-                                "name": "search_web",
-                                "content": search_result
-                            })
-                            
-                    # Second pass
-                    response = await self.openai_client.chat.completions.create(
-                        model=mapped_model,
-                        messages=messages,
-                        response_format={"type": "json_object"},
-                        tools=tools
-                    )
-                
-                if hasattr(response, 'usage') and response.usage:
-                    token_usage["input"] += getattr(response.usage, 'prompt_tokens', 0)
-                    token_usage["output"] += getattr(response.usage, 'completion_tokens', 0)
-                
-                response_text = response.choices[0].message.content
-                
-            elif "Claude" in model:
-                # Map frontend string to actual model string
-                mapped_model = 'claude-opus-4-6' if '(High)' in model else 'claude-sonnet-4-6' if '(Medium)' in model else 'claude-haiku-4-5'
-                
-                # Claude doesn't have native JSON mode in this endpoint format but strictly follows instructions
-                claude_prompt = start_prompt + "\n\nCRITICAL: You must return ONLY the raw JSON object. Do not wrap it in markdown block quotes (```json...```). Return just the JSON structure starting with {"
-                
-                tools = [
-                    {
+            tools = [
+                {
+                    "type": "function",
+                    "function": {
                         "name": "search_web",
-                        "description": "Searches the web for current information, news, or facts.",
-                        "input_schema": {
+                        "description": "Searches the web for current information, news, or facts to help answer user queries or build context.",
+                        "parameters": {
                             "type": "object",
                             "properties": {
                                 "query": {
@@ -492,58 +363,56 @@ Note: If `action` is "update", you ONLY need to return the `updates` object. Lea
                             "required": ["query"]
                         }
                     }
-                ]
-                
-                messages = [{"role": "user", "content": claude_prompt}]
-                
-                async with self.anthropic_client.messages.stream(
-                    model=mapped_model,
-                    max_tokens=32768,
-                    messages=messages,
-                    tools=tools
-                ) as stream:
-                    response = await stream.get_final_message()
-                
-                if response.stop_reason == "tool_use":
-                    # Append assistant's tool use message to history
-                    messages.append({"role": "assistant", "content": response.content})
-                    
-                    tool_results = []
-                    for content_block in response.content:
-                        if content_block.type == "tool_use" and content_block.name == "search_web":
-                            query = content_block.input["query"]
-                            print(f"[Claude] Executing Tool Call: search_web(query='{query}')")
-                            
-                            search_result = await self.firecrawl_service.search_web(query)
-                            
-                            # Provide the tool result
-                            tool_results.append({
-                                "type": "tool_result",
-                                "tool_use_id": content_block.id,
-                                "content": search_result
-                            })
-                    
-                    # Add results to messages
-                    messages.append({"role": "user", "content": tool_results})
-                    
-                    # Ping claude again for final answer
-                    async with self.anthropic_client.messages.stream(
-                        model=mapped_model,
-                        max_tokens=32768,
-                        messages=messages,
-                        tools=tools
-                    ) as stream:
-                        response = await stream.get_final_message()
+                }
+            ]
 
-                # Extract the text content from Anthropic's response blocks
-                response_text = ""
-                for block in response.content:
-                    if block.type == 'text':
-                        response_text += block.text
+            messages = [
+                {"role": "system", "content": "You must respond with valid JSON only."},
+                {"role": "user", "content": start_prompt}
+            ]
+            
+            # First pass
+            response = await self.openrouter_client.chat.completions.create(
+                model=mapped_model,
+                messages=messages,
+                response_format={"type": "json_object"} if not "claude" in mapped_model else None,
+                tools=tools
+            )
+            
+            # Check for tool call
+            response_message = response.choices[0].message
+            if response_message.tool_calls:
+                messages.append(response_message)
+                
+                for tool_call in response_message.tool_calls:
+                    if tool_call.function.name == "search_web":
+                        args = json.loads(tool_call.function.arguments)
+                        query = args.get("query")
+                        print(f"[OpenRouter - {mapped_model}] Executing Tool Call: search_web(query='{query}')")
                         
-                if hasattr(response, 'usage') and response.usage:
-                    token_usage["input"] += getattr(response.usage, 'input_tokens', 0)
-                    token_usage["output"] += getattr(response.usage, 'output_tokens', 0)
+                        # Execute search
+                        search_result = await self.firecrawl_service.search_web(query)
+                        
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "name": "search_web",
+                            "content": search_result
+                        })
+                        
+                # Second pass after tool responses
+                response = await self.openrouter_client.chat.completions.create(
+                    model=mapped_model,
+                    messages=messages,
+                    response_format={"type": "json_object"} if not "claude" in mapped_model else None,
+                    tools=tools
+                )
+            
+            if hasattr(response, 'usage') and response.usage:
+                token_usage["input"] += getattr(response.usage, 'prompt_tokens', 0)
+                token_usage["output"] += getattr(response.usage, 'completion_tokens', 0)
+            
+            response_text = response.choices[0].message.content
             
             elapsed_ms = int((time.time() - start_time) * 1000)
             

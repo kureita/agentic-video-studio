@@ -23,7 +23,7 @@ import {
     Workflow,
 } from "lucide-react";
 
-import { cn } from "@/lib/utils";
+import { cn, ALLOWED_MEDIA_TYPES } from "@/lib/utils";
 import Image from "next/image";
 import { S3Image } from "@/components/ui/s3-image";
 import { useWorkflowStore } from "@/lib/workflow-store";
@@ -717,14 +717,13 @@ function CursorInput({
                                         <div className="max-h-[240px] overflow-y-auto flex flex-col">
                                             {[
                                                 "Gemini 3.1 Pro Preview (High)",
-                                                "Gemini 3 Pro Preview (Medium)",
-                                                "Gemini 3 Flash Preview (Low)",
+                                                "Gemini 3.1 Flash Lite Preview (Low)",
                                                 "Claude 4.6 Opus (High)",
                                                 "Claude 4.6 Sonnet (Medium)",
                                                 "Claude 4.5 Haiku (Low)",
-                                                "GPT-5.2 Pro (High)",
+                                                "GPT-5.4 Pro (High)",
                                                 "GPT-5 Mini (Medium)",
-                                                "GPT-4.1 Nano (Low)"
+                                                "GPT-5 Nano (Low)"
                                             ].map((modelName) => (
                                                 <button
                                                     key={modelName}
@@ -867,21 +866,7 @@ export function AgentSidebar() {
     const handleFileUpload = async (files: FileList | null) => {
         if (!files || files.length === 0) return;
 
-        const allowedTypes = [
-            'image/jpeg',
-            'image/png',
-            'image/webp',
-            'image/gif',
-            'video/mp4',
-            'video/webm',
-            'video/quicktime', // .mov
-            'audio/mpeg',
-            'audio/wav',
-            'audio/ogg',
-            'audio/aac',
-            'audio/webm',
-            'audio/flac'
-        ];
+        const allowedTypes = ALLOWED_MEDIA_TYPES;
 
         const newAttachments: Attachment[] = [];
         let hasInvalidFiles = false;

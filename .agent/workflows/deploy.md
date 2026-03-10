@@ -18,7 +18,7 @@ description: How to deploy Kureita MVP — API to Lambda and Web to Amplify
 
 Open `apps/api/.env.prod` and replace all placeholder values with real production credentials:
 - `MONGODB_URL` → your production MongoDB Atlas connection string
-- `OPENAI_API_KEY`, `GEMINI_API_KEY`, `ELEVENLABS_API_KEY` → production keys
+- `OPENROUTER_API_KEY`, `ELEVENLABS_API_KEY` → production keys
 - `MONGODB_DATABASE` → set to `kureita` (or your preferred prod DB name)
 
 ### Step 2 — Get/Create an ACM Certificate (for custom domain)
@@ -80,8 +80,7 @@ After the stack deploys, go to the **AWS Lambda Console** → find `kureita-api-
 | `STORAGE_TYPE` | `s3` |
 | `MONGODB_URL` | *(your prod MongoDB URL)* |
 | `MONGODB_DATABASE` | `kureita` |
-| `OPENAI_API_KEY` | *(your key)* |
-| `GEMINI_API_KEY` | *(your key)* |
+| `OPENROUTER_API_KEY` | *(your key)* |
 | `ELEVENLABS_API_KEY` | *(your key)* |
 | `CORS_ORIGINS` | `https://app.kureita.com` |
 

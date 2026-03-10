@@ -11,8 +11,6 @@
     "dev": "turbo run dev",
     "dev:web": "cd apps/web && npm run dev",
     "dev:api": "cd apps/api && uv run uvicorn main:app --reload --port 8000",
-    "dev:remotion": "cd apps/remotion && npm run dev",
-    "remotion:server": "cd apps/remotion && npm run server",
     "build": "turbo run build",
     "lint": "turbo run lint",
     "clean": "turbo run clean"

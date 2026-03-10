@@ -6,7 +6,7 @@ import asyncio
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 
-from anthropic import AsyncAnthropic, APIStatusError
+from openai import AsyncOpenAI, RateLimitError, APIStatusError
 
 from app.core.config import settings
 
@@ -434,7 +434,17 @@ class EditorAgent:
     """
 
     def __init__(self):
-        self.client = AsyncAnthropic(api_key=settings.anthropic_api_key)
+        self.openrouter_api_key = settings.openrouter_api_key
+        self.client = None
+        if self.openrouter_api_key:
+            self.client = AsyncOpenAI(
+                base_url="https://openrouter.ai/api/v1",
+                api_key=self.openrouter_api_key,
+                default_headers={
+                    "HTTP-Referer": settings.api_base_url,
+                    "X-Title": "Kureita"
+                }
+            )
         # AWS Lambda has a read-only filesystem except for /tmp/.
         # Use /tmp/compositions/ on Lambda and static/compositions/ locally.
         if os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
@@ -442,7 +452,7 @@ class EditorAgent:
         else:
             self.compositions_dir = Path("static/compositions")
         self.compositions_dir.mkdir(parents=True, exist_ok=True)
-        print("[EditorAgent] Initialized (code-generation mode, Claude Opus 4.6)")
+        print("[EditorAgent] Initialized (code-generation mode, Claude Sonnet 4.6)")
 
     async def edit_video(
         self,
@@ -540,7 +550,7 @@ class EditorAgent:
         mode: Optional[str] = None,
         upstream_scenes: Optional[List[Dict[str, Any]]] = None,
     ) -> str:
-        """Use Anthropic Claude Opus 4.6 to write Remotion composition TSX code."""
+        """Use Anthropic Claude Sonnet 4.6 to write Remotion composition TSX code."""
 
         # Build input descriptions
         ref_videos = ref_videos or []
@@ -663,32 +673,40 @@ Return ONLY the TSX code. No markdown fences, no explanations. Do NOT use negati
 
         for attempt in range(1, max_retries + 1):
             try:
-                stream = await self.client.messages.create(
-                    model="claude-opus-4-6",
-                    max_tokens=128000,
-                    system=system_prompt,
-                    messages=[{"role": "user", "content": user_prompt}],
+                if not self.client:
+                    raise ValueError("OpenRouter API key is not configured.")
+
+                stream = await self.client.chat.completions.create(
+                    model="anthropic/claude-sonnet-4.6",
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
                     stream=True,
                 )
 
                 code_chunks = []
-                async for event in stream:
-                    if event.type == "content_block_delta" and event.delta.type == "text_delta":
-                        code_chunks.append(event.delta.text)
+                async for chunk in stream:
+                    if chunk.choices and len(chunk.choices) > 0:
+                        content = chunk.choices[0].delta.content
+                        if content:
+                            code_chunks.append(content)
 
                 code = "".join(code_chunks).strip()
                 break  # Success — exit retry loop
 
+            except RateLimitError as e:
+                if attempt < max_retries:
+                    delay = base_delay * (2 ** (attempt - 1))  # 5s, 10s, 20s
+                    print(f"[EditorAgent] Rate limit error, retrying in {delay}s (attempt {attempt}/{max_retries})...")
+                    await asyncio.sleep(delay)
+                else:
+                    raise
             except APIStatusError as e:
-                error_type = ""
-                if isinstance(e.body, dict):
-                    error_type = e.body.get("error", {}).get("type", "")
-
-                retryable = error_type in ("overloaded_error", "rate_limit_error") or e.status_code in (429, 529)
-
+                retryable = e.status_code in (429, 529, 502, 503, 504)
                 if retryable and attempt < max_retries:
                     delay = base_delay * (2 ** (attempt - 1))  # 5s, 10s, 20s
-                    print(f"[EditorAgent] Transient error ({error_type or e.status_code}), retrying in {delay}s (attempt {attempt}/{max_retries})...")
+                    print(f"[EditorAgent] Transient API error ({e.status_code}), retrying in {delay}s (attempt {attempt}/{max_retries})...")
                     await asyncio.sleep(delay)
                 else:
                     raise  # Non-retryable or final attempt — propagate

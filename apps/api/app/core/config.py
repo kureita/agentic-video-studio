@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""  # Can also use GOOGLE_API_KEY
     google_api_key: str = ""  # Alternative to GEMINI_API_KEY
     anthropic_api_key: str = ""
+    openrouter_api_key: str = ""
     use_mock_veo: bool = True  # Set to False to use real Veo API
     runware_api_key: str = ""  # For unified image/video/audio generation
     kling_access_key: str = ""

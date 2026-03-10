@@ -147,8 +147,13 @@ class S3StorageService(StorageService):
                 # Inline disposition for viewing in browser
                 extra_args['ContentDisposition'] = 'inline'
 
-            if isinstance(file_data, UploadFile):
-                # Read into memory fully to avoid SpooledTemporaryFile / boto3 coroutine issues
+            # Use hasattr instead of isinstance to handle UploadFile reliably
+            # across different ASGI servers (Mangum on Lambda may use a different
+            # UploadFile class path, causing isinstance to fail and the raw async
+            # file object to reach boto3, which then calls .read() synchronously
+            # and gets a coroutine → "object of type 'coroutine' has no len()")
+            if hasattr(file_data, 'read') and callable(file_data.read):
+                # It's an UploadFile or file-like object — read bytes first
                 file_bytes = await file_data.read()
                 self.s3_client.put_object(
                     Bucket=self.bucket,
@@ -157,6 +162,7 @@ class S3StorageService(StorageService):
                     **extra_args
                 )
             else:
+                # file_data is already bytes
                 self.s3_client.put_object(
                     Bucket=self.bucket,
                     Key=key,
