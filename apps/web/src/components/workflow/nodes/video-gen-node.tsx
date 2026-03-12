@@ -6,35 +6,41 @@ import { HighlightedTextarea } from "@/components/workflow/nodes/highlighted-tex
 import { usePresignedUrl } from "@/lib/use-presigned-url";
 import { workflowApi } from "@/lib/workflow-api";
 import { useWorkflowStore } from "@/lib/workflow-store";
+import { useModels } from "@/lib/use-models";
 import { toast } from "sonner";
 import { extractFrameFromVideo } from "@/lib/video-utils";
+import { motion, AnimatePresence } from "framer-motion";
+import { cn } from "@/lib/utils";
 
-const MODEL_CONFIGS: Record<string, { durations: string[], inputs: { id: string, label: string, type: "text" | "image" | "video" | "audio" }[] }> = {
-    "Veo 3.1": { durations: ["8s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }, { id: "end_image", label: "End Image", type: "image" }] },
-    "Veo 3.1 Fast": { durations: ["8s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }, { id: "end_image", label: "End Image", type: "image" }] },
-    "Veo 3": { durations: ["8s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }] },
-    "Veo 3 Fast": { durations: ["8s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }, { id: "end_image", label: "End Image", type: "image" }] },
-    "Veo 2": { durations: ["5s", "6s", "7s", "8s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }, { id: "end_image", label: "End Image", type: "image" }] },
-    "Kling 3.0 Standard": { durations: ["5s", "10s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }, { id: "end_image", label: "End Image", type: "image" }] },
-    "Kling 3.0 Pro": { durations: ["5s", "10s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }, { id: "end_image", label: "End Image", type: "image" }] },
-    "Kling 2.1 Master": { durations: ["5s", "10s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }, { id: "end_image", label: "End Image", type: "image" }] },
-    "Kling Lip Sync": { durations: ["5s", "10s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Video", type: "video" }, { id: "audio", label: "Audio", type: "audio" }] },
-    "Runway Gen-4.5": { durations: ["5s", "8s", "10s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }] },
-    "Runway Gen-4 Turbo": { durations: ["2s", "5s", "10s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }] },
-    "Seedance 1.5 Pro": { durations: ["4s", "5s", "8s", "10s", "12s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }, { id: "end_image", label: "End Image", type: "image" }] },
-    "Seedance 1.0 Pro": { durations: ["5s", "8s", "10s", "12s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }, { id: "end_image", label: "End Image", type: "image" }] },
-    "Seedance 1.0 Pro Fast": { durations: ["5s", "8s", "10s", "12s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }] },
-    "Seedance 1.0 Lite": { durations: ["5s", "8s", "10s", "12s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }, { id: "end_image", label: "End Image", type: "image" }] },
-    "Wan2.6": { durations: ["5s", "10s", "15s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }] },
-    "Wan2.6 Flash": { durations: ["3s", "5s", "10s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }] },
-    "Hailuo 2.3": { durations: ["6s", "10s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }] },
-    "Hailuo 2.3 Fast": { durations: ["6s", "10s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }] },
-    "PixVerse V5.6": { durations: ["5s", "8s", "10s"], inputs: [{ id: "text", label: "Text/Prompt", type: "text" }, { id: "start_image", label: "Start Image", type: "image" }, { id: "end_image", label: "End Image", type: "image" }] },
+const DEFAULT_INPUTS: { id: string, label: string, type: "text" | "image" | "video" | "audio" }[] = [
+    { id: "text", label: "Text/Prompt", type: "text" },
+    { id: "start_image", label: "Start Image", type: "image" },
+    { id: "end_image", label: "End Image", type: "image" }
+];
+
+const getCapabilitiesLabel = (capabilities: string[] = []) => {
+    const hasT2V = !!capabilities.find(c => c.toLowerCase() === "t2v");
+    const hasI2V = !!capabilities.find(c => c.toLowerCase() === "i2v");
+    const hasAudio = !!capabilities.find(c => c.toLowerCase() === "audio");
+
+    let label = "";
+    if (hasT2V && hasI2V) label = "Text to Video & Image to Video";
+    else if (hasI2V) label = "Image to Video";
+    else if (hasT2V) label = "Text to Video";
+
+    if (hasAudio) {
+        label += label ? " + Audio" : "Audio Generation";
+    }
+
+    return label;
 };
 
 export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
     const { deleteElements, updateNodeData } = useReactFlow();
     const { nodes, setNodes, runNode, clearNodeOutput, outputs, runningNodeId, setRawOutput } = useWorkflowStore();
+
+    const { models } = useModels();
+    const videoModels = models.filter(m => m.type === "video");
 
     // Derive workflowId from the URL query param: /dashboard/workflow?id=<workflowId>
     const workflowId = useMemo(() => new URLSearchParams(window.location.search).get('id') || '', []);
@@ -44,17 +50,28 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
     const [menuOpen, setMenuOpen] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
 
+    const [showModelMenu, setShowModelMenu] = useState(false);
+    const [showDurationMenu, setShowDurationMenu] = useState(false);
+    const modelMenuRef = useRef<HTMLDivElement>(null);
+    const durationMenuRef = useRef<HTMLDivElement>(null);
+
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
             if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
                 setMenuOpen(false);
             }
+            if (modelMenuRef.current && !modelMenuRef.current.contains(event.target as Node)) {
+                setShowModelMenu(false);
+            }
+            if (durationMenuRef.current && !durationMenuRef.current.contains(event.target as Node)) {
+                setShowDurationMenu(false);
+            }
         };
-        if (menuOpen) {
+        if (menuOpen || showModelMenu || showDurationMenu) {
             document.addEventListener("mousedown", handleClickOutside);
         }
         return () => document.removeEventListener("mousedown", handleClickOutside);
-    }, [menuOpen]);
+    }, [menuOpen, showModelMenu, showDurationMenu]);
 
     const isRunning = runningNodeId === id;
     const rawOutput = (outputs[id] as string | undefined) || (data.output as string | undefined);
@@ -138,26 +155,54 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
         );
     };
 
-    const currentModel = (typeof data.model === 'string' ? data.model : "Kling 3.0 Standard");
-    // Ensure the current model exists in configs, fallback to default
-    const config = MODEL_CONFIGS[currentModel] || MODEL_CONFIGS["Kling 3.0 Standard"];
+    const currentModel = (typeof data.model === 'string' ? data.model : (videoModels.length > 0 ? videoModels[0].name : "Google Veo 3.1"));
+    const configInputs = DEFAULT_INPUTS;
 
-    // Check if the current duration is valid for the model, otherwise update to default for model.
-    // However, during render we cannot safely update state synchronously without warnings, 
-    // so we just define the effective duration. The actual data sync happens on selection change.
-    const validDurations = config.durations;
-    const effectiveDuration = validDurations.includes(typeof data.duration === 'string' ? data.duration : "4s")
+    const selectedModelData = videoModels.find(m => m.name === currentModel);
+    let validDurations = ["5s", "8s", "10s"];
+    let validResolutions = ["720p", "1080p"];
+    if (selectedModelData && selectedModelData.configs) {
+        const d = Array.from(new Set(selectedModelData.configs.map(c => c.duration ? `${c.duration}s` : null).filter(Boolean)));
+        if (d.length > 0) validDurations = d as string[];
+
+        const r = Array.from(new Set(selectedModelData.configs.map(c => c.resolution).filter(Boolean)));
+        if (r.length > 0) validResolutions = r as string[];
+    }
+
+    const effectiveDuration = validDurations.includes(typeof data.duration === 'string' ? data.duration : "")
         ? (data.duration as string || validDurations[0])
         : validDurations[0];
 
+    const effectiveResolution = validResolutions.includes(typeof data.resolution === 'string' ? data.resolution : "")
+        ? (data.resolution as string || validResolutions[0])
+        : validResolutions[0];
+
     const handleModelChange = (newModel: string) => {
-        const newConfig = MODEL_CONFIGS[newModel] || MODEL_CONFIGS["Kling 3.0 Standard"];
+        const newModelData = videoModels.find(m => m.name === newModel);
+        let newValidDurations = ["5s", "8s", "10s"];
+        let newValidResolutions = ["720p", "1080p"];
+
+        if (newModelData && newModelData.configs) {
+            const d = Array.from(new Set(newModelData.configs.map(c => c.duration ? `${c.duration}s` : null).filter(Boolean)));
+            if (d.length > 0) newValidDurations = d as string[];
+
+            const r = Array.from(new Set(newModelData.configs.map(c => c.resolution).filter(Boolean)));
+            if (r.length > 0) newValidResolutions = r as string[];
+        }
+
         const currentDur = data.duration as string || "4s";
         let newDuration = currentDur;
-        if (!newConfig.durations.includes(currentDur)) {
-            newDuration = newConfig.durations[0];
+        if (!newValidDurations.includes(currentDur)) {
+            newDuration = newValidDurations[0];
         }
-        updateData({ model: newModel, duration: newDuration });
+
+        const currentRes = data.resolution as string || "720p";
+        let newResolution = currentRes;
+        if (!newValidResolutions.includes(currentRes)) {
+            newResolution = newValidResolutions[0];
+        }
+
+        updateData({ model: newModel, duration: newDuration, resolution: newResolution });
     };
 
     const handleDownload = () => {
@@ -260,7 +305,7 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
             )}`}
             icon={<Video className="w-4 h-4" />}
             selected={selected}
-            inputs={config.inputs}
+            inputs={configInputs}
             outputs={[
                 { id: "video", label: "Video", type: "video" },
                 {
@@ -396,51 +441,122 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
                 {/* Controls Bar */}
                 <div className="absolute bottom-3 left-3 right-3 flex items-center gap-1 opacity-0 group-hover/video:opacity-100 transition-all duration-300 translate-y-2 group-hover/video:translate-y-0 z-20">
                     {/* Duration Pill */}
-                    <div className="relative h-7 flex items-center gap-1.5 bg-black/60 backdrop-blur-md border border-white/10 rounded-full px-2 text-white/90 hover:bg-black/70 transition-colors flex-shrink-0">
-                        <Clock className="w-2.5 h-2.5 text-white/70 flex-shrink-0" />
-                        <span className="text-[10px] font-medium whitespace-nowrap">{effectiveDuration}</span>
-                        <ChevronDown className="w-2.5 h-2.5 text-white/50 flex-shrink-0" />
-                        <select
-                            className="absolute inset-0 opacity-0 cursor-pointer"
-                            value={effectiveDuration}
-                            onChange={(e) => updateData({ duration: e.target.value })}
+                    <div className="relative flex-shrink-0" ref={durationMenuRef}>
+                        <button
+                            onClick={() => {
+                                setShowDurationMenu(!showDurationMenu);
+                                setShowModelMenu(false);
+                                setMenuOpen(false);
+                            }}
+                            className={cn(
+                                "flex items-center gap-1.5 h-7 bg-black/60 backdrop-blur-md border border-white/10 rounded-full px-2 text-white/90 hover:bg-black/70 transition-colors cursor-pointer",
+                                showDurationMenu && "bg-black/80 border-white/20"
+                            )}
                         >
-                            {validDurations.map(d => (
-                                <option key={d} value={d}>{d}</option>
-                            ))}
-                        </select>
+                            <Clock className="w-2.5 h-2.5 text-white/70 flex-shrink-0" />
+                            <span className="text-[10px] font-medium whitespace-nowrap">{effectiveDuration}</span>
+                            <ChevronDown className="w-2.5 h-2.5 text-white/50 flex-shrink-0" />
+                        </button>
+
+                        <AnimatePresence>
+                            {showDurationMenu && (
+                                <motion.div
+                                    initial={{ opacity: 0, y: 4, scale: 0.96 }}
+                                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                                    exit={{ opacity: 0, y: 4, scale: 0.96 }}
+                                    transition={{ duration: 0.12 }}
+                                    className="absolute bottom-full left-0 mb-2 w-24 bg-black/90 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50 pointer-events-auto flex flex-col"
+                                >
+                                    <div className="px-3 py-2 text-[10px] font-semibold text-white/50 uppercase tracking-wider border-b border-white/10 bg-black/40">
+                                        Duration
+                                    </div>
+                                    <div className="flex flex-col p-1 nodrag nowheel">
+                                        {validDurations.map(d => (
+                                            <button
+                                                key={d}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    updateData({ duration: d });
+                                                    setShowDurationMenu(false);
+                                                }}
+                                                className={cn(
+                                                    "w-full text-left px-2.5 py-1.5 text-[11px] rounded-lg hover:bg-white/10 cursor-pointer transition-colors",
+                                                    effectiveDuration === d && "bg-white/15 text-white font-medium"
+                                                )}
+                                            >
+                                                <span className={cn(effectiveDuration !== d && "text-white/80")}>
+                                                    {d}
+                                                </span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
                     </div>
 
                     {/* Model Pill */}
-                    <div className="relative h-7 flex items-center gap-1.5 bg-black/60 backdrop-blur-md border border-white/10 rounded-full px-2 text-white/90 hover:bg-black/70 transition-colors min-w-0 flex-grow">
-                        <span className="text-[10px] font-medium truncate flex-grow text-left">{currentModel}</span>
-                        <ChevronDown className="w-2.5 h-2.5 text-white/50 flex-shrink-0" />
-                        <select
-                            className="absolute inset-0 opacity-0 cursor-pointer"
-                            value={currentModel}
-                            onChange={(e) => handleModelChange(e.target.value)}
+                    <div className="relative flex-grow min-w-0" ref={modelMenuRef}>
+                        <button
+                            onClick={() => {
+                                setShowModelMenu(!showModelMenu);
+                                setShowDurationMenu(false);
+                                setMenuOpen(false);
+                            }}
+                            className={cn(
+                                "flex items-center gap-1.5 h-7 w-full bg-black/60 backdrop-blur-md border border-white/10 rounded-full px-2 text-white/90 hover:bg-black/70 transition-colors cursor-pointer",
+                                showModelMenu && "bg-black/80 border-white/20"
+                            )}
                         >
-                            <option value="Veo 3.1">Veo 3.1</option>
-                            <option value="Veo 3.1 Fast">Veo 3.1 Fast</option>
-                            <option value="Veo 3">Veo 3</option>
-                            <option value="Veo 3 Fast">Veo 3 Fast</option>
-                            <option value="Veo 2">Veo 2</option>
-                            <option value="Kling 3.0 Standard">Kling 3.0 Standard</option>
-                            <option value="Kling 3.0 Pro">Kling 3.0 Pro</option>
-                            <option value="Kling 2.1 Master">Kling 2.1 Master</option>
-                            <option value="Kling Lip Sync">Kling Lip Sync</option>
-                            <option value="Runway Gen-4.5">Runway Gen-4.5</option>
-                            <option value="Runway Gen-4 Turbo">Runway Gen-4 Turbo</option>
-                            <option value="Seedance 1.5 Pro">Seedance 1.5 Pro</option>
-                            <option value="Seedance 1.0 Pro">Seedance 1.0 Pro</option>
-                            <option value="Seedance 1.0 Pro Fast">Seedance 1.0 Pro Fast</option>
-                            <option value="Seedance 1.0 Lite">Seedance 1.0 Lite</option>
-                            <option value="Wan2.6">Wan2.6</option>
-                            <option value="Wan2.6 Flash">Wan2.6 Flash</option>
-                            <option value="Hailuo 2.3">Hailuo 2.3</option>
-                            <option value="Hailuo 2.3 Fast">Hailuo 2.3 Fast</option>
-                            <option value="PixVerse V5.6">PixVerse V5.6</option>
-                        </select>
+                            <span className="text-[10px] font-medium truncate flex-grow text-left">{currentModel}</span>
+                            <ChevronDown className="w-2.5 h-2.5 text-white/50 flex-shrink-0" />
+                        </button>
+
+                        <AnimatePresence>
+                            {showModelMenu && (
+                                <motion.div
+                                    initial={{ opacity: 0, y: 4, scale: 0.96 }}
+                                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                                    exit={{ opacity: 0, y: 4, scale: 0.96 }}
+                                    transition={{ duration: 0.12 }}
+                                    className="absolute bottom-full left-0 mb-2 w-48 bg-black/90 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50 pointer-events-auto flex flex-col"
+                                >
+                                    <div className="px-3 py-2 text-[10px] font-semibold text-white/50 uppercase tracking-wider border-b border-white/10 bg-black/40">
+                                        Model
+                                    </div>
+                                    <div className="max-h-[160px] overflow-y-auto flex flex-col p-1 nodrag nowheel">
+                                        {videoModels.map(m => (
+                                            <button
+                                                key={m.id}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    handleModelChange(m.name);
+                                                    setShowModelMenu(false);
+                                                }}
+                                                className={cn(
+                                                    "w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-white/10 cursor-pointer flex items-center justify-between transition-colors",
+                                                    currentModel === m.name && "bg-white/15 text-white"
+                                                )}
+                                            >
+                                                <div className="flex flex-col gap-0.5">
+                                                    <span className={cn("text-[11px] font-medium", currentModel !== m.name && "text-white/80")}>
+                                                        {m.name}
+                                                    </span>
+                                                    {getCapabilitiesLabel(m.capabilities) && (
+                                                        <span className="text-white/40 text-[9px] leading-tight">
+                                                            {getCapabilitiesLabel(m.capabilities)}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </button>
+                                        ))}
+                                        {videoModels.length === 0 && (
+                                            <div className="px-3 py-2 text-[11px] text-white/50 italic">No models available</div>
+                                        )}
+                                    </div>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
                     </div>
 
                     {/* Kebab Menu for Settings */}
@@ -449,53 +565,85 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
                         ref={menuRef}
                     >
                         <button
-                            className="h-7 w-7 flex items-center justify-center bg-black/60 backdrop-blur-md border border-white/10 rounded-full text-white/90 hover:bg-black/70 transition-colors"
+                            className={cn(
+                                "h-7 w-7 flex items-center justify-center bg-black/60 backdrop-blur-md border border-white/10 rounded-full text-white/90 hover:bg-black/70 transition-colors cursor-pointer",
+                                menuOpen && "bg-black/80 border-white/20"
+                            )}
                             onClick={(e) => {
                                 e.stopPropagation();
                                 setMenuOpen(!menuOpen);
+                                setShowModelMenu(false);
+                                setShowDurationMenu(false);
                             }}
                         >
                             <MoreVertical className="w-3.5 h-3.5" />
                         </button>
 
-                        {menuOpen && (
-                            <div className="absolute bottom-full right-0 mb-2 w-32 bg-black/80 backdrop-blur-md border border-white/10 rounded-lg p-2 flex flex-col gap-2.5 z-50 shadow-xl pointer-events-auto">
-                                <div className="text-[10px] font-medium text-white/50 uppercase tracking-wider px-1">Settings</div>
+                        <AnimatePresence>
+                            {menuOpen && (
+                                <motion.div
+                                    initial={{ opacity: 0, y: 4, scale: 0.96 }}
+                                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                                    exit={{ opacity: 0, y: 4, scale: 0.96 }}
+                                    transition={{ duration: 0.12 }}
+                                    className="absolute bottom-full right-0 mb-2 w-40 bg-black/90 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50 pointer-events-auto flex flex-col p-2 gap-3"
+                                >
+                                    <div className="text-[10px] font-medium text-white/50 uppercase tracking-wider px-1">Settings</div>
 
-                                {/* Ratio Dropdown in Menu */}
-                                <div className="flex flex-col gap-1.5">
-                                    <label className="text-[10px] text-white/70 flex items-center gap-1.5 px-1">
-                                        <Square className="w-3 h-3" /> Ratio
-                                    </label>
-                                    <select
-                                        className="bg-black/60 text-white/90 text-[10px] rounded border border-white/10 p-1.5 outline-none cursor-pointer w-full"
-                                        value={typeof data.ratio === 'string' ? data.ratio : "16:9"}
-                                        onChange={(e) => updateData({ ratio: e.target.value })}
-                                        onClick={(e) => e.stopPropagation()}
-                                    >
-                                        <option value="16:9">16:9</option>
-                                        <option value="9:16">9:16</option>
-                                        <option value="1:1">1:1</option>
-                                    </select>
-                                </div>
+                                    {/* Ratio Dropdown in Menu */}
+                                    <div className="flex flex-col gap-1.5 nodrag nowheel">
+                                        <label className="text-[10px] text-white/70 flex items-center gap-1.5 px-1">
+                                            <Square className="w-3 h-3" /> Ratio
+                                        </label>
+                                        <div className="flex flex-wrap gap-1">
+                                            {["16:9", "9:16", "1:1"].map((r) => (
+                                                <button
+                                                    key={r}
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        updateData({ ratio: r });
+                                                    }}
+                                                    className={cn(
+                                                        "px-2 py-1 text-[10px] rounded border transition-colors cursor-pointer flex-grow text-center",
+                                                        (typeof data.ratio === 'string' ? data.ratio : "16:9") === r
+                                                            ? "bg-white/20 border-white/30 text-white"
+                                                            : "bg-black/40 border-white/10 text-white/70 hover:bg-white/10"
+                                                    )}
+                                                >
+                                                    {r}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
 
-                                {/* Resolution Dropdown in Menu */}
-                                <div className="flex flex-col gap-1.5">
-                                    <label className="text-[10px] text-white/70 flex items-center gap-1.5 px-1">
-                                        <Monitor className="w-3 h-3" /> Resolution
-                                    </label>
-                                    <select
-                                        className="bg-black/60 text-white/90 text-[10px] rounded border border-white/10 p-1.5 outline-none cursor-pointer w-full"
-                                        value={typeof data.resolution === 'string' ? data.resolution : "720p"}
-                                        onChange={(e) => updateData({ resolution: e.target.value })}
-                                        onClick={(e) => e.stopPropagation()}
-                                    >
-                                        <option value="720p">720p</option>
-                                        <option value="1080p">1080p</option>
-                                    </select>
-                                </div>
-                            </div>
-                        )}
+                                    {/* Resolution Dropdown in Menu */}
+                                    <div className="flex flex-col gap-1.5 nodrag nowheel">
+                                        <label className="text-[10px] text-white/70 flex items-center gap-1.5 px-1">
+                                            <Monitor className="w-3 h-3" /> Resolution
+                                        </label>
+                                        <div className="flex flex-wrap gap-1">
+                                            {validResolutions.map(r => (
+                                                <button
+                                                    key={r}
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        updateData({ resolution: r });
+                                                    }}
+                                                    className={cn(
+                                                        "px-2 py-1 text-[10px] rounded border transition-colors cursor-pointer flex-grow text-center",
+                                                        effectiveResolution === r
+                                                            ? "bg-white/20 border-white/30 text-white"
+                                                            : "bg-black/40 border-white/10 text-white/70 hover:bg-white/10"
+                                                    )}
+                                                >
+                                                    {r}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
                     </div>
                 </div>
             </div>

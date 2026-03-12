@@ -74,6 +74,9 @@ class Settings(BaseSettings):
     auth0_audience: str = ""  # e.g. "https://api.kureita.com"
     auth0_algorithms: str = "RS256"
 
+    # Billing
+    commission_multiplier: float = 0.3  # 30% markup on API costs
+
     # Optional
     redis_url: str = "redis://localhost:6379"
     firecrawl_api_key: str = ""

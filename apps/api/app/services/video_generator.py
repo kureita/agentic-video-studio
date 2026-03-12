@@ -13,52 +13,7 @@ from app.core.config import settings
 from app.core.dependencies import get_storage_service
 from app.services.runware_service import RunwareService
 
-_MODEL_MAP = {
-    # Frontend display name → Official Runware AIR ID (provider:model@version)
-
-    # Google Veo — https://docs.runware.ai/en/providers/google
-    "Veo 3.1":              "google:3@2",
-    "Veo 3.1 Fast":         "google:3@3",
-    "Veo 3":                "google:3@0",
-    "Veo 3 Fast":           "google:3@1",
-    "Veo 2":                "google:2@0",
-
-    # KlingAI — https://docs.runware.ai/en/providers/klingai
-    "Kling 3.0 Standard":   "klingai:kling-video@3-standard",
-    "Kling 3.0 Pro":        "klingai:kling-video@3-pro",
-    "Kling 2.1 Master":     "klingai:5@3",
-    "Kling Lip Sync":       "__lipsync__",   # Sentinel → klingai:7@1
-
-    # Runway — https://docs.runware.ai/en/providers/runway
-    "Runway Gen-4.5":       "runway:1@2",
-    "Runway Gen-4 Turbo":   "runway:1@1",
-
-    # ByteDance Seedance — https://docs.runware.ai/en/providers/bytedance
-    "Seedance 1.5 Pro":     "bytedance:seedance@1.5-pro",
-    "Seedance 1.0 Pro":     "bytedance:2@1",
-    "Seedance 1.0 Pro Fast":"bytedance:2@2",
-    "Seedance 1.0 Lite":    "bytedance:1@1",
-
-    # Alibaba Wan — https://docs.runware.ai/en/providers/alibaba
-    "Wan2.6":               "alibaba:wan@2.6",
-    "Wan2.6 Flash":         "alibaba:wan@2.6-flash",
-
-    # MiniMax Hailuo — https://docs.runware.ai/en/providers/minimax
-    "Hailuo 2.3":           "minimax:4@1",
-    "Hailuo 2.3 Fast":      "minimax:4@2",
-
-    # PixVerse — https://docs.runware.ai/en/providers/pixverse
-    "PixVerse V5.6":        "pixverse:1@7",
-
-    # Legacy names (backward compat)
-    "Veo":                  "google:3@3",
-    "Kling":                "klingai:kling-video@3-standard",
-    "Kling V1.5":           "klingai:kling-video@3-standard",
-    "Kling V1.0":           "klingai:kling-video@3-standard",
-    "SeedDance 1.5 Pro":    "bytedance:seedance@1.5-pro",
-    "SeedDance 1.0 Pro":    "bytedance:2@1",
-}
-
+from app.core.model_registry import get_model_by_name
 
 class VideoGenerator:
     """Generates video clips using Runware API (Kling, Runway, PixVerse, etc)."""
@@ -142,18 +97,17 @@ class VideoGenerator:
         if not model_name:
             print(f"[VideoGenerator] Model name empty, using default: '{self.default_model}'")
             return self.default_model
-        # Exact match first
-        if model_name in _MODEL_MAP:
-            print(f"[VideoGenerator] Exact match found mapping '{model_name}' -> '{_MODEL_MAP[model_name]}'")
-            return _MODEL_MAP[model_name]
-        # Substring fallback for any legacy names
-        for key, val in _MODEL_MAP.items():
-            if key in model_name or model_name in key:
-                print(f"[VideoGenerator] Substring match found mapping '{model_name}' -> '{val}' (matched key: '{key}')")
-                return val
+            
+        if "Lip Sync" in model_name:
+            return "__lipsync__"
+            
+        model_info = get_model_by_name(model_name)
+        if model_info and "air_id" in model_info:
+            print(f"[VideoGenerator] Found model mapping '{model_name}' -> '{model_info['air_id']}'")
+            return model_info['air_id']
         
-        print(f"[VideoGenerator] No match found for '{model_name}', using default: '{self.default_model}'")
-        return self.default_model
+        print(f"[VideoGenerator] No match found for '{model_name}', returning literally or default")
+        return model_name if ":" in model_name else self.default_model
 
 
     async def generate_clip(

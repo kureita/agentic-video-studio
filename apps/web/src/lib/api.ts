@@ -331,9 +331,42 @@ export const canvasApi = {
 };
 
 // ============================================
+// Billing API
+// ============================================
+
+export interface ModelConfig {
+  id: string;
+  label: string;
+  width?: number;
+  height?: number;
+  quality?: string;
+  resolution?: string;
+  duration?: number;
+  audio?: boolean;
+  pricing_note?: string;
+  est_price_usd?: number;
+}
+
+export interface Model {
+  id: string;
+  name: string;
+  provider: string;
+  type: "image" | "video" | "audio" | "llm";
+  tier: string;
+  capabilities: string[];
+  configs: ModelConfig[];
+  default_config_id: string;
+}
+
+export const billingApi = {
+  getModels: () => api.get<{ models: Model[] }>("/api/billing/models"),
+};
+
+// ============================================
 // Health Check
 // ============================================
 
 export const healthApi = {
   check: () => api.get("/health"),
 };
+

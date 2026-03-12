@@ -26,10 +26,11 @@ class RunwareService:
             "Authorization": f"Bearer {self.api_key}"
         }
         
-        # Ensure all tasks have a UUID for tracing
+        # Ensure all tasks have a UUID and includeCost for billing
         for task in tasks:
             if "taskUUID" not in task:
                 task["taskUUID"] = str(uuid.uuid4())
+            task["includeCost"] = True  # Required for cost-based billing
                 
         task_type = tasks[0].get("taskType", "unknown") if tasks else "unknown"
         model = tasks[0].get("model", "unknown") if tasks else "unknown"
@@ -161,7 +162,8 @@ class RunwareService:
             "success": True,
             "image_url": image_url,
             "prompt": prompt,
-            "model": model
+            "model": model,
+            "cost": data.get("cost", 0.0),
         }
 
     async def image_to_image(self, prompt: str, image_url: str, width: int = 1024, height: int = 1024, model: str = "runware:101@1") -> dict:
@@ -194,7 +196,8 @@ class RunwareService:
             "success": True,
             "image_url": image_url,
             "prompt": prompt,
-            "model": model
+            "model": model,
+            "cost": data.get("cost", 0.0),
         }
 
     # Per-model dimension overrides: some models only accept specific resolutions.
@@ -269,7 +272,8 @@ class RunwareService:
             "success": True,
             "video_url": video_url,
             "duration": duration,
-            "model": model
+            "model": model,
+            "cost": data.get("cost", 0.0),
         }
 
     async def _url_to_data_uri(self, url: str) -> str:
@@ -465,7 +469,8 @@ class RunwareService:
             "success": True,
             "video_url": video_url,
             "duration": duration,
-            "model": model
+            "model": model,
+            "cost": data.get("cost", 0.0),
         }
 
     async def lipsync(self, video_url: str, audio_url: str, model: str = "klingai:7@1") -> dict:
@@ -505,7 +510,8 @@ class RunwareService:
         return {
             "success": True,
             "video_url": output_url,
-            "model": model
+            "model": model,
+            "cost": data.get("cost", 0.0),
         }
 
     async def text_to_speech(self, text: str, voice: str = "English_Upbeat_Woman", model: str = "minimax:speech@2.8") -> dict:
@@ -542,7 +548,8 @@ class RunwareService:
             "audio_url": audio_url,
             "text": text,
             "voice": voice,
-            "model": model
+            "model": model,
+            "cost": data.get("cost", 0.0),
         }
 
     async def generate_music(self, prompt: str, duration: int = 30, model: str = "elevenlabs:1@1") -> dict:
@@ -588,6 +595,7 @@ class RunwareService:
             "audio_url": audio_url,
             "prompt": prompt,
             "model": model,
+            "cost": data.get("cost", 0.0),
         }
 
     async def generate_sound_effects(self, prompt: str, duration: int = 10, model: str = "elevenlabs:1@1") -> dict:
@@ -633,4 +641,5 @@ class RunwareService:
             "audio_url": audio_url,
             "prompt": prompt,
             "model": model,
+            "cost": data.get("cost", 0.0),
         }

@@ -190,13 +190,7 @@ async def generate_video_clip(
     For testing video generation with custom prompts.
     """
     
-    # 1. Deduct credits first
     user_id = current_user.get("_id")
-    await billing_service.deduct_credits(
-        user_id=user_id,
-        action=ActionType.VIDEO_GEN,
-        metadata={"prompt": request.prompt[:50] + "..." if len(request.prompt) > 50 else request.prompt}
-    )
 
     generator = VideoGenerator()
     
@@ -208,6 +202,18 @@ async def generate_video_clip(
     
     if not result.get("success"):
         raise HTTPException(status_code=500, detail=result.get("error", "Video generation failed"))
+    
+    # Charge based on actual API cost
+    cost = result.get("cost", 0.0)
+    if cost > 0:
+        await billing_service.charge_usage(
+            user_id=user_id,
+            action=ActionType.VIDEO_GEN,
+            cost_usd=cost,
+            model_name=result.get("model", "Video"),
+            provider="Runware",
+            metadata={"prompt": request.prompt[:50] + "..." if len(request.prompt) > 50 else request.prompt},
+        )
     
     return result
 
@@ -232,13 +238,8 @@ async def generate_audio(
             detail="ElevenLabs not configured. Veo 3.1 generates native audio."
         )
     
-    # 1. Deduct credits first
+    # Generate audio first to get actual cost
     user_id = current_user.get("_id")
-    await billing_service.deduct_credits(
-        user_id=user_id,
-        action=ActionType.AUDIO_GEN,
-        metadata={"text": request.text[:50] + "..." if len(request.text) > 50 else request.text}
-    )
 
     from app.services.audio_generator import AudioGenerator
     generator = AudioGenerator()
@@ -250,6 +251,18 @@ async def generate_audio(
     
     if not result.get("success"):
         raise HTTPException(status_code=500, detail=result.get("error", "Audio generation failed"))
+    
+    # Charge based on actual API cost
+    cost = result.get("cost", 0.0)
+    if cost > 0:
+        await billing_service.charge_usage(
+            user_id=user_id,
+            action=ActionType.AUDIO_GEN,
+            cost_usd=cost,
+            model_name=result.get("model", "Audio"),
+            provider="Runware",
+            metadata={"text": request.text[:50] + "..." if len(request.text) > 50 else request.text},
+        )
     
     return result
 

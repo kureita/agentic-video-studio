@@ -485,26 +485,14 @@ async def run_node(
     if not target_node:
         raise HTTPException(status_code=404, detail="Node not found")
     
-    # Check credits before running
+    # Map node types to action types for billing
     node_type = target_node.get("type")
-    
-    cost_map = {
-        "imageGen": (ActionType.IMAGE_GEN, 1),
-        "videoGen": (ActionType.VIDEO_GEN, 10),
-        "audioGen": (ActionType.AUDIO_GEN, 2),
-        "editorAgent": (ActionType.RENDER, 20),
+    action_type_map = {
+        "imageGen": ActionType.IMAGE_GEN,
+        "videoGen": ActionType.VIDEO_GEN,
+        "audioGen": ActionType.AUDIO_GEN,
+        "editorAgent": ActionType.RENDER,
     }
-    
-    if node_type in cost_map:
-        action_type, cost = cost_map[node_type]
-        billing_service = BillingService(get_database())
-        # Deduct credits, which auto-throws HTTPException(402) on failure
-        await billing_service.deduct_credits(
-            user_id=user_id,
-            action=action_type,
-            custom_cost=cost,
-            metadata={"workflow_id": workflow_id, "node_id": node_id, "node_type": node_type}
-        )
     
     print(f"[Workflow] Running node: {node_id} (type: {target_node.get('type')})")
     
@@ -519,6 +507,34 @@ async def run_node(
     )
     
     if result.get("success"):
+        # Charge based on actual API cost (after execution)
+        cost = result.get("cost", 0.0)
+        if node_type in action_type_map and cost > 0:
+            billing_service = BillingService(get_database())
+            
+            node_data = target_node.get("data", {})
+            meta = {
+                "workflow_id": workflow_id,
+                "node_id": node_id,
+                "node_type": node_type
+            }
+            if node_type == "imageGen":
+                meta["ratio"] = node_data.get("ratio", "1:1")
+            elif node_type == "videoGen":
+                meta["resolution"] = node_data.get("resolution", "720p")
+                meta["duration"] = node_data.get("duration", "4s")
+            if "prompt" in node_data:
+                meta["prompt"] = node_data["prompt"]
+
+            await billing_service.charge_usage(
+                user_id=user_id,
+                action=action_type_map[node_type],
+                cost_usd=cost,
+                model_name=result.get("model", node_type),
+                provider=result.get("provider", "Runware"),
+                metadata=meta,
+            )
+        
         # Update outputs in database
         # First, get the current outputs object
         workflow = await collection.find_one({"_id": oid})
@@ -872,49 +888,14 @@ async def _execute_node_async(workflow_id: str, node_id: str, run_id: str, input
         
     user_id = workflow.get("user_id")
 
-    # Check credits before running
+    # Map node types to action types for billing
     node_type = target_node.get("type")
-    
-    cost_map = {
-        "imageGen": (ActionType.IMAGE_GEN, 1),
-        "videoGen": (ActionType.VIDEO_GEN, 10),
-        "audioGen": (ActionType.AUDIO_GEN, 2),
-        "editorAgent": (ActionType.RENDER, 20),
+    action_type_map = {
+        "imageGen": ActionType.IMAGE_GEN,
+        "videoGen": ActionType.VIDEO_GEN,
+        "audioGen": ActionType.AUDIO_GEN,
+        "editorAgent": ActionType.RENDER,
     }
-    
-    print(f"[NodeAsync] Node type: {node_type}, checking billing...")
-    if node_type in cost_map:
-        try:
-            action_type, cost = cost_map[node_type]
-            billing_service = BillingService(get_database())
-            
-            # Use user_id from workflow instead of requiring Depends inside async background task
-            # Or fall back if not explicitly set
-            
-            await billing_service.deduct_credits(
-                user_id=user_id,
-                action=action_type,
-                custom_cost=cost,
-                metadata={"workflow_id": workflow_id, "node_id": node_id, "node_type": node_type}
-            )
-            print(f"[NodeAsync] ✅ Billing OK for {node_type} ({cost} credits)")
-        except Exception as e:
-            # Insufficient credits or other billing error
-            error_msg = str(e)
-            
-            # Clean up FastAPI HTTPExceptions to simple strings for frontend
-            if hasattr(e, "detail"):
-                error_msg = str(e.detail)
-            
-            await collection.update_one(
-                {"_id": oid},
-                {"$set": {
-                    f"execution.node_states.{node_id}.status": "failed",
-                    f"execution.node_states.{node_id}.error": error_msg,
-                }}
-            )
-            print(f"[NodeAsync] ❌ Node {node_id} FAILED billing check: {error_msg}")
-            return
 
     print(f"[NodeAsync] 🚀 Calling runner.run_node for: {node_id} (type: {target_node.get('type')}) (run_id: {run_id})")
     runner = NodeRunner()
@@ -943,6 +924,38 @@ async def _execute_node_async(workflow_id: str, node_id: str, run_id: str, input
         completed_at = datetime.now(timezone.utc).isoformat()
         
         if result.get("success"):
+            # Charge based on actual API cost (after execution)
+            cost = result.get("cost", 0.0)
+            if node_type in action_type_map and cost > 0:
+                try:
+                    billing_service = BillingService(get_database())
+
+                    node_data = target_node.get("data", {})
+                    meta = {
+                        "workflow_id": workflow_id,
+                        "node_id": node_id,
+                        "node_type": node_type
+                    }
+                    if node_type == "imageGen":
+                        meta["ratio"] = node_data.get("ratio", "1:1")
+                    elif node_type == "videoGen":
+                        meta["resolution"] = node_data.get("resolution", "720p")
+                        meta["duration"] = node_data.get("duration", "4s")
+                    if "prompt" in node_data:
+                        meta["prompt"] = node_data["prompt"]
+
+                    await billing_service.charge_usage(
+                        user_id=user_id,
+                        action=action_type_map[node_type],
+                        cost_usd=cost,
+                        model_name=result.get("model", node_type),
+                        provider=result.get("provider", "Runware"),
+                        metadata=meta,
+                    )
+                    print(f"[NodeAsync] ✅ Billed ${cost:.4f} for {node_type}")
+                except Exception as billing_err:
+                    print(f"[NodeAsync] ⚠️ Billing failed (node still succeeded): {billing_err}")
+            
             new_output = result.get("output")
             
             # Build the set of fields to persist in MongoDB

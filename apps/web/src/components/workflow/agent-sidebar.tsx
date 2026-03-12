@@ -1084,8 +1084,8 @@ export function AgentSidebar() {
             const status = typedError.response?.status;
             const detail = typedError.response?.data?.detail;
 
-            if (status === 402 || (typeof detail === 'string' && detail.toLowerCase().includes("insufficient credits"))) {
-                toast.error("Not enough credits. Please add credits to continue.", {
+            if (status === 402 || (typeof detail === 'string' && detail.toLowerCase().includes("insufficient"))) {
+                toast.error("Insufficient balance. Please add funds to continue.", {
                     action: {
                         label: "Billing",
                         onClick: () => window.location.href = "/usage"
@@ -1094,7 +1094,7 @@ export function AgentSidebar() {
 
                 addChatMessage({
                     role: "assistant",
-                    content: "You do not have enough credits to perform this generative action. Please add more credits on the [Billing & Usage](/usage) page to continue building!",
+                    content: "You do not have enough balance to perform this generative action. Please add more funds on the [Billing & Usage](/usage) page to continue building!",
                 });
 
                 // Automatically open the modal for convenience

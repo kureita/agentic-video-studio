@@ -30,7 +30,7 @@ export function AddCreditsModal({ open, onOpenChange, onSuccess, children }: Add
         setIsLoading(true);
         try {
             const token = await getAccessTokenSilently();
-            const response = await api.post("/api/billing/redeem", { code: voucherCode.trim() }, {
+            const response = await api.post("/api/billing/redeem", { code: voucherCode.trim().toUpperCase() }, {
                 headers: { Authorization: `Bearer ${token}` }
             });
 
@@ -51,7 +51,7 @@ export function AddCreditsModal({ open, onOpenChange, onSuccess, children }: Add
         setIsContacting(true);
         // Simulate contacting sales
         setTimeout(() => {
-            window.location.href = "mailto:hello@kureita.com?subject=Need%20more%20credits";
+            window.location.href = "mailto:hello@kureita.com?subject=Need%20more%20funds";
             setIsContacting(false);
             toast.success("Opening native email client...");
         }, 600);
@@ -65,7 +65,7 @@ export function AddCreditsModal({ open, onOpenChange, onSuccess, children }: Add
                 <div className="px-6 pt-6 pb-4">
                     <DialogHeader className="space-y-1">
                         <DialogTitle className="text-lg font-semibold tracking-tight">
-                            Add Credits
+                            Add Funds
                         </DialogTitle>
                         <DialogDescription className="text-sm text-muted-foreground">
                             Redeem a voucher or contact us for custom plans.

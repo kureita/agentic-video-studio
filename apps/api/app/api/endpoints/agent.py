@@ -50,17 +50,22 @@ async def process_agent_flow(job_id: str, user_id: str, db: AsyncIOMotorDatabase
             chat_history=job_data.get("chat_history", [])
         )
         
-        # Billing
+        # Billing — use actual cost from OpenRouter
         if result.get("success"):
+            cost_usd = result.get("cost_usd", 0.0)
             token_usage = result.get("token_usage", {"input": 0, "output": 0})
             total_tokens = token_usage.get("input", 0) + token_usage.get("output", 0)
             
-            await billing_service.deduct_credits(
-                user_id=user_id,
-                action=ActionType.AI_CHAT,
-                tokens_used=total_tokens,
-                metadata={"prompt": job_data["prompt"][:50] + "..." if len(job_data["prompt"]) > 50 else job_data["prompt"]}
-            )
+            if cost_usd > 0:
+                await billing_service.charge_usage(
+                    user_id=user_id,
+                    action=ActionType.AI_CHAT,
+                    cost_usd=cost_usd,
+                    model_name=job_data.get("model", "LLM"),
+                    provider="OpenRouter",
+                    tokens_used=total_tokens,
+                    metadata={"prompt": job_data["prompt"][:50] + "..." if len(job_data["prompt"]) > 50 else job_data["prompt"]},
+                )
 
         # Update job
         await db["agent_jobs"].update_one(

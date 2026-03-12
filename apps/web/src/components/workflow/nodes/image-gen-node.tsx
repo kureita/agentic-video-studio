@@ -1,29 +1,41 @@
-import React, { memo } from "react";
+import React, { memo, useState, useRef, useEffect } from "react";
 import { NodeProps, useReactFlow } from "@xyflow/react";
-import { Image as ImageIcon, Minus, Plus, ChevronDown, Square, Loader2, Download } from "lucide-react";
+import { Image as ImageIcon, ChevronDown, Square, Loader2, Download } from "lucide-react";
 import { NodeWrapper } from "@/components/workflow/node-wrapper";
 import { HighlightedTextarea } from "@/components/workflow/nodes/highlighted-textarea";
 import { S3Image } from "@/components/ui/s3-image";
+import { motion, AnimatePresence } from "framer-motion";
+import { cn } from "@/lib/utils";
 
 import { useWorkflowStore } from "@/lib/workflow-store";
+import { useModels } from "@/lib/use-models";
 
-const MODEL_CONFIGS: Record<string, { inputs: { id: string, label: string, type: "text" | "image" | "video" | "audio", style?: React.CSSProperties }[] }> = {
-    "FLUX Schnell": { inputs: [{ id: "prompt", label: "Prompt", type: "text", style: { bottom: '108px' } }, { id: "image", label: "Ref Image", type: "image", style: { bottom: '20px' } }] },
-    "Kling IMAGE 3.0": { inputs: [{ id: "prompt", label: "Prompt", type: "text", style: { bottom: '108px' } }, { id: "image", label: "Ref Image", type: "image", style: { bottom: '20px' } }] },
-    "Seedream 5.0 Lite": { inputs: [{ id: "prompt", label: "Prompt", type: "text", style: { bottom: '108px' } }, { id: "image", label: "Ref Image", type: "image", style: { bottom: '20px' } }] },
+const DEFAULT_INPUTS: { id: string, label: string, type: "text" | "image" | "video" | "audio", style?: React.CSSProperties }[] = [
+    { id: "prompt", label: "Prompt", type: "text", style: { bottom: '108px' } },
+    { id: "image", label: "Ref Image", type: "image", style: { bottom: '20px' } }
+];
+
+const getCapabilitiesLabel = (capabilities: string[] = []) => {
+    const hasT2I = !!capabilities.find(c => c.toLowerCase() === "t2i");
+    const hasI2I = !!capabilities.find(c => c.toLowerCase() === "i2i");
+    if (hasT2I && hasI2I) return "Text to Image & Image to Image";
+    if (hasI2I) return "Image to Image";
+    if (hasT2I) return "Text to Image";
+    return "";
 };
 
 export const ImageGenNode = memo(({ id, selected, data }: NodeProps) => {
     const { deleteElements, updateNodeData } = useReactFlow();
-    const { runNode, clearNodeOutput, outputs, runningNodeId } = useWorkflowStore();
-
-
+    const ObjectOutputs = useWorkflowStore();
+    const { runNode, clearNodeOutput, outputs, runningNodeId } = ObjectOutputs;
+    const { models } = useModels();
+    const imageModels = models.filter((m) => m.type === "image");
 
     const isRunning = runningNodeId === id;
     const output = (outputs[id] as string | undefined) || (data.output as string | undefined); // Use store output first, fallback to data.output
 
-    const currentModel = (typeof data.model === 'string' ? data.model : "FLUX Schnell");
-    const config = MODEL_CONFIGS[currentModel] || MODEL_CONFIGS["FLUX Schnell"];
+    const currentModel = (typeof data.model === 'string' ? data.model : (imageModels.length > 0 ? imageModels[0].name : "FLUX Schnell"));
+    const configInputs = DEFAULT_INPUTS;
 
     const handleDownload = () => {
         if (output) {
@@ -71,6 +83,26 @@ export const ImageGenNode = memo(({ id, selected, data }: NodeProps) => {
     const [showSuggestions, setShowSuggestions] = React.useState(false);
     const [filterText, setFilterText] = React.useState("");
     const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+
+    const [showModelMenu, setShowModelMenu] = useState(false);
+    const [showRatioMenu, setShowRatioMenu] = useState(false);
+    const modelMenuRef = useRef<HTMLDivElement>(null);
+    const ratioMenuRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+            if (modelMenuRef.current && !modelMenuRef.current.contains(e.target as Node)) {
+                setShowModelMenu(false);
+            }
+            if (ratioMenuRef.current && !ratioMenuRef.current.contains(e.target as Node)) {
+                setShowRatioMenu(false);
+            }
+        };
+        if (showModelMenu || showRatioMenu) {
+            document.addEventListener('mousedown', handleClickOutside);
+            return () => document.removeEventListener('mousedown', handleClickOutside);
+        }
+    }, [showModelMenu, showRatioMenu]);
 
     // Get only connected text nodes for suggestions
     const nodes = useWorkflowStore((state) => state.nodes);
@@ -144,7 +176,7 @@ export const ImageGenNode = memo(({ id, selected, data }: NodeProps) => {
             icon={<ImageIcon className="w-4 h-4" />}
             selected={selected}
             color="bg-purple-500"
-            inputs={config.inputs}
+            inputs={configInputs}
             outputs={[{ id: "image", label: "Image", type: "image" }]}
             contentClassName="relative bg-black"
             onDelete={() => deleteElements({ nodes: [{ id }] })}
@@ -268,68 +300,126 @@ export const ImageGenNode = memo(({ id, selected, data }: NodeProps) => {
                 {/* Controls Bar - Bottom Left (One Line) */}
                 <div className="absolute bottom-3 left-3 right-3 flex items-center gap-1 opacity-0 group-hover/image:opacity-100 transition-all duration-300 translate-y-2 group-hover/image:translate-y-0 z-20">
 
-                    {/* Count Pill */}
-                    <div className="h-7 flex items-center bg-black/60 backdrop-blur-md border border-white/10 rounded-full px-1 text-white flex-shrink-0">
-                        <button
-                            className="h-full px-1.5 hover:text-primary transition-colors disabled:opacity-50"
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                const current = typeof data.count === 'number' ? data.count : 1;
-                                updateNodeData(id, { count: Math.max(1, current - 1) });
-                            }}
-                        >
-                            <Minus className="w-2.5 h-2.5" />
-                        </button>
-                        <span className="text-[10px] font-bold w-3 text-center">{typeof data.count === 'number' ? data.count : 1}</span>
-                        <button
-                            className="h-full px-1.5 hover:text-primary transition-colors disabled:opacity-50"
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                const current = typeof data.count === 'number' ? data.count : 1;
-                                updateNodeData(id, { count: Math.min(4, current + 1) });
-                            }}
-                        >
-                            <Plus className="w-2.5 h-2.5" />
-                        </button>
-                    </div>
+
 
                     {/* Model Pill */}
-                    <div className="relative h-7 flex items-center gap-1.5 bg-black/60 backdrop-blur-md border border-white/10 rounded-full px-2 text-white/90 hover:bg-black/70 transition-colors min-w-0 flex-grow max-w-[110px]">
-                        <span className="text-[10px] font-medium truncate">{currentModel}</span>
-                        <ChevronDown className="w-2.5 h-2.5 text-white/50 flex-shrink-0" />
-                        <select
-                            className="absolute inset-0 opacity-0 cursor-pointer"
-                            value={currentModel}
-                            onChange={(e) => updateNodeData(id, { model: e.target.value })}
+                    <div className="relative flex-grow min-w-0 max-w-[140px]" ref={modelMenuRef}>
+                        <button
+                            onClick={() => {
+                                setShowModelMenu(!showModelMenu);
+                                setShowRatioMenu(false);
+                            }}
+                            className={cn(
+                                "flex items-center gap-1.5 h-7 w-full bg-black/60 backdrop-blur-md border border-white/10 rounded-full px-2 text-white/90 hover:bg-black/70 transition-colors cursor-pointer",
+                                showModelMenu && "bg-black/80 border-white/20"
+                            )}
                         >
-                            <option value="FLUX Schnell">FLUX Schnell ⚡</option>
-                            <option value="Kling IMAGE 3.0">Kling IMAGE 3.0</option>
-                            <option value="Seedream 5.0 Lite">Seedream 5.0 Lite</option>
-                        </select>
+                            <span className="text-[10px] font-medium truncate flex-grow text-left">{currentModel}</span>
+                            <ChevronDown className="w-2.5 h-2.5 text-white/50 flex-shrink-0" />
+                        </button>
+
+                        <AnimatePresence>
+                            {showModelMenu && (
+                                <motion.div
+                                    initial={{ opacity: 0, y: 4, scale: 0.96 }}
+                                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                                    exit={{ opacity: 0, y: 4, scale: 0.96 }}
+                                    transition={{ duration: 0.12 }}
+                                    className="absolute bottom-full left-0 mb-2 w-48 bg-black/90 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50 pointer-events-auto flex flex-col"
+                                >
+                                    <div className="px-3 py-2 text-[10px] font-semibold text-white/50 uppercase tracking-wider border-b border-white/10 bg-black/40">
+                                        Model
+                                    </div>
+                                    <div className="max-h-[160px] overflow-y-auto flex flex-col p-1 nodrag nowheel">
+                                        {imageModels.map(m => (
+                                            <button
+                                                key={m.id}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    updateNodeData(id, { model: m.name });
+                                                    setShowModelMenu(false);
+                                                }}
+                                                className={cn(
+                                                    "w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-white/10 cursor-pointer flex items-center justify-between transition-colors",
+                                                    currentModel === m.name && "bg-white/15 text-white"
+                                                )}
+                                            >
+                                                <div className="flex flex-col gap-0.5">
+                                                    <span className={cn("text-[11px] font-medium", currentModel !== m.name && "text-white/80")}>
+                                                        {m.name}
+                                                    </span>
+                                                    {getCapabilitiesLabel(m.capabilities) && (
+                                                        <span className="text-white/40 text-[9px] leading-tight">
+                                                            {getCapabilitiesLabel(m.capabilities)}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </button>
+                                        ))}
+                                        {imageModels.length === 0 && (
+                                            <div className="px-3 py-2 text-[11px] text-white/50 italic">No models available</div>
+                                        )}
+                                    </div>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
                     </div>
 
                     {/* Ratio Pill */}
-                    <div className="relative h-7 flex items-center gap-1.5 bg-black/60 backdrop-blur-md border border-white/10 rounded-full px-2 text-white/90 hover:bg-black/70 transition-colors flex-shrink-0">
-                        <Square className="w-2.5 h-2.5 text-white/70" />
-                        <span className="text-[10px] font-medium">{typeof data.ratio === 'string' ? data.ratio : "1:1"}</span>
-                        <ChevronDown className="w-2.5 h-2.5 text-white/50 flex-shrink-0" />
-                        <select
-                            className="absolute inset-0 opacity-0 cursor-pointer"
-                            value={typeof data.ratio === 'string' ? data.ratio : "1:1"}
-                            onChange={(e) => updateNodeData(id, { ratio: e.target.value })}
+                    <div className="relative flex-shrink-0" ref={ratioMenuRef}>
+                        <button
+                            onClick={() => {
+                                setShowRatioMenu(!showRatioMenu);
+                                setShowModelMenu(false);
+                            }}
+                            className={cn(
+                                "flex items-center gap-1.5 h-7 bg-black/60 backdrop-blur-md border border-white/10 rounded-full px-2 text-white/90 hover:bg-black/70 transition-colors cursor-pointer",
+                                showRatioMenu && "bg-black/80 border-white/20"
+                            )}
                         >
-                            <option value="1:1">1:1</option>
-                            <option value="16:9">16:9</option>
-                            <option value="9:16">9:16</option>
-                            <option value="4:3">4:3</option>
-                            <option value="3:4">3:4</option>
-                        </select>
+                            <Square className="w-2.5 h-2.5 text-white/70 flex-shrink-0" />
+                            <span className="text-[10px] font-medium">{typeof data.ratio === 'string' ? data.ratio : "1:1"}</span>
+                            <ChevronDown className="w-2.5 h-2.5 text-white/50 flex-shrink-0" />
+                        </button>
+
+                        <AnimatePresence>
+                            {showRatioMenu && (
+                                <motion.div
+                                    initial={{ opacity: 0, y: 4, scale: 0.96 }}
+                                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                                    exit={{ opacity: 0, y: 4, scale: 0.96 }}
+                                    transition={{ duration: 0.12 }}
+                                    className="absolute bottom-full right-0 mb-2 w-24 bg-black/90 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50 pointer-events-auto flex flex-col"
+                                >
+                                    <div className="px-3 py-2 text-[10px] font-semibold text-white/50 uppercase tracking-wider border-b border-white/10 bg-black/40">
+                                        Ratio
+                                    </div>
+                                    <div className="flex flex-col p-1 nodrag nowheel">
+                                        {["1:1", "16:9", "9:16", "4:3", "3:4"].map((r) => (
+                                            <button
+                                                key={r}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    updateNodeData(id, { ratio: r });
+                                                    setShowRatioMenu(false);
+                                                }}
+                                                className={cn(
+                                                    "w-full text-left px-2.5 py-1.5 text-[11px] rounded-lg hover:bg-white/10 cursor-pointer transition-colors",
+                                                    (typeof data.ratio === 'string' ? data.ratio : "1:1") === r && "bg-white/15 text-white font-medium"
+                                                )}
+                                            >
+                                                <span className={cn((typeof data.ratio === 'string' ? data.ratio : "1:1") !== r && "text-white/80")}>
+                                                    {r}
+                                                </span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
                     </div>
 
-
                 </div>
-
-
             </div>
         </NodeWrapper>
     );

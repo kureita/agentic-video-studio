@@ -1,23 +1,17 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import HTTPException
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
+from app.core.config import settings
 from app.models.usage import ActionType, UsageLog
 from app.models.user import User
 from app.models.voucher import Voucher
 
 
 class BillingService:
-    # Pricing Matrix: Action -> Cost in Credits
-    PRICING = {
-        ActionType.AI_CHAT: 1,  # 1 credit per 10k tokens (handled via logic)
-        ActionType.VIDEO_GEN: 10, # 10 credits per generation
-        ActionType.IMAGE_GEN: 1,  # 1 credit per generation
-        ActionType.AUDIO_GEN: 2,  # 2 credits per generation
-        ActionType.RENDER: 20,    # 20 credits for final export
-    }
+    """Cost-based billing service using actual API costs + commission."""
 
     def __init__(self, db: AsyncIOMotorDatabase):
         self.db = db
@@ -36,29 +30,47 @@ class BillingService:
         except:
             return None
 
-    async def get_user_balance(self, user_id: str) -> int:
+    async def get_user_balance(self, user_id: str) -> float:
+        """Returns the user's current USD balance."""
         user_doc = await self._resolve_user(user_id)
         if not user_doc:
             raise HTTPException(status_code=404, detail="User not found")
-        return user_doc.get("credits_balance", 0)
+        return user_doc.get("usd_balance", 0.0)
 
-    async def deduct_credits(
+    async def charge_usage(
         self,
         user_id: str,
         action: ActionType,
-        custom_cost: Optional[int] = None,
+        cost_usd: float,
+        model_id: Optional[str] = None,
+        model_name: Optional[str] = None,
+        provider: Optional[str] = None,
         tokens_used: Optional[int] = None,
-        metadata: Optional[dict] = None
-    ) -> int:
+        metadata: Optional[dict] = None,
+    ) -> float:
         """
-        Deducts credits from a user's balance and logs the usage.
-        Raises 402 Payment Required if insufficient funds.
+        Charges a user for API usage based on actual cost + commission.
+        
+        Args:
+            user_id: Auth0 sub or internal ObjectId
+            action: Type of action (IMAGE_GEN, VIDEO_GEN, etc.)
+            cost_usd: Actual cost from provider API response
+            model_id: Registry model ID (e.g. "gpt-image-1-5")
+            model_name: Human-readable model name (e.g. "GPT Image 1.5")
+            provider: Provider name (e.g. "OpenAI", "Runware")
+            tokens_used: Token count for LLM actions
+            metadata: Additional metadata to log
+            
+        Returns:
+            New USD balance after deduction
+            
+        Raises:
+            HTTPException 402 if insufficient balance
+            HTTPException 404 if user not found
         """
-        cost = custom_cost if custom_cost is not None else self.PRICING.get(action, 0)
-
-        # AI Chat special logic (1 credit per 10k tokens) - allows 0 cost for short <5k tokens
-        if action == ActionType.AI_CHAT and tokens_used is not None:
-            cost = round(tokens_used / 10000)
+        # Calculate commission
+        commission_usd = round(cost_usd * settings.commission_multiplier, 6)
+        total_usd = round(cost_usd + commission_usd, 6)
 
         # 1. Check balance
         user_doc = await self._resolve_user(user_id)
@@ -66,38 +78,43 @@ class BillingService:
             raise HTTPException(status_code=404, detail="User not found")
             
         user_oid = user_doc["_id"]
-
-        current_balance = user_doc.get("credits_balance", 0)
+        current_balance = user_doc.get("usd_balance", 0.0)
         
-        if cost > 0 and current_balance < cost:
+        if total_usd > 0 and current_balance < total_usd:
             raise HTTPException(
                 status_code=402, 
-                detail=f"Insufficient credits. Required: {cost}, Available: {current_balance}"
+                detail=f"Insufficient balance. Required: ${total_usd:.4f}, Available: ${current_balance:.4f}"
             )
 
-        # 2. Deduct credits
-        new_balance = current_balance - cost
-        if cost > 0:
+        # 2. Deduct balance
+        new_balance = round(current_balance - total_usd, 6)
+        if total_usd > 0:
             await self.db.users.update_one(
                 {"_id": user_oid},
-                {"$set": {"credits_balance": new_balance, "updated_at": datetime.utcnow()}}
+                {"$set": {"usd_balance": new_balance, "updated_at": datetime.now(timezone.utc)}}
             )
 
-        # 3. Log usage regardless of cost
+        # 3. Log usage
         usage_log = UsageLog(
             user_id=str(user_oid),
             action_type=action,
             tokens_used=tokens_used,
-            credits_deducted=cost,
-            metadata=metadata or {}
+            cost_usd=cost_usd,
+            commission_usd=commission_usd,
+            total_usd=total_usd,
+            model_id=model_id,
+            model_name=model_name,
+            provider=provider,
+            metadata=metadata or {},
         )
         await self.db.usage_logs.insert_one(usage_log.model_dump(by_alias=True, exclude_none=True))
 
         return new_balance
 
-    async def redeem_voucher(self, user_id: str, code: str) -> int:
+    async def redeem_voucher(self, user_id: str, code: str) -> float:
         """
-        Redeems a voucher code and adds credits to the user's balance.
+        Redeems a voucher code and adds USD amount to the user's balance.
+        Returns new balance.
         """
         user_doc = await self._resolve_user(user_id)
         if not user_doc:
@@ -105,46 +122,50 @@ class BillingService:
             
         user_oid = user_doc["_id"]
             
-        # 1. Find and validate voucher
-        voucher_doc = await self.db.vouchers.find_one({"code": code})
+        # 1. Find and validate voucher (case-insensitive code lookup)
+        code_upper = code.strip().upper()
+        voucher_doc = await self.db.vouchers.find_one({"code": code_upper})
         if not voucher_doc:
             raise HTTPException(status_code=404, detail="Voucher not found")
             
-        voucher = Voucher(**voucher_doc)
+        # Use model_validate so the _id ObjectId is correctly parsed via the alias
+        voucher = Voucher.model_validate(voucher_doc)
         
         if voucher.is_redeemed:
             raise HTTPException(status_code=400, detail="Voucher has already been redeemed")
 
         # 2. Mark voucher as redeemed
         result = await self.db.vouchers.update_one(
-            {"code": code, "is_redeemed": False}, # Atomic check
+            {"code": code_upper, "is_redeemed": False},  # Atomic check — prevent double-spend
             {"$set": {
                 "is_redeemed": True,
                 "redeemed_by": str(user_oid),
-                "redeemed_at": datetime.utcnow()
+                "redeemed_at": datetime.now(timezone.utc),
             }}
         )
         
         if result.modified_count == 0:
-             raise HTTPException(status_code=400, detail="Failed to redeem voucher. It may have just been used.")
+            raise HTTPException(status_code=400, detail="Failed to redeem voucher. It may have just been used.")
 
-        # 3. Add credits to user
+        # 3. Add USD to user balance
         user_doc = await self.db.users.find_one({"_id": user_oid})
         if not user_doc:
             raise HTTPException(status_code=404, detail="User not found")
             
-        new_balance = user_doc.get("credits_balance", 0) + voucher.credit_value
+        new_balance = round(user_doc.get("usd_balance", 0.0) + voucher.usd_value, 6)
         await self.db.users.update_one(
             {"_id": user_oid},
-            {"$set": {"credits_balance": new_balance, "updated_at": datetime.utcnow()}}
+            {"$set": {"usd_balance": new_balance, "updated_at": datetime.now(timezone.utc)}}
         )
         
-        # 4. Log usage
+        # 4. Log usage  (total_usd is positive here = funds deposited)
         usage_log = UsageLog(
             user_id=str(user_oid),
             action_type=ActionType.VOUCHER_REDEEM,
-            credits_deducted=-voucher.credit_value, # Negative deduction is addition
-            metadata={"voucher_code": code}
+            cost_usd=0.0,
+            commission_usd=0.0,
+            total_usd=voucher.usd_value,  # Positive = USD added to balance
+            metadata={"voucher_code": code_upper, "usd_added": voucher.usd_value},
         )
         await self.db.usage_logs.insert_one(usage_log.model_dump(by_alias=True, exclude_none=True))
 
@@ -152,10 +173,11 @@ class BillingService:
         
     async def process_referral(self, new_user_id: str, referral_code: str):
         """
-        Processes a referral code, granting 500 credits to both parties.
+        Processes a referral code, granting $5.00 USD to both parties.
         """
         from bson import ObjectId
-        from datetime import timezone
+        
+        REFERRAL_BONUS_USD = 5.00
         
         # 1. Find referrer
         referrer_doc = await self.db.users.find_one({"referral_code": referral_code})
@@ -174,36 +196,40 @@ class BillingService:
         if new_user.get("referred_by"):
             return {"success": False, "message": "User already referred"}
             
-        # 3. Award credits to both (500 each)
+        # 3. Award USD to both
         await self.db.users.update_one(
             {"_id": referrer_id},
-            {"$inc": {"credits_balance": 500}, "$set": {"updated_at": datetime.now(timezone.utc)}}
+            {"$inc": {"usd_balance": REFERRAL_BONUS_USD}, "$set": {"updated_at": datetime.now(timezone.utc)}}
         )
         
         await self.db.users.update_one(
             {"_id": user_oid},
-            {"$inc": {"credits_balance": 500}, "$set": {"referred_by": str(referrer_id), "updated_at": datetime.now(timezone.utc)}}
+            {"$inc": {"usd_balance": REFERRAL_BONUS_USD}, "$set": {"referred_by": str(referrer_id), "updated_at": datetime.now(timezone.utc)}}
         )
         
         # 4. Log usage for both users
         referrer_log = UsageLog(
             user_id=str(referrer_id),
             action_type=ActionType.REFERRAL_BONUS,
-            credits_deducted=-500,
-            metadata={"referred_user_id": str(user_oid)}
+            cost_usd=0.0,
+            commission_usd=0.0,
+            total_usd=-REFERRAL_BONUS_USD,  # Negative = addition
+            metadata={"referred_user_id": str(user_oid)},
         )
         new_user_log = UsageLog(
             user_id=str(user_oid),
             action_type=ActionType.REFERRAL_BONUS,
-            credits_deducted=-500,
-            metadata={"referred_by_id": str(referrer_id), "referral_code": referral_code}
+            cost_usd=0.0,
+            commission_usd=0.0,
+            total_usd=-REFERRAL_BONUS_USD,  # Negative = addition
+            metadata={"referred_by_id": str(referrer_id), "referral_code": referral_code},
         )
         await self.db.usage_logs.insert_many([
             referrer_log.model_dump(by_alias=True, exclude_none=True),
             new_user_log.model_dump(by_alias=True, exclude_none=True)
         ])
         
-        return {"success": True, "message": "Referral processed successfully", "credits_awarded": 500}
+        return {"success": True, "message": "Referral processed successfully", "usd_awarded": REFERRAL_BONUS_USD}
 
     async def get_usage_history(
         self, 

@@ -52,7 +52,7 @@ async def get_or_create_user(auth0_sub: str, email: str = "", name: str = "") ->
         "name": name,
         "created_at": now,
         "updated_at": now,
-        "credits_balance": 1000, # Default sign-up credits
+        "usd_balance": 0.0,  # Users start with $0, use vouchers to add balance
         "referral_code": referral_code,
         "referred_by": None
     }
@@ -60,6 +60,6 @@ async def get_or_create_user(auth0_sub: str, email: str = "", name: str = "") ->
     result = await collection.insert_one(user_doc)
     user_doc["_id"] = str(result.inserted_id)
     
-    print(f"[User] Created new user: {auth0_sub} ({email}) with 1000 credits. Referral code: {referral_code}")
+    print(f"[User] Created new user: {auth0_sub} ({email}) with $0.00 balance. Referral code: {referral_code}")
     
     return user_doc

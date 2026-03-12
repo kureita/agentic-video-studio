@@ -145,10 +145,16 @@ class AudioGenerator:
 
     def _get_model(self, model_name: Optional[str]) -> str:
         if not model_name: return self.default_model
+        
+        from app.core.model_registry import get_model_by_name
+        model_info = get_model_by_name(model_name)
+        if model_info and "air_id" in model_info:
+            return model_info["air_id"]
+            
         for key, val in _MODEL_MAP.items():
             if key in model_name:
                 return val
-        return self.default_model
+        return model_name if ":" in model_name else self.default_model
 
     async def generate_speech(
         self,

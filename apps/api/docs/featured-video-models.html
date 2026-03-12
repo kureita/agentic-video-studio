@@ -1,0 +1,1679 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kureita — Runware Featured Video Models</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        :root {
+            --bg: #ffffff;
+            --bg-card: #f8f8fa;
+            --bg-card-alt: #f1f1f5;
+            --bg-accent: #eeeef2;
+            --border: #e0e0e8;
+            --border-subtle: #ececf0;
+            --text: #1a1a2e;
+            --text-secondary: #4a4a65;
+            --text-muted: #8888a0;
+            --accent: #5b4cdb;
+            --accent-light: #5b4cdb;
+            --accent-glow: rgba(91, 76, 219, 0.07);
+            --green: #0d9668;
+            --green-bg: rgba(13, 150, 104, 0.07);
+            --red: #c0392b;
+            --red-bg: rgba(192, 57, 43, 0.06);
+            --amber: #b8860b;
+            --amber-bg: rgba(184, 134, 11, 0.07);
+            --blue: #2e7bbf;
+            --blue-bg: rgba(46, 123, 191, 0.07);
+            --radius: 10px;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.75;
+            -webkit-font-smoothing: antialiased;
+            font-size: 15px;
+        }
+
+        .page-wrapper {
+            min-height: 100vh;
+        }
+
+        .sidebar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 260px;
+            height: 100vh;
+            overflow-y: auto;
+            border-right: 1px solid var(--border);
+            padding: 32px 0;
+            background: var(--bg-card);
+            z-index: 100;
+        }
+
+        .sidebar::-webkit-scrollbar {
+            width: 3px;
+        }
+
+        .sidebar::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 3px;
+        }
+
+        .sidebar-title {
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1.8px;
+            color: var(--text-muted);
+            padding: 0 20px;
+            margin-bottom: 16px;
+        }
+
+
+        .toc {
+            list-style: none;
+        }
+
+        .toc li a {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 20px;
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            text-decoration: none;
+            border-left: 2px solid transparent;
+            transition: all 0.15s;
+        }
+
+        .toc li a:hover {
+            color: var(--accent-light);
+            background: var(--accent-glow);
+            border-left-color: var(--accent);
+        }
+
+        .toc li a .toc-num {
+            font-size: 10px;
+            font-weight: 700;
+            color: var(--text-muted);
+            min-width: 16px;
+        }
+
+        .toc .toc-divider {
+            height: 1px;
+            background: var(--border-subtle);
+            margin: 10px 20px;
+        }
+
+        .main {
+            margin-left: 260px;
+            max-width: 920px;
+            padding: 48px 56px 80px;
+        }
+
+        .header-section {
+            margin-bottom: 48px;
+            padding-bottom: 32px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .header-section h1 {
+            font-size: 28px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+            margin-bottom: 6px;
+        }
+
+        .header-section .subtitle {
+            color: var(--text-muted);
+            font-size: 14px;
+            font-weight: 400;
+        }
+
+        .header-section .date {
+            color: var(--text-muted);
+            font-size: 12px;
+            margin-top: 8px;
+        }
+
+        .header-section .stats {
+            display: flex;
+            gap: 24px;
+            margin-top: 16px;
+        }
+
+        .header-section .stat {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .header-section .stat .num {
+            font-size: 20px;
+            font-weight: 800;
+            color: var(--text);
+        }
+
+        .section {
+            margin-bottom: 44px;
+        }
+
+        .section-title {
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 18px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+
+        .section-title i {
+            color: var(--accent);
+            font-size: 14px;
+        }
+
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius);
+            padding: 20px 24px;
+            margin-bottom: 14px;
+        }
+
+        .card-title {
+            font-size: 13px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .card-subtitle {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+        }
+
+
+        p,
+        li {
+            font-size: 14px;
+            color: var(--text-secondary);
+        }
+
+        li {
+            margin-bottom: 4px;
+        }
+
+        ul {
+            padding-left: 20px;
+            margin-top: 6px;
+        }
+
+        code {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            background: var(--bg-accent);
+            padding: 2px 6px;
+            border-radius: 4px;
+            color: var(--accent);
+        }
+
+        .tag {
+            display: inline-block;
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            padding: 3px 8px;
+            border-radius: 5px;
+        }
+
+        .tag-premium {
+            background: var(--accent-glow);
+            color: var(--accent);
+        }
+
+        .tag-mid {
+            background: var(--green-bg);
+            color: var(--green);
+        }
+
+        .tag-budget {
+            background: var(--blue-bg);
+            color: var(--blue);
+        }
+
+        .tag-config {
+            background: var(--amber-bg);
+            color: var(--amber);
+        }
+
+        .provider-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-muted);
+            background: var(--bg-accent);
+            padding: 3px 10px;
+            border-radius: 20px;
+        }
+
+        .caps {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin: 8px 0 12px;
+        }
+
+        .cap {
+            font-size: 10px;
+            font-weight: 600;
+            color: var(--text-muted);
+            background: var(--bg-card-alt);
+            border: 1px solid var(--border-subtle);
+            padding: 2px 8px;
+            border-radius: 4px;
+        }
+
+        .price-grid {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 10px 0 4px;
+            font-size: 13px;
+        }
+
+        .price-grid th,
+        .price-grid td {
+            text-align: left;
+            padding: 8px 12px;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+
+        .price-grid th {
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-muted);
+            background: var(--bg-card-alt);
+        }
+
+        .price-grid td {
+            color: var(--text-secondary);
+        }
+
+        .price-grid td code {
+            font-size: 11px;
+        }
+
+        .price-grid .price {
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        .price-grid .price-per-s {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+
+        .price-grid .note {
+            font-size: 11px;
+            color: var(--text-muted);
+            font-style: italic;
+        }
+
+        table.summary {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 12px 0;
+            font-size: 12.5px;
+        }
+
+        table.summary th,
+        table.summary td {
+            text-align: left;
+            padding: 9px 12px;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+
+        table.summary th {
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-muted);
+            background: var(--bg-card);
+        }
+
+        table.summary td {
+            color: var(--text-secondary);
+        }
+
+        .model-link {
+            color: var(--accent);
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        .model-link:hover {
+            text-decoration: underline;
+        }
+
+        .note-box {
+            background: var(--amber-bg);
+            border-left: 3px solid var(--amber);
+            border-radius: 0 var(--radius) var(--radius) 0;
+            padding: 12px 16px;
+            margin: 14px 0;
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        .note-box strong {
+            color: var(--amber);
+        }
+
+        .info-box {
+            background: var(--blue-bg);
+            border-left: 3px solid var(--blue);
+            border-radius: 0 var(--radius) var(--radius) 0;
+            padding: 12px 16px;
+            margin: 14px 0;
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        .info-box strong {
+            color: var(--blue);
+        }
+
+        @media (max-width: 900px) {
+            .sidebar {
+                display: none;
+            }
+
+            .main {
+                margin-left: 0;
+                padding: 32px 20px 60px;
+            }
+        }
+    </style>
+
+
+</head>
+
+<body>
+    <div class="page-wrapper">
+
+        <!-- Sidebar -->
+        <nav class="sidebar">
+            <div class="sidebar-title">Runware Video Models</div>
+            <ul class="toc">
+                <li><a href="#overview"><span class="toc-num">01</span> Overview</a></li>
+                <li><a href="#summary"><span class="toc-num">02</span> Featured Summary</a></li>
+                <div class="toc-divider"></div>
+                <li><a href="#veo-31"><span class="toc-num">03</span> Google Veo 3.1</a></li>
+                <li><a href="#veo-31-fast"><span class="toc-num">04</span> Google Veo 3.1 Fast</a></li>
+                <li><a href="#sora-2-pro"><span class="toc-num">05</span> Sora 2 Pro</a></li>
+                <li><a href="#sora-2"><span class="toc-num">06</span> Sora 2</a></li>
+                <li><a href="#kling-3-pro"><span class="toc-num">07</span> Kling VIDEO 3.0 Pro</a></li>
+                <li><a href="#kling-3-std"><span class="toc-num">08</span> Kling VIDEO 3.0 Std</a></li>
+                <li><a href="#ltx-23"><span class="toc-num">09</span> LTX 2.3</a></li>
+                <li><a href="#ltx-23-fast"><span class="toc-num">10</span> LTX 2.3 Fast</a></li>
+                <li><a href="#seedance"><span class="toc-num">11</span> Seedance 1.5 Pro</a></li>
+                <li><a href="#grok-video"><span class="toc-num">12</span> Grok Imagine Video</a></li>
+                <li><a href="#hailuo"><span class="toc-num">13</span> Hailuo 2.3</a></li>
+                <li><a href="#pixverse"><span class="toc-num">14</span> PixVerse v5.6</a></li>
+                <li><a href="#vidu-q3"><span class="toc-num">15</span> Vidu Q3</a></li>
+                <li><a href="#vidu-q3-turbo"><span class="toc-num">16</span> Vidu Q3 Turbo</a></li>
+                <div class="toc-divider"></div>
+                <li><a href="#mapping"><span class="toc-num">17</span> Config Mapping Notes</a></li>
+            </ul>
+        </nav>
+
+        <!-- Main Content -->
+        <div class="main">
+
+            <div class="header-section">
+                <h1>Runware — Featured Video Models</h1>
+                <div class="subtitle">Pricing analysis & configuration breakdown for featured video model selection
+                </div>
+                <div class="date">March 11, 2026</div>
+                <div class="stats">
+                    <div class="stat"><span class="num">68</span> total video models</div>
+                    <div class="stat"><span class="num">14</span> featured picks</div>
+                    <div class="stat"><span class="num">3</span> pricing tiers</div>
+                </div>
+            </div>
+
+            <!-- 01 Overview -->
+            <div class="section" id="overview">
+                <div class="section-title"><i class="fa-solid fa-layer-group"></i> Overview</div>
+                <p>Runware offers <strong>68 video generation models</strong> across many providers. This document
+                    selects <strong>14 featured models</strong> across three tiers:</p>
+                <ul>
+                    <li><span class="tag tag-premium">Premium</span> — Flagship models with maximum cinematic quality,
+                        native audio, and the most configurations.</li>
+                    <li><span class="tag tag-mid">Mid-Range</span> — Strong quality-to-cost ratio, good defaults for
+                        most video generation use cases.</li>
+                    <li><span class="tag tag-budget">Budget</span> — Fast or cheap options for drafts, previews,
+                        prototyping, and high-volume batches.</li>
+                </ul>
+                <div class="info-box"><strong>Video pricing note:</strong> Unlike image models (per-image), video models
+                    are priced <strong>per-second of output</strong>. Most configs combine resolution, duration, and
+                    optional audio as pricing dimensions. Some models quote per-clip (e.g. 6s or 8s), others per-second.
+                </div>
+                <div class="note-box"><strong>Source:</strong> Pricing from <a href="https://runware.ai/pricing"
+                        class="model-link">runware.ai/pricing</a> and individual model pages on March 11, 2026. All
+                    prices USD.</div>
+            </div>
+
+
+            <!-- 02 Featured Summary -->
+            <div class="section" id="summary">
+                <div class="section-title"><i class="fa-solid fa-star"></i> Featured Summary</div>
+                <table class="summary">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Model</th>
+                            <th>Provider</th>
+                            <th>Tier</th>
+                            <th>Configs</th>
+                            <th>Price Range</th>
+                            <th>Pricing Unit</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>1</td>
+                            <td><a href="#veo-31" class="model-link">Google Veo 3.1</a></td>
+                            <td>Google</td>
+                            <td><span class="tag tag-premium">Premium</span></td>
+                            <td><span class="tag tag-config">6 configs</span></td>
+                            <td>$0.80 – $4.80</td>
+                            <td>per clip</td>
+                        </tr>
+                        <tr>
+                            <td>2</td>
+                            <td><a href="#veo-31-fast" class="model-link">Google Veo 3.1 Fast</a></td>
+                            <td>Google</td>
+                            <td><span class="tag tag-mid">Mid-Range</span></td>
+                            <td><span class="tag tag-config">4 configs</span></td>
+                            <td>$0.80 – $2.80</td>
+                            <td>per clip</td>
+                        </tr>
+                        <tr>
+                            <td>3</td>
+                            <td><a href="#sora-2-pro" class="model-link">Sora 2 Pro</a></td>
+                            <td>OpenAI</td>
+                            <td><span class="tag tag-premium">Premium</span></td>
+                            <td><span class="tag tag-config">2 configs</span></td>
+                            <td>$2.40 – $4.00</td>
+                            <td>per 8s clip</td>
+                        </tr>
+                        <tr>
+                            <td>4</td>
+                            <td><a href="#sora-2" class="model-link">Sora 2</a></td>
+                            <td>OpenAI</td>
+                            <td><span class="tag tag-mid">Mid-Range</span></td>
+                            <td><span class="tag tag-config">1 config</span></td>
+                            <td>$0.80</td>
+                            <td>per 8s clip</td>
+                        </tr>
+                        <tr>
+                            <td>5</td>
+                            <td><a href="#kling-3-pro" class="model-link">Kling VIDEO 3.0 Pro</a></td>
+                            <td>Kling AI</td>
+                            <td><span class="tag tag-premium">Premium</span></td>
+                            <td><span class="tag tag-config">2 configs</span></td>
+                            <td>$0.112 – $0.168/s</td>
+                            <td>per second</td>
+                        </tr>
+                        <tr>
+                            <td>6</td>
+                            <td><a href="#kling-3-std" class="model-link">Kling VIDEO 3.0 Standard</a></td>
+                            <td>Kling AI</td>
+                            <td><span class="tag tag-mid">Mid-Range</span></td>
+                            <td><span class="tag tag-config">2 configs</span></td>
+                            <td>$0.084 – $0.126/s</td>
+                            <td>per second</td>
+                        </tr>
+
+
+                        <tr>
+                            <td>7</td>
+                            <td><a href="#ltx-23" class="model-link">LTX 2.3</a></td>
+                            <td>Lightricks</td>
+                            <td><span class="tag tag-premium">Premium</span></td>
+                            <td><span class="tag tag-config">6 configs</span></td>
+                            <td>$0.06 – $0.24/s</td>
+                            <td>per second</td>
+                        </tr>
+                        <tr>
+                            <td>8</td>
+                            <td><a href="#ltx-23-fast" class="model-link">LTX 2.3 Fast</a></td>
+                            <td>Lightricks</td>
+                            <td><span class="tag tag-budget">Budget</span></td>
+                            <td><span class="tag tag-config">6 configs</span></td>
+                            <td>$0.04 – $0.16/s</td>
+                            <td>per second</td>
+                        </tr>
+                        <tr>
+                            <td>9</td>
+                            <td><a href="#seedance" class="model-link">Seedance 1.5 Pro</a></td>
+                            <td>ByteDance</td>
+                            <td><span class="tag tag-mid">Mid-Range</span></td>
+                            <td><span class="tag tag-config">4 configs</span></td>
+                            <td>$0.06 – $0.26</td>
+                            <td>per 5s clip</td>
+                        </tr>
+                        <tr>
+                            <td>10</td>
+                            <td><a href="#grok-video" class="model-link">Grok Imagine Video</a></td>
+                            <td>xAI</td>
+                            <td><span class="tag tag-mid">Mid-Range</span></td>
+                            <td><span class="tag tag-config">6 configs</span></td>
+                            <td>$0.30 – $0.48</td>
+                            <td>per 6s clip</td>
+                        </tr>
+                        <tr>
+                            <td>11</td>
+                            <td><a href="#hailuo" class="model-link">MiniMax Hailuo 2.3</a></td>
+                            <td>MiniMax</td>
+                            <td><span class="tag tag-mid">Mid-Range</span></td>
+                            <td><span class="tag tag-config">3 configs</span></td>
+                            <td>$0.28 – $0.49</td>
+                            <td>per clip</td>
+                        </tr>
+                        <tr>
+                            <td>12</td>
+                            <td><a href="#pixverse" class="model-link">PixVerse v5.6</a></td>
+                            <td>PixVerse</td>
+                            <td><span class="tag tag-mid">Mid-Range</span></td>
+                            <td><span class="tag tag-config">8 configs</span></td>
+                            <td>$0.10 – $0.35</td>
+                            <td>per 5s clip</td>
+                        </tr>
+                        <tr>
+                            <td>13</td>
+                            <td><a href="#vidu-q3" class="model-link">Vidu Q3</a></td>
+                            <td>Vidu</td>
+                            <td><span class="tag tag-budget">Budget</span></td>
+                            <td><span class="tag tag-config">4 configs</span></td>
+                            <td>$0.046 – $0.104/s</td>
+                            <td>per second</td>
+                        </tr>
+                        <tr>
+                            <td>14</td>
+                            <td><a href="#vidu-q3-turbo" class="model-link">Vidu Q3 Turbo</a></td>
+                            <td>Vidu</td>
+                            <td><span class="tag tag-budget">Budget</span></td>
+                            <td><span class="tag tag-config">3 configs</span></td>
+                            <td>$0.13 – $0.26</td>
+                            <td>per 5s clip</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+
+            <!-- 03 Google Veo 3.1 -->
+            <div class="section" id="veo-31">
+                <div class="section-title"><i class="fa-solid fa-clapperboard"></i> Google Veo 3.1</div>
+                <div class="card">
+                    <div class="card-title">
+                        <span class="provider-badge"><i class="fa-solid fa-circle"
+                                style="color:#4285f4;font-size:7px"></i> Google</span>
+                        <span class="tag tag-premium">Premium</span>
+                    </div>
+                    <div class="card-subtitle">Google's cinematic video model. High-fidelity scenes with rich native
+                        audio, granular shot control, and smoother motion. Up to 4K output with audio. <a
+                            href="https://runware.ai/models/google-veo-3-1" class="model-link" target="_blank"><i
+                                class="fa-solid fa-arrow-up-right-from-square" style="font-size:9px"></i> Runware</a>
+                    </div>
+                    <div class="caps">
+                        <span class="cap">Text-to-Video</span>
+                        <span class="cap">Image-to-Video</span>
+                        <span class="cap">Audio-to-Video</span>
+                        <span class="cap">Native Audio</span>
+                        <span class="cap">4K</span>
+                    </div>
+                    <table class="price-grid">
+                        <thead>
+                            <tr>
+                                <th>Configuration</th>
+                                <th>Price</th>
+                                <th>Per-Second</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>720p · 4s (no audio)</td>
+                                <td class="price">$0.80</td>
+                                <td class="price-per-s">$0.20/s</td>
+                            </tr>
+                            <tr>
+                                <td>720p · 4s (with audio)</td>
+                                <td class="price">$1.60</td>
+                                <td class="price-per-s">$0.40/s</td>
+                            </tr>
+                            <tr>
+                                <td>720p · 8s (no audio)</td>
+                                <td class="price">$1.60</td>
+                                <td class="price-per-s">$0.20/s</td>
+                            </tr>
+                            <tr>
+                                <td>720p · 8s (with audio)</td>
+                                <td class="price">$3.20</td>
+                                <td class="price-per-s">$0.40/s</td>
+                            </tr>
+                            <tr>
+                                <td>4K · 8s (no audio)</td>
+                                <td class="price">$3.20</td>
+                                <td class="price-per-s">$0.40/s</td>
+                            </tr>
+                            <tr>
+                                <td>4K · 8s (with audio)</td>
+                                <td class="price">$4.80</td>
+                                <td class="price-per-s">$0.60/s</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <p style="font-size:12px;color:var(--text-muted);margin-top:8px;"><i class="fa-solid fa-calculator"
+                            style="color:var(--blue)"></i> Base: $0.20/s at 720p. Audio doubles the cost. 4K doubles the
+                        base. Duration: 4s or 8s.</p>
+                </div>
+            </div>
+
+            <!-- 04 Google Veo 3.1 Fast -->
+            <div class="section" id="veo-31-fast">
+                <div class="section-title"><i class="fa-solid fa-forward-fast"></i> Google Veo 3.1 Fast</div>
+                <div class="card">
+                    <div class="card-title">
+                        <span class="provider-badge"><i class="fa-solid fa-circle"
+                                style="color:#4285f4;font-size:7px"></i> Google</span>
+                        <span class="tag tag-mid">Mid-Range</span>
+                    </div>
+                    <div class="card-subtitle">Speed-optimized Veo 3.1 for rapid iteration. Low latency with cinematic
+                        quality maintained. Up to 4K with audio. <a href="https://runware.ai/models/google-veo-3-1-fast"
+                            class="model-link" target="_blank"><i class="fa-solid fa-arrow-up-right-from-square"
+                                style="font-size:9px"></i> Runware</a></div>
+                    <div class="caps">
+                        <span class="cap">Text-to-Video</span>
+                        <span class="cap">Image-to-Video</span>
+                        <span class="cap">Native Audio</span>
+                        <span class="cap">4K</span>
+                        <span class="cap">Low Latency</span>
+                    </div>
+                    <table class="price-grid">
+                        <thead>
+                            <tr>
+                                <th>Configuration</th>
+                                <th>Price</th>
+                                <th>Per-Second</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>1080p · 8s (no audio)</td>
+                                <td class="price">$0.80</td>
+                                <td class="price-per-s">$0.10/s</td>
+                            </tr>
+                            <tr>
+                                <td>1080p · 8s (with audio)</td>
+                                <td class="price">$1.20</td>
+                                <td class="price-per-s">$0.15/s</td>
+                            </tr>
+                            <tr>
+                                <td>4K · 8s (no audio)</td>
+                                <td class="price">$2.40</td>
+                                <td class="price-per-s">$0.30/s</td>
+                            </tr>
+                            <tr>
+                                <td>4K · 8s (with audio)</td>
+                                <td class="price">$2.80</td>
+                                <td class="price-per-s">$0.35/s</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <p style="font-size:12px;color:var(--text-muted);margin-top:8px;"><i class="fa-solid fa-bolt"
+                            style="color:var(--amber)"></i> 50% cheaper per-second than standard Veo 3.1. ~19% savings
+                        vs market.</p>
+                </div>
+            </div>
+
+
+            <!-- 05 Sora 2 Pro -->
+            <div class="section" id="sora-2-pro">
+                <div class="section-title"><i class="fa-solid fa-film"></i> Sora 2 Pro</div>
+                <div class="card">
+                    <div class="card-title">
+                        <span class="provider-badge"><i class="fa-solid fa-circle"
+                                style="color:#10a37f;font-size:7px"></i> OpenAI</span>
+                        <span class="tag tag-premium">Premium</span>
+                    </div>
+                    <div class="card-subtitle">OpenAI's premium video model. Higher resolution, stronger temporal
+                        consistency, synchronized video + sound. Built for production clips. <a
+                            href="https://runware.ai/models/openai-sora-2-pro" class="model-link" target="_blank"><i
+                                class="fa-solid fa-arrow-up-right-from-square" style="font-size:9px"></i> Runware</a>
+                    </div>
+                    <div class="caps">
+                        <span class="cap">Text-to-Video</span>
+                        <span class="cap">Image-to-Video</span>
+                        <span class="cap">Native Audio</span>
+                    </div>
+                    <table class="price-grid">
+                        <thead>
+                            <tr>
+                                <th>Configuration</th>
+                                <th>Price</th>
+                                <th>Per-Second</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>720p · 8s</td>
+                                <td class="price">$2.40</td>
+                                <td class="price-per-s">$0.30/s</td>
+                            </tr>
+                            <tr>
+                                <td>1080p · 8s</td>
+                                <td class="price">$4.00</td>
+                                <td class="price-per-s">$0.50/s</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- 06 Sora 2 -->
+            <div class="section" id="sora-2">
+                <div class="section-title"><i class="fa-solid fa-video"></i> Sora 2</div>
+                <div class="card">
+                    <div class="card-title">
+                        <span class="provider-badge"><i class="fa-solid fa-circle"
+                                style="color:#10a37f;font-size:7px"></i> OpenAI</span>
+                        <span class="tag tag-mid">Mid-Range</span>
+                    </div>
+                    <div class="card-subtitle">OpenAI's flagship video + audio model. Physical realism, scene control,
+                        editing and extension of existing video inputs. <a
+                            href="https://runware.ai/models/openai-sora-2" class="model-link" target="_blank"><i
+                                class="fa-solid fa-arrow-up-right-from-square" style="font-size:9px"></i> Runware</a>
+                    </div>
+                    <div class="caps">
+                        <span class="cap">Text-to-Video</span>
+                        <span class="cap">Image-to-Video</span>
+                        <span class="cap">Video-to-Video</span>
+                        <span class="cap">Audio-to-Video</span>
+                        <span class="cap">Native Audio</span>
+                    </div>
+                    <table class="price-grid">
+                        <thead>
+                            <tr>
+                                <th>Configuration</th>
+                                <th>Price</th>
+                                <th>Per-Second</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>720p · 8s</td>
+                                <td class="price">$0.80</td>
+                                <td class="price-per-s">$0.10/s</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+
+            <!-- 07 Kling VIDEO 3.0 Pro -->
+            <div class="section" id="kling-3-pro">
+                <div class="section-title"><i class="fa-solid fa-wand-magic-sparkles"></i> Kling VIDEO 3.0 Pro</div>
+                <div class="card">
+                    <div class="card-title">
+                        <span class="provider-badge"><i class="fa-solid fa-circle"
+                                style="color:#ff6b35;font-size:7px"></i> Kling AI</span>
+                        <span class="tag tag-premium">Premium</span>
+                    </div>
+                    <div class="card-subtitle">Unified multimodal model with synchronized audio. Reference-guided
+                        generation, multi-prompt sequencing (up to 6 shots), 3–15s clips at 1080p. <a
+                            href="https://runware.ai/models/klingai-video-3-0-pro" class="model-link" target="_blank"><i
+                                class="fa-solid fa-arrow-up-right-from-square" style="font-size:9px"></i> Runware</a>
+                    </div>
+                    <div class="caps">
+                        <span class="cap">Text-to-Video</span>
+                        <span class="cap">Image-to-Video</span>
+                        <span class="cap">Native Audio</span>
+                        <span class="cap">Multi-Shot (6 segments)</span>
+                        <span class="cap">1080p</span>
+                    </div>
+                    <table class="price-grid">
+                        <thead>
+                            <tr>
+                                <th>Configuration</th>
+                                <th>Price/s</th>
+                                <th>5s Clip Cost</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>1080p · no audio</td>
+                                <td class="price">$0.112/s</td>
+                                <td class="price-per-s">$0.56</td>
+                            </tr>
+                            <tr>
+                                <td>1080p · with audio</td>
+                                <td class="price">$0.168/s</td>
+                                <td class="price-per-s">$0.84</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- 08 Kling VIDEO 3.0 Standard -->
+            <div class="section" id="kling-3-std">
+                <div class="section-title"><i class="fa-solid fa-film"></i> Kling VIDEO 3.0 Standard</div>
+                <div class="card">
+                    <div class="card-title">
+                        <span class="provider-badge"><i class="fa-solid fa-circle"
+                                style="color:#ff6b35;font-size:7px"></i> Kling AI</span>
+                        <span class="tag tag-mid">Mid-Range</span>
+                    </div>
+                    <div class="card-subtitle">Same capabilities as Pro but optimized for balanced quality/speed/cost.
+                        Multi-prompt sequencing, reference generation, native audio. <a
+                            href="https://runware.ai/models/klingai-video-3-0-standard" class="model-link"
+                            target="_blank"><i class="fa-solid fa-arrow-up-right-from-square" style="font-size:9px"></i>
+                            Runware</a></div>
+                    <div class="caps">
+                        <span class="cap">Text-to-Video</span>
+                        <span class="cap">Image-to-Video</span>
+                        <span class="cap">Native Audio</span>
+                        <span class="cap">Multi-Shot (6 segments)</span>
+                        <span class="cap">1080p</span>
+                    </div>
+                    <table class="price-grid">
+                        <thead>
+                            <tr>
+                                <th>Configuration</th>
+                                <th>Price/s</th>
+                                <th>5s Clip Cost</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>1080p · no audio</td>
+                                <td class="price">$0.084/s</td>
+                                <td class="price-per-s">$0.42</td>
+                            </tr>
+                            <tr>
+                                <td>1080p · with audio</td>
+                                <td class="price">$0.126/s</td>
+                                <td class="price-per-s">$0.63</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <p style="font-size:12px;color:var(--text-muted);margin-top:8px;">~25% cheaper than Kling 3.0 Pro
+                        per second.</p>
+                </div>
+            </div>
+
+
+            <!-- 09 LTX 2.3 -->
+            <div class="section" id="ltx-23">
+                <div class="section-title"><i class="fa-solid fa-photo-film"></i> LTX 2.3</div>
+                <div class="card">
+                    <div class="card-title">
+                        <span class="provider-badge"><i class="fa-solid fa-circle"
+                                style="color:#7c3aed;font-size:7px"></i> Lightricks</span>
+                        <span class="tag tag-premium">Premium</span>
+                    </div>
+                    <div class="card-subtitle">High-fidelity multimodal video with native audio. Supports up to 4K
+                        (3840×2160). Text, image, and audio-conditioned workflows. Per-second pricing with both
+                        landscape and portrait. <a href="https://runware.ai/models/lightricks-ltx-2-3"
+                            class="model-link" target="_blank"><i class="fa-solid fa-arrow-up-right-from-square"
+                                style="font-size:9px"></i> Runware</a></div>
+                    <div class="caps">
+                        <span class="cap">Text-to-Video</span>
+                        <span class="cap">Image-to-Video</span>
+                        <span class="cap">Audio-to-Video</span>
+                        <span class="cap">Native Audio</span>
+                        <span class="cap">4K</span>
+                    </div>
+                    <table class="price-grid">
+                        <thead>
+                            <tr>
+                                <th>Resolution</th>
+                                <th>Orientation</th>
+                                <th>Price/s</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>1920 × 1080</td>
+                                <td>Landscape</td>
+                                <td class="price">$0.06/s</td>
+                            </tr>
+                            <tr>
+                                <td>1080 × 1920</td>
+                                <td>Portrait</td>
+                                <td class="price">$0.06/s</td>
+                            </tr>
+                            <tr>
+                                <td>2560 × 1440</td>
+                                <td>Landscape</td>
+                                <td class="price">$0.12/s</td>
+                            </tr>
+                            <tr>
+                                <td>1440 × 2560</td>
+                                <td>Portrait</td>
+                                <td class="price">$0.12/s</td>
+                            </tr>
+                            <tr>
+                                <td>3840 × 2160</td>
+                                <td>Landscape</td>
+                                <td class="price">$0.24/s</td>
+                            </tr>
+                            <tr>
+                                <td>2160 × 3840</td>
+                                <td>Portrait</td>
+                                <td class="price">$0.24/s</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <p style="font-size:12px;color:var(--text-muted);margin-top:8px;"><i class="fa-solid fa-thumbs-up"
+                            style="color:var(--green)"></i> Very competitive: $0.06/s at 1080p is one of the cheapest
+                        premium models. 4K at $0.24/s. Both orientations at same price.</p>
+                </div>
+            </div>
+
+            <!-- 10 LTX 2.3 Fast -->
+            <div class="section" id="ltx-23-fast">
+                <div class="section-title"><i class="fa-solid fa-gauge-high"></i> LTX 2.3 Fast</div>
+                <div class="card">
+                    <div class="card-title">
+                        <span class="provider-badge"><i class="fa-solid fa-circle"
+                                style="color:#7c3aed;font-size:7px"></i> Lightricks</span>
+                        <span class="tag tag-budget">Budget</span>
+                    </div>
+                    <div class="card-subtitle">Speed-optimized LTX 2.3 for rapid iteration. Same resolution range (up to
+                        4K) at ~33% less cost. Prioritizes speed and cost efficiency. <a
+                            href="https://runware.ai/models/lightricks-ltx-2-3-fast" class="model-link"
+                            target="_blank"><i class="fa-solid fa-arrow-up-right-from-square" style="font-size:9px"></i>
+                            Runware</a></div>
+                    <div class="caps">
+                        <span class="cap">Text-to-Video</span>
+                        <span class="cap">Image-to-Video</span>
+                        <span class="cap">Audio-to-Video</span>
+                        <span class="cap">Native Audio</span>
+                        <span class="cap">4K</span>
+                        <span class="cap">Low Latency</span>
+                    </div>
+                    <table class="price-grid">
+                        <thead>
+                            <tr>
+                                <th>Resolution</th>
+                                <th>Orientation</th>
+                                <th>Price/s</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>1920 × 1080</td>
+                                <td>Landscape</td>
+                                <td class="price">$0.04/s</td>
+                            </tr>
+                            <tr>
+                                <td>1080 × 1920</td>
+                                <td>Portrait</td>
+                                <td class="price">$0.04/s</td>
+                            </tr>
+                            <tr>
+                                <td>2560 × 1440</td>
+                                <td>Landscape</td>
+                                <td class="price">$0.08/s</td>
+                            </tr>
+                            <tr>
+                                <td>1440 × 2560</td>
+                                <td>Portrait</td>
+                                <td class="price">$0.08/s</td>
+                            </tr>
+                            <tr>
+                                <td>3840 × 2160</td>
+                                <td>Landscape</td>
+                                <td class="price">$0.16/s</td>
+                            </tr>
+                            <tr>
+                                <td>2160 × 3840</td>
+                                <td>Portrait</td>
+                                <td class="price">$0.16/s</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <p style="font-size:12px;color:var(--text-muted);margin-top:8px;"><i class="fa-solid fa-fire"
+                            style="color:var(--red)"></i> $0.04/s at 1080p — one of the cheapest video models available.
+                        5s clip = $0.20.</p>
+                </div>
+            </div>
+
+
+            <!-- 11 Seedance 1.5 Pro -->
+            <div class="section" id="seedance">
+                <div class="section-title"><i class="fa-solid fa-music"></i> Seedance 1.5 Pro</div>
+                <div class="card">
+                    <div class="card-title">
+                        <span class="provider-badge"><i class="fa-solid fa-circle"
+                                style="color:#325aff;font-size:7px"></i> ByteDance</span>
+                        <span class="tag tag-mid">Mid-Range</span>
+                    </div>
+                    <div class="card-subtitle">Cinematic video with native synchronized audio. Excels at expressive
+                        human motion, dance, and character performances. Precise audio-visual timing. <a
+                            href="https://runware.ai/models/bytedance-seedance-1-5-pro" class="model-link"
+                            target="_blank"><i class="fa-solid fa-arrow-up-right-from-square" style="font-size:9px"></i>
+                            Runware</a></div>
+                    <div class="caps">
+                        <span class="cap">Text-to-Video</span>
+                        <span class="cap">Image-to-Video</span>
+                        <span class="cap">Audio-to-Video</span>
+                        <span class="cap">Native Audio</span>
+                        <span class="cap">Expressive Motion</span>
+                    </div>
+                    <table class="price-grid">
+                        <thead>
+                            <tr>
+                                <th>Configuration</th>
+                                <th>Price (5s clip)</th>
+                                <th>Per-Second</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>480p · no audio</td>
+                                <td class="price">$0.06</td>
+                                <td class="price-per-s">$0.012/s</td>
+                            </tr>
+                            <tr>
+                                <td>480p · with audio</td>
+                                <td class="price">$0.12</td>
+                                <td class="price-per-s">$0.024/s</td>
+                            </tr>
+                            <tr>
+                                <td>720p · no audio</td>
+                                <td class="price">$0.13</td>
+                                <td class="price-per-s">$0.026/s</td>
+                            </tr>
+                            <tr>
+                                <td>720p · with audio</td>
+                                <td class="price">$0.26</td>
+                                <td class="price-per-s">$0.052/s</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <p style="font-size:12px;color:var(--text-muted);margin-top:8px;"><i class="fa-solid fa-thumbs-up"
+                            style="color:var(--green)"></i> Extremely affordable: $0.06 for a 5s clip at 480p. Best
+                        per-second rate among mid-range models.</p>
+                </div>
+            </div>
+
+            <!-- 12 Grok Imagine Video -->
+            <div class="section" id="grok-video">
+                <div class="section-title"><i class="fa-solid fa-xmark"></i> Grok Imagine Video</div>
+                <div class="card">
+                    <div class="card-title">
+                        <span class="provider-badge"><i class="fa-solid fa-circle"
+                                style="color:#1d9bf0;font-size:7px"></i> xAI</span>
+                        <span class="tag tag-mid">Mid-Range</span>
+                    </div>
+                    <div class="card-subtitle">xAI's multimodal video model. T2V, I2V, and V2V in one endpoint. Native
+                        audio with synchronized sound effects and dialogue. Context-aware via Grok reasoning. <a
+                            href="https://runware.ai/models/xai-grok-imagine-video" class="model-link"
+                            target="_blank"><i class="fa-solid fa-arrow-up-right-from-square" style="font-size:9px"></i>
+                            Runware</a></div>
+                    <div class="caps">
+                        <span class="cap">Text-to-Video</span>
+                        <span class="cap">Image-to-Video</span>
+                        <span class="cap">Video-to-Video</span>
+                        <span class="cap">Native Audio</span>
+                    </div>
+                    <table class="price-grid">
+                        <thead>
+                            <tr>
+                                <th>Configuration</th>
+                                <th>Price (6s clip)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>480p · T2V</td>
+                                <td class="price">$0.30</td>
+                            </tr>
+                            <tr>
+                                <td>720p · T2V</td>
+                                <td class="price">$0.42</td>
+                            </tr>
+                            <tr>
+                                <td>480p · I2V</td>
+                                <td class="price">$0.302</td>
+                            </tr>
+                            <tr>
+                                <td>720p · I2V</td>
+                                <td class="price">$0.422</td>
+                            </tr>
+                            <tr>
+                                <td>480p · V2V</td>
+                                <td class="price">$0.36</td>
+                            </tr>
+                            <tr>
+                                <td>720p · V2V</td>
+                                <td class="price">$0.48</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <p style="font-size:12px;color:var(--text-muted);margin-top:8px;">Base 6s T2V: $0.30. +$0.05/extra
+                        second. +$0.002 for image input. +$0.01/s for video input.</p>
+                </div>
+            </div>
+
+
+            <!-- 13 MiniMax Hailuo 2.3 -->
+            <div class="section" id="hailuo">
+                <div class="section-title"><i class="fa-solid fa-compact-disc"></i> MiniMax Hailuo 2.3</div>
+                <div class="card">
+                    <div class="card-title">
+                        <span class="provider-badge"><i class="fa-solid fa-circle"
+                                style="color:#e74c3c;font-size:7px"></i> MiniMax</span>
+                        <span class="tag tag-mid">Mid-Range</span>
+                    </div>
+                    <div class="card-subtitle">Cinematic short-form model. Consistent motion, strong physics, stable
+                        scenes. 6s or 10s clips at 768p or 1080p. Good for ads, social content. <a
+                            href="https://runware.ai/models/minimax-hailuo-2-3" class="model-link" target="_blank"><i
+                                class="fa-solid fa-arrow-up-right-from-square" style="font-size:9px"></i> Runware</a>
+                    </div>
+                    <div class="caps">
+                        <span class="cap">Text-to-Video</span>
+                        <span class="cap">Image-to-Video</span>
+                    </div>
+                    <table class="price-grid">
+                        <thead>
+                            <tr>
+                                <th>Configuration</th>
+                                <th>Price</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>768p · 6s</td>
+                                <td class="price">$0.28</td>
+                            </tr>
+                            <tr>
+                                <td>768p · 10s</td>
+                                <td class="price">$0.56</td>
+                            </tr>
+                            <tr>
+                                <td>1080p · 6s</td>
+                                <td class="price">$0.49</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- 14 PixVerse v5.6 -->
+            <div class="section" id="pixverse">
+                <div class="section-title"><i class="fa-solid fa-palette"></i> PixVerse v5.6</div>
+                <div class="card">
+                    <div class="card-title">
+                        <span class="provider-badge"><i class="fa-solid fa-circle"
+                                style="color:#f59e0b;font-size:7px"></i> PixVerse</span>
+                        <span class="tag tag-mid">Mid-Range</span>
+                    </div>
+                    <div class="card-subtitle">Enhanced cinematic model with improved lip-sync and audio realism. Most
+                        configurations of any model (8). Covers 360p–1080p with audio/no-audio variants. <a
+                            href="https://runware.ai/models/pixverse-v5-6" class="model-link" target="_blank"><i
+                                class="fa-solid fa-arrow-up-right-from-square" style="font-size:9px"></i> Runware</a>
+                    </div>
+                    <div class="caps">
+                        <span class="cap">Text-to-Video</span>
+                        <span class="cap">Image-to-Video</span>
+                        <span class="cap">Native Audio</span>
+                        <span class="cap">Lip-Sync</span>
+                    </div>
+                    <table class="price-grid">
+                        <thead>
+                            <tr>
+                                <th>Resolution</th>
+                                <th>Audio</th>
+                                <th>Price (5s clip)</th>
+                                <th>Savings</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>360p</td>
+                                <td>No</td>
+                                <td class="price">$0.1031</td>
+                                <td class="note">~70%</td>
+                            </tr>
+                            <tr>
+                                <td>360p</td>
+                                <td>Yes</td>
+                                <td class="price">$0.2357</td>
+                                <td class="note">~47%</td>
+                            </tr>
+                            <tr>
+                                <td>540p</td>
+                                <td>No</td>
+                                <td class="price">$0.1031</td>
+                                <td class="note">~70%</td>
+                            </tr>
+                            <tr>
+                                <td>540p</td>
+                                <td>Yes</td>
+                                <td class="price">$0.2357</td>
+                                <td class="note">~47%</td>
+                            </tr>
+                            <tr>
+                                <td>720p</td>
+                                <td>No</td>
+                                <td class="price">$0.1326</td>
+                                <td class="note">~70%</td>
+                            </tr>
+                            <tr>
+                                <td>720p</td>
+                                <td>Yes</td>
+                                <td class="price">$0.2652</td>
+                                <td class="note">~41%</td>
+                            </tr>
+                            <tr>
+                                <td>1080p</td>
+                                <td>No</td>
+                                <td class="price">$0.2210</td>
+                                <td class="note">~70%</td>
+                            </tr>
+                            <tr>
+                                <td>1080p</td>
+                                <td>Yes</td>
+                                <td class="price">$0.3536</td>
+                                <td class="note">~52%</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <p style="font-size:12px;color:var(--text-muted);margin-top:8px;">Audio roughly doubles the price at
+                        each resolution. Non-audio configs show ~70% savings vs market.</p>
+                </div>
+            </div>
+
+
+            <!-- 15 Vidu Q3 -->
+            <div class="section" id="vidu-q3">
+                <div class="section-title"><i class="fa-solid fa-bolt"></i> Vidu Q3</div>
+                <div class="card">
+                    <div class="card-title">
+                        <span class="provider-badge"><i class="fa-solid fa-circle"
+                                style="color:#06b6d4;font-size:7px"></i> Vidu</span>
+                        <span class="tag tag-budget">Budget</span>
+                    </div>
+                    <div class="card-subtitle">Multimodal video with native audio, intelligent multi-shot sequencing,
+                        and embedded subtitles. Four resolution tiers with ~35% market savings. <a
+                            href="https://runware.ai/models/vidu-q3" class="model-link" target="_blank"><i
+                                class="fa-solid fa-arrow-up-right-from-square" style="font-size:9px"></i> Runware</a>
+                    </div>
+                    <div class="caps">
+                        <span class="cap">Text-to-Video</span>
+                        <span class="cap">Image-to-Video</span>
+                        <span class="cap">Audio-to-Video</span>
+                        <span class="cap">Native Audio</span>
+                        <span class="cap">Multi-Shot</span>
+                        <span class="cap">Subtitles</span>
+                    </div>
+                    <table class="price-grid">
+                        <thead>
+                            <tr>
+                                <th>Resolution</th>
+                                <th>Price/s</th>
+                                <th>5s Clip Cost</th>
+                                <th>Savings</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>360p</td>
+                                <td class="price">$0.0455/s</td>
+                                <td class="price-per-s">$0.2275</td>
+                                <td class="note">~35%</td>
+                            </tr>
+                            <tr>
+                                <td>540p</td>
+                                <td class="price">$0.0455/s</td>
+                                <td class="price-per-s">$0.2275</td>
+                                <td class="note">~35%</td>
+                            </tr>
+                            <tr>
+                                <td>720p</td>
+                                <td class="price">$0.0975/s</td>
+                                <td class="price-per-s">$0.4875</td>
+                                <td class="note">~35%</td>
+                            </tr>
+                            <tr>
+                                <td>1080p</td>
+                                <td class="price">$0.1040/s</td>
+                                <td class="price-per-s">$0.52</td>
+                                <td class="note">~35%</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <p style="font-size:12px;color:var(--text-muted);margin-top:8px;">360p and 540p share the same
+                        price. Good for draft/preview at low resolution.</p>
+                </div>
+            </div>
+
+            <!-- 16 Vidu Q3 Turbo -->
+            <div class="section" id="vidu-q3-turbo">
+                <div class="section-title"><i class="fa-solid fa-rocket"></i> Vidu Q3 Turbo</div>
+                <div class="card">
+                    <div class="card-title">
+                        <span class="provider-badge"><i class="fa-solid fa-circle"
+                                style="color:#06b6d4;font-size:7px"></i> Vidu</span>
+                        <span class="tag tag-budget">Budget</span>
+                    </div>
+                    <div class="card-subtitle">Speed-optimized Q3 for low-latency workflows. Fast inference with stable
+                        motion and audio alignment. Good for rapid prototyping. <a
+                            href="https://runware.ai/models/vidu-q3-turbo" class="model-link" target="_blank"><i
+                                class="fa-solid fa-arrow-up-right-from-square" style="font-size:9px"></i> Runware</a>
+                    </div>
+                    <div class="caps">
+                        <span class="cap">Text-to-Video</span>
+                        <span class="cap">Image-to-Video</span>
+                        <span class="cap">Native Audio</span>
+                        <span class="cap">Low Latency</span>
+                    </div>
+                    <table class="price-grid">
+                        <thead>
+                            <tr>
+                                <th>Configuration</th>
+                                <th>Price (5s clip)</th>
+                                <th>Per-Second</th>
+                                <th>Savings</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>540p · 5s</td>
+                                <td class="price">$0.13</td>
+                                <td class="price-per-s">$0.026/s</td>
+                                <td class="note">~35%</td>
+                            </tr>
+                            <tr>
+                                <td>720p · 5s</td>
+                                <td class="price">$0.195</td>
+                                <td class="price-per-s">$0.039/s</td>
+                                <td class="note">~35%</td>
+                            </tr>
+                            <tr>
+                                <td>1080p · 5s</td>
+                                <td class="price">$0.26</td>
+                                <td class="price-per-s">$0.052/s</td>
+                                <td class="note">~35%</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- 17 Config Mapping Notes -->
+            <div class="section" id="mapping">
+                <div class="section-title"><i class="fa-solid fa-sitemap"></i> Configuration Mapping Notes</div>
+                <p>Video pricing is more complex than images due to multiple dimensions. Key patterns:</p>
+
+                <div class="card" style="margin-top:14px;">
+                    <div class="card-title"><i class="fa-solid fa-cubes" style="color:var(--accent)"></i> Pricing
+                        Dimensions</div>
+                    <ul>
+                        <li><strong>Resolution</strong> — Nearly all models scale price with resolution (720p → 1080p →
+                            4K).</li>
+                        <li><strong>Duration</strong> — Per-second (LTX, Kling, Vidu) vs fixed-clip (Sora 8s, MiniMax
+                            6/10s, Seedance 5s, PixVerse 5s, Grok 6s).</li>
+                        <li><strong>Audio toggle</strong> — Many models charge extra for native audio (typically 1.5×–2×
+                            the no-audio price).</li>
+                        <li><strong>Input type</strong> — Some models (Grok, Kling O3) vary price by T2V vs I2V vs V2V
+                            input mode.</li>
+                        <li><strong>Orientation</strong> — LTX 2.3 uniquely supports both landscape and portrait at the
+                            same price per resolution tier.</li>
+                    </ul>
+                </div>
+
+                <div class="card">
+                    <div class="card-title"><i class="fa-solid fa-lightbulb" style="color:var(--amber)"></i> Suggested
+                        Default Config per Model</div>
+                    <table class="price-grid">
+                        <thead>
+                            <tr>
+                                <th>Model</th>
+                                <th>Default Config</th>
+                                <th>Price</th>
+                                <th>Notes</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>Google Veo 3.1</td>
+                                <td>720p · 8s · audio</td>
+                                <td class="price">$3.20</td>
+                                <td class="note">Best quality</td>
+                            </tr>
+                            <tr>
+                                <td>Google Veo 3.1 Fast</td>
+                                <td>1080p · 8s · no audio</td>
+                                <td class="price">$0.80</td>
+                                <td class="note">Fast + high-res</td>
+                            </tr>
+                            <tr>
+                                <td>Sora 2 Pro</td>
+                                <td>720p · 8s</td>
+                                <td class="price">$2.40</td>
+                                <td class="note">Standard entry</td>
+                            </tr>
+                            <tr>
+                                <td>Sora 2</td>
+                                <td>720p · 8s</td>
+                                <td class="price">$0.80</td>
+                                <td class="note">Only option</td>
+                            </tr>
+                            <tr>
+                                <td>Kling VIDEO 3.0 Pro</td>
+                                <td>1080p · no audio · 5s</td>
+                                <td class="price">$0.56</td>
+                                <td class="note">5s default</td>
+                            </tr>
+                            <tr>
+                                <td>Kling VIDEO 3.0 Standard</td>
+                                <td>1080p · no audio · 5s</td>
+                                <td class="price">$0.42</td>
+                                <td class="note">5s default</td>
+                            </tr>
+                            <tr>
+                                <td>LTX 2.3</td>
+                                <td>1920×1080 · landscape</td>
+                                <td class="price">$0.06/s</td>
+                                <td class="note">Per second</td>
+                            </tr>
+                            <tr>
+                                <td>LTX 2.3 Fast</td>
+                                <td>1920×1080 · landscape</td>
+                                <td class="price">$0.04/s</td>
+                                <td class="note">Per second</td>
+                            </tr>
+                            <tr>
+                                <td>Seedance 1.5 Pro</td>
+                                <td>720p · 5s · no audio</td>
+                                <td class="price">$0.13</td>
+                                <td class="note">Best value</td>
+                            </tr>
+                            <tr>
+                                <td>Grok Imagine Video</td>
+                                <td>480p · T2V · 6s</td>
+                                <td class="price">$0.30</td>
+                                <td class="note">Base config</td>
+                            </tr>
+                            <tr>
+                                <td>MiniMax Hailuo 2.3</td>
+                                <td>768p · 6s</td>
+                                <td class="price">$0.28</td>
+                                <td class="note">Base config</td>
+                            </tr>
+                            <tr>
+                                <td>PixVerse v5.6</td>
+                                <td>720p · 5s · no audio</td>
+                                <td class="price">$0.1326</td>
+                                <td class="note">Best value</td>
+                            </tr>
+                            <tr>
+                                <td>Vidu Q3</td>
+                                <td>720p · per second</td>
+                                <td class="price">$0.0975/s</td>
+                                <td class="note">Per second</td>
+                            </tr>
+                            <tr>
+                                <td>Vidu Q3 Turbo</td>
+                                <td>720p · 5s</td>
+                                <td class="price">$0.195</td>
+                                <td class="note">Fast option</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+
+                <div class="card">
+                    <div class="card-title"><i class="fa-solid fa-ranking-star" style="color:var(--green)"></i> Price
+                        Comparison (normalized to 5s clip at ~720p, no audio)</div>
+                    <table class="price-grid">
+                        <thead>
+                            <tr>
+                                <th>Model</th>
+                                <th>~5s Cost</th>
+                                <th>Tier</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>LTX 2.3 Fast (1080p)</td>
+                                <td class="price">$0.20</td>
+                                <td><span class="tag tag-budget">Budget</span></td>
+                            </tr>
+                            <tr>
+                                <td>Seedance 1.5 Pro (720p)</td>
+                                <td class="price">$0.13</td>
+                                <td><span class="tag tag-budget">Budget</span></td>
+                            </tr>
+                            <tr>
+                                <td>PixVerse v5.6 (720p)</td>
+                                <td class="price">$0.1326</td>
+                                <td><span class="tag tag-budget">Budget</span></td>
+                            </tr>
+                            <tr>
+                                <td>Vidu Q3 Turbo (720p)</td>
+                                <td class="price">$0.195</td>
+                                <td><span class="tag tag-budget">Budget</span></td>
+                            </tr>
+                            <tr>
+                                <td>Vidu Q3 (720p)</td>
+                                <td class="price">$0.4875</td>
+                                <td><span class="tag tag-mid">Mid-Range</span></td>
+                            </tr>
+                            <tr>
+                                <td>LTX 2.3 (1080p)</td>
+                                <td class="price">$0.30</td>
+                                <td><span class="tag tag-mid">Mid-Range</span></td>
+                            </tr>
+                            <tr>
+                                <td>MiniMax Hailuo 2.3 (768p 6s)</td>
+                                <td class="price">$0.28</td>
+                                <td><span class="tag tag-mid">Mid-Range</span></td>
+                            </tr>
+                            <tr>
+                                <td>Grok Imagine Video (480p 6s)</td>
+                                <td class="price">$0.30</td>
+                                <td><span class="tag tag-mid">Mid-Range</span></td>
+                            </tr>
+                            <tr>
+                                <td>Kling 3.0 Standard (1080p)</td>
+                                <td class="price">$0.42</td>
+                                <td><span class="tag tag-mid">Mid-Range</span></td>
+                            </tr>
+                            <tr>
+                                <td>Kling 3.0 Pro (1080p)</td>
+                                <td class="price">$0.56</td>
+                                <td><span class="tag tag-premium">Premium</span></td>
+                            </tr>
+                            <tr>
+                                <td>Sora 2 (720p 8s)</td>
+                                <td class="price">$0.80</td>
+                                <td><span class="tag tag-premium">Premium</span></td>
+                            </tr>
+                            <tr>
+                                <td>Veo 3.1 Fast (1080p 8s)</td>
+                                <td class="price">$0.80</td>
+                                <td><span class="tag tag-premium">Premium</span></td>
+                            </tr>
+                            <tr>
+                                <td>Sora 2 Pro (720p 8s)</td>
+                                <td class="price">$2.40</td>
+                                <td><span class="tag tag-premium">Premium</span></td>
+                            </tr>
+                            <tr>
+                                <td>Veo 3.1 (720p 8s + audio)</td>
+                                <td class="price">$3.20</td>
+                                <td><span class="tag tag-premium">Premium</span></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="note-box"><strong>Source:</strong> All pricing from <a href="https://runware.ai/pricing"
+                        class="model-link">runware.ai/pricing</a> and individual model pages. Best Video collection: <a
+                        href="https://runware.ai/collections/best-video-models"
+                        class="model-link">runware.ai/collections/best-video-models</a>.</div>
+            </div>
+
+        </div>
+    </div>
+
+
+</body>
+
+</html>

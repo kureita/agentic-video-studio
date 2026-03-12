@@ -12,35 +12,7 @@ from app.core.config import settings
 from app.core.dependencies import get_storage_service
 from app.services.runware_service import RunwareService
 
-_MODEL_MAP = {
-    # Frontend display name → Runware AIR identifier
-    # Format: provider:model@version  (confirmed from https://docs.runware.ai/en/providers/*)
-
-    # ── Primary models (shown in UI dropdown) ──────────────────────────────
-    "FLUX Schnell":      "runware:101@1",        # Fastest, great for drafts
-    "Kling IMAGE 3.0":   "klingai:kling-image@3", # KlingAI 2K professional image model
-    "Seedream 5.0 Lite": "bytedance:seedream@5.0-lite",  # ByteDance Seedream 5.0 Lite
-
-    # ── Additional supported models ────────────────────────────────────────
-    "FLUX Dev":           "runware:100@1",        # Higher quality FLUX
-    "ImagineArt 1.5":     "imagineart:1@5",       # ImagineArt photorealistic
-    "ImagineArt 1.5 Pro": "imagineart:1.5-pro@0", # ImagineArt 4K professional
-    "Seedream 4.0":       "bytedance:5@0",        # ByteDance Seedream 4.0
-
-    # ── Legacy / fallback names (map to FLUX Schnell) ──────────────────────
-    "Imagen 4":    "runware:101@1",
-    "Imagen 3":    "runware:101@1",
-    "Kling Image": "runware:101@1",
-    "BytePlus":    "runware:101@1",
-    "Gemini":      "runware:101@1",
-    "ImagineArt":  "imagineart:1@5",  # old name → correct AIR
-    # Old broken Seedream names → correct AIR
-    "Seedream 5.0":         "bytedance:seedream@5.0-lite",
-    "Recraft V4":            "runware:101@1",  # fallback — Recraft AIR not publicly documented
-    "Recraft V4 Pro":        "runware:101@1",  # fallback
-}
-
-
+from app.core.model_registry import get_model_by_name
 class ImageGenerator:
     """Generates images using Runware API (Flux, Recraft, Kling, etc) for consistent scene visuals."""
 
@@ -137,13 +109,12 @@ class ImageGenerator:
         # Determine the target model
         target_model = self.default_model
         if model_name:
-            # Check mappings
-            for key, val in _MODEL_MAP.items():
-                if key in model_name:
-                    target_model = val
-                    break
+            model_info = get_model_by_name(model_name)
+            if model_info and "air_id" in model_info:
+                target_model = model_info["air_id"]
             else:
-                target_model = model_name # Pass through literally if unmatched
+                # Pass through literally if it looks like an AIR ID (has ':'), else fallback
+                target_model = model_name if ":" in model_name else self.default_model
                 
         try:
             # Map aspect ratio to valid Runware dimensions

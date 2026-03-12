@@ -4,6 +4,8 @@ import { Music, Loader2, Download, ChevronDown, Mic, Volume2 } from "lucide-reac
 import { NodeWrapper } from "@/components/workflow/node-wrapper";
 import { usePresignedUrl } from "@/lib/use-presigned-url";
 import { useWorkflowStore } from "@/lib/workflow-store";
+import { motion, AnimatePresence } from "framer-motion";
+import { cn } from "@/lib/utils";
 
 type AudioType = "speech" | "music" | "sfx";
 
@@ -47,6 +49,32 @@ export const AudioGenNode = memo(({ id, selected, data }: NodeProps) => {
     const textareaRef = React.useRef<HTMLTextAreaElement>(null);
     const [showSuggestions, setShowSuggestions] = React.useState(false);
     const [filterText, setFilterText] = React.useState("");
+
+    const [showTypeMenu, setShowTypeMenu] = React.useState(false);
+    const [showVoiceMenu, setShowVoiceMenu] = React.useState(false);
+    const [showDurationMenu, setShowDurationMenu] = React.useState(false);
+
+    const typeMenuRef = React.useRef<HTMLDivElement>(null);
+    const voiceMenuRef = React.useRef<HTMLDivElement>(null);
+    const durationMenuRef = React.useRef<HTMLDivElement>(null);
+
+    React.useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+            if (typeMenuRef.current && !typeMenuRef.current.contains(e.target as Node)) {
+                setShowTypeMenu(false);
+            }
+            if (voiceMenuRef.current && !voiceMenuRef.current.contains(e.target as Node)) {
+                setShowVoiceMenu(false);
+            }
+            if (durationMenuRef.current && !durationMenuRef.current.contains(e.target as Node)) {
+                setShowDurationMenu(false);
+            }
+        };
+        if (showTypeMenu || showVoiceMenu || showDurationMenu) {
+            document.addEventListener('mousedown', handleClickOutside);
+            return () => document.removeEventListener('mousedown', handleClickOutside);
+        }
+    }, [showTypeMenu, showVoiceMenu, showDurationMenu]);
 
     // Get only connected text nodes for suggestions
     const nodes = useWorkflowStore((state) => state.nodes);
@@ -208,67 +236,178 @@ export const AudioGenNode = memo(({ id, selected, data }: NodeProps) => {
                     {/* Controls Bar */}
                     <div className="px-3 pb-3 flex items-center gap-2">
                         {/* Audio Type Selector */}
-                        <div className="relative h-7 flex items-center gap-1.5 bg-black/40 backdrop-blur-sm border border-white/10 rounded-full px-3 text-white/90 hover:bg-black/60 transition-colors">
-                            {currentTypeOption.icon}
-                            <span className="text-[10px] font-medium">{currentTypeOption.label}</span>
-                            <ChevronDown className="w-2.5 h-2.5 text-white/50 flex-shrink-0" />
-                            <select
-                                className="absolute inset-0 opacity-0 cursor-pointer"
-                                value={audioType}
-                                onChange={(e) => updateNodeData(id, { audioType: e.target.value })}
+                        <div className="relative flex-shrink-0" ref={typeMenuRef}>
+                            <button
+                                onClick={() => {
+                                    setShowTypeMenu(!showTypeMenu);
+                                    setShowVoiceMenu(false);
+                                    setShowDurationMenu(false);
+                                }}
+                                className={cn(
+                                    "flex items-center gap-1.5 h-7 bg-black/40 backdrop-blur-sm border border-white/10 rounded-full px-3 text-white/90 hover:bg-black/60 transition-colors cursor-pointer",
+                                    showTypeMenu && "bg-black/80 border-white/20"
+                                )}
                             >
-                                {AUDIO_TYPE_OPTIONS.map((opt) => (
-                                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                                ))}
-                            </select>
+                                {currentTypeOption.icon}
+                                <span className="text-[10px] font-medium">{currentTypeOption.label}</span>
+                                <ChevronDown className="w-2.5 h-2.5 text-white/50 flex-shrink-0" />
+                            </button>
+
+                            <AnimatePresence>
+                                {showTypeMenu && (
+                                    <motion.div
+                                        initial={{ opacity: 0, y: 4, scale: 0.96 }}
+                                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                                        exit={{ opacity: 0, y: 4, scale: 0.96 }}
+                                        transition={{ duration: 0.12 }}
+                                        className="absolute bottom-full left-0 mb-2 w-48 bg-black/90 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50 pointer-events-auto flex flex-col"
+                                    >
+                                        <div className="px-3 py-2 text-[10px] font-semibold text-white/50 uppercase tracking-wider border-b border-white/10 bg-black/40">
+                                            Audio Type
+                                        </div>
+                                        <div className="flex flex-col p-1 nodrag nowheel">
+                                            {AUDIO_TYPE_OPTIONS.map((opt) => (
+                                                <button
+                                                    key={opt.value}
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        updateNodeData(id, { audioType: opt.value });
+                                                        setShowTypeMenu(false);
+                                                    }}
+                                                    className={cn(
+                                                        "w-full text-left px-2.5 py-2 text-[11px] rounded-lg hover:bg-white/10 cursor-pointer flex flex-col gap-0.5 transition-colors",
+                                                        audioType === opt.value && "bg-white/15 text-white font-medium"
+                                                    )}
+                                                >
+                                                    <div className="flex items-center gap-1.5">
+                                                        <span className={cn(audioType === opt.value ? "text-white" : "text-white/70")}>{opt.icon}</span>
+                                                        <span className={cn(audioType !== opt.value && "text-white/80")}>
+                                                            {opt.label}
+                                                        </span>
+                                                    </div>
+                                                    <span className="text-[9px] text-white/40 pl-4">{opt.description}</span>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
                         </div>
 
                         {/* Voice Selector (only visible for speech type) */}
                         {audioType === "speech" && (
-                            <div className="relative h-7 flex items-center gap-1.5 bg-black/40 backdrop-blur-sm border border-white/10 rounded-full px-3 text-white/90 hover:bg-black/60 transition-colors flex-grow">
-                                <Mic className="w-3 h-3 text-white/70" />
-                                <span className="text-[10px] font-medium truncate">{typeof data.voice === 'string' ? data.voice : "Rachel"}</span>
-                                <ChevronDown className="w-2.5 h-2.5 text-white/50 flex-shrink-0" />
-                                <select
-                                    className="absolute inset-0 opacity-0 cursor-pointer"
-                                    value={typeof data.voice === 'string' ? data.voice : "Rachel"}
-                                    onChange={(e) => updateNodeData(id, { voice: e.target.value })}
+                            <div className="relative flex-grow min-w-0" ref={voiceMenuRef}>
+                                <button
+                                    onClick={() => {
+                                        setShowVoiceMenu(!showVoiceMenu);
+                                        setShowTypeMenu(false);
+                                    }}
+                                    className={cn(
+                                        "flex items-center justify-between gap-1.5 h-7 w-full bg-black/40 backdrop-blur-sm border border-white/10 rounded-full px-3 text-white/90 hover:bg-black/60 transition-colors cursor-pointer",
+                                        showVoiceMenu && "bg-black/80 border-white/20"
+                                    )}
                                 >
-                                    <option value="Rachel">Rachel</option>
-                                    <option value="Adam">Adam</option>
-                                    <option value="Antoni">Antoni</option>
-                                    <option value="Arnold">Arnold</option>
-                                    <option value="Bella">Bella</option>
-                                    <option value="Domi">Domi</option>
-                                    <option value="Elli">Elli</option>
-                                    <option value="Josh">Josh</option>
-                                    <option value="Sam">Sam</option>
-                                </select>
+                                    <div className="flex items-center gap-1.5 overflow-hidden">
+                                        <Mic className="w-3 h-3 text-white/70 flex-shrink-0" />
+                                        <span className="text-[10px] font-medium truncate">{typeof data.voice === 'string' ? data.voice : "Rachel"}</span>
+                                    </div>
+                                    <ChevronDown className="w-2.5 h-2.5 text-white/50 flex-shrink-0" />
+                                </button>
+
+                                <AnimatePresence>
+                                    {showVoiceMenu && (
+                                        <motion.div
+                                            initial={{ opacity: 0, y: 4, scale: 0.96 }}
+                                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                                            exit={{ opacity: 0, y: 4, scale: 0.96 }}
+                                            transition={{ duration: 0.12 }}
+                                            className="absolute bottom-full left-0 mb-2 w-32 bg-black/90 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50 pointer-events-auto flex flex-col"
+                                        >
+                                            <div className="px-3 py-2 text-[10px] font-semibold text-white/50 uppercase tracking-wider border-b border-white/10 bg-black/40">
+                                                Voice
+                                            </div>
+                                            <div className="max-h-[160px] overflow-y-auto flex flex-col p-1 nodrag nowheel">
+                                                {["Rachel", "Adam", "Antoni", "Arnold", "Bella", "Domi", "Elli", "Josh", "Sam"].map((v) => (
+                                                    <button
+                                                        key={v}
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            updateNodeData(id, { voice: v });
+                                                            setShowVoiceMenu(false);
+                                                        }}
+                                                        className={cn(
+                                                            "w-full text-left px-2.5 py-1.5 text-[11px] rounded-lg hover:bg-white/10 cursor-pointer transition-colors",
+                                                            (typeof data.voice === 'string' ? data.voice : "Rachel") === v && "bg-white/15 text-white font-medium"
+                                                        )}
+                                                    >
+                                                        <span className={cn((typeof data.voice === 'string' ? data.voice : "Rachel") !== v && "text-white/80")}>
+                                                            {v}
+                                                        </span>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
                             </div>
                         )}
 
                         {/* Duration Selector (visible for music and sfx types) */}
                         {(audioType === "music" || audioType === "sfx") && (
-                            <div className="relative h-7 flex items-center gap-1.5 bg-black/40 backdrop-blur-sm border border-white/10 rounded-full px-3 text-white/90 hover:bg-black/60 transition-colors flex-grow">
-                                <span className="text-[10px] font-medium truncate">
-                                    {typeof data.duration === 'number' ? `${data.duration}s` : "10s"}
-                                </span>
-                                <ChevronDown className="w-2.5 h-2.5 text-white/50 flex-shrink-0" />
-                                <select
-                                    className="absolute inset-0 opacity-0 cursor-pointer"
-                                    value={typeof data.duration === 'number' ? data.duration : 10}
-                                    onChange={(e) => updateNodeData(id, { duration: parseInt(e.target.value) })}
+                            <div className="relative flex-grow min-w-0" ref={durationMenuRef}>
+                                <button
+                                    onClick={() => {
+                                        setShowDurationMenu(!showDurationMenu);
+                                        setShowTypeMenu(false);
+                                    }}
+                                    className={cn(
+                                        "flex items-center justify-between gap-1.5 h-7 w-full bg-black/40 backdrop-blur-sm border border-white/10 rounded-full px-3 text-white/90 hover:bg-black/60 transition-colors cursor-pointer",
+                                        showDurationMenu && "bg-black/80 border-white/20"
+                                    )}
                                 >
-                                    <option value={10}>10s</option>
-                                    <option value={15}>15s</option>
-                                    <option value={20}>20s</option>
-                                    <option value={30}>30s</option>
-                                    <option value={60}>60s</option>
-                                </select>
+                                    <span className="text-[10px] font-medium truncate">
+                                        {typeof data.duration === 'number' ? `${data.duration}s` : "10s"}
+                                    </span>
+                                    <ChevronDown className="w-2.5 h-2.5 text-white/50 flex-shrink-0" />
+                                </button>
+
+                                <AnimatePresence>
+                                    {showDurationMenu && (
+                                        <motion.div
+                                            initial={{ opacity: 0, y: 4, scale: 0.96 }}
+                                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                                            exit={{ opacity: 0, y: 4, scale: 0.96 }}
+                                            transition={{ duration: 0.12 }}
+                                            className="absolute bottom-full left-0 mb-2 w-24 bg-black/90 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50 pointer-events-auto flex flex-col"
+                                        >
+                                            <div className="px-3 py-2 text-[10px] font-semibold text-white/50 uppercase tracking-wider border-b border-white/10 bg-black/40">
+                                                Duration
+                                            </div>
+                                            <div className="max-h-[160px] overflow-y-auto flex flex-col p-1 nodrag nowheel">
+                                                {[10, 15, 20, 30, 60].map((d) => (
+                                                    <button
+                                                        key={d}
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            updateNodeData(id, { duration: d });
+                                                            setShowDurationMenu(false);
+                                                        }}
+                                                        className={cn(
+                                                            "w-full text-left px-2.5 py-1.5 text-[11px] rounded-lg hover:bg-white/10 cursor-pointer transition-colors",
+                                                            (typeof data.duration === 'number' ? data.duration : 10) === d && "bg-white/15 text-white font-medium"
+                                                        )}
+                                                    >
+                                                        <span className={cn((typeof data.duration === 'number' ? data.duration : 10) !== d && "text-white/80")}>
+                                                            {d}s
+                                                        </span>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
                             </div>
                         )}
-
-
                     </div>
                 </div>
             </div>

@@ -345,6 +345,7 @@ Note: If `action` is "update", you ONLY need to return the `updates` object. Lea
             start_time = time.time()
             
             token_usage = {"input": 0, "output": 0}
+            cost_usd = 0.0
             
             tools = [
                 {
@@ -379,6 +380,12 @@ Note: If `action` is "update", you ONLY need to return the `updates` object. Lea
                 tools=tools
             )
             
+            if hasattr(response, 'usage') and response.usage:
+                token_usage["input"] += getattr(response.usage, 'prompt_tokens', 0)
+                token_usage["output"] += getattr(response.usage, 'completion_tokens', 0)
+                usage_dict = response.usage.model_dump() if hasattr(response.usage, 'model_dump') else {}
+                cost_usd += usage_dict.get('cost', 0.0)
+            
             # Check for tool call
             response_message = response.choices[0].message
             if response_message.tool_calls:
@@ -407,10 +414,12 @@ Note: If `action` is "update", you ONLY need to return the `updates` object. Lea
                     response_format={"type": "json_object"} if not "claude" in mapped_model else None,
                     tools=tools
                 )
-            
-            if hasattr(response, 'usage') and response.usage:
-                token_usage["input"] += getattr(response.usage, 'prompt_tokens', 0)
-                token_usage["output"] += getattr(response.usage, 'completion_tokens', 0)
+                
+                if hasattr(response, 'usage') and response.usage:
+                    token_usage["input"] += getattr(response.usage, 'prompt_tokens', 0)
+                    token_usage["output"] += getattr(response.usage, 'completion_tokens', 0)
+                    usage_dict = response.usage.model_dump() if hasattr(response.usage, 'model_dump') else {}
+                    cost_usd += usage_dict.get('cost', 0.0)
             
             response_text = response.choices[0].message.content
             
@@ -419,6 +428,8 @@ Note: If `action` is "update", you ONLY need to return the `updates` object. Lea
             # --- DEBUG LOGS ADDED FOR USER ---
             print("\n" + "="*80)
             print(f"[DEBUG] MODEL USED: {model}")
+            print(f"[DEBUG] TOKEN USAGE: Input={token_usage['input']} | Output={token_usage['output']} | Total={token_usage['input'] + token_usage['output']}")
+            print(f"[DEBUG] COST (USD):  ${cost_usd:.6f}")
             print("[DEBUG] RAW AI RESPONSE TEXT ALMOST EXACTLY AS RECEIVED:")
             print("-" * 40)
             print(response_text)
@@ -641,7 +652,8 @@ Note: If `action` is "update", you ONLY need to return the `updates` object. Lea
                 "tool_calls": sanitized_tool_calls,
                 "nodes": result_nodes,
                 "edges": result_edges,
-                "token_usage": token_usage
+                "token_usage": token_usage,
+                "cost_usd": cost_usd
             }
             
         except Exception as e:

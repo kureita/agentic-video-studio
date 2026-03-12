@@ -12,7 +12,7 @@ class User(BaseModel):
     updated_at: datetime
     
     # Billing
-    credits_balance: int = 1000
+    usd_balance: float = 0.0  # USD balance
     referral_code: str
     referred_by: Optional[str] = None
     

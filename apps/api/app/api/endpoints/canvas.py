@@ -625,20 +625,24 @@ async def generate_images(
         
         print(f"[Canvas] Generating {len(scenes)} images...")
         
-        # 1. Deduct credits first
-        await billing_service.deduct_credits(
-            user_id=user_id,
-            action=ActionType.IMAGE_GEN,
-            custom_cost=len(scenes),  # 1 credit per image
-            metadata={"project_id": project_id, "scene_count": len(scenes)}
-        )
-        
         # Generate images for all scenes
         updated_scenes = await image_generator.generate_scene_images(
             scenes=scenes,
             visual_style=request.visual_style,
             aspect_ratio="16:9",
         )
+        
+        # Charge based on actual API cost (sum all scene costs)
+        total_cost = sum(s.get("cost", 0.0) for s in updated_scenes if isinstance(s, dict))
+        if total_cost > 0:
+            await billing_service.charge_usage(
+                user_id=user_id,
+                action=ActionType.IMAGE_GEN,
+                cost_usd=total_cost,
+                model_name="Image Generation",
+                provider="Runware",
+                metadata={"project_id": project_id, "scene_count": len(scenes)},
+            )
         
         # Update project
         await collection.update_one(
@@ -695,19 +699,24 @@ async def regenerate_image(
         
         print(f"[Canvas] Regenerating image for scene {scene_id}...")
         
-        # 1. Deduct credits first
-        await billing_service.deduct_credits(
-            user_id=user_id,
-            action=ActionType.IMAGE_GEN,
-            metadata={"project_id": project_id, "scene_id": scene_id, "prompt": prompt[:50]}
-        )
-        
         # Generate new image
         result = await image_generator.generate_image(
             prompt=prompt,
             aspect_ratio="16:9",
             style=request.visual_style,
         )
+        
+        # Charge based on actual API cost
+        cost = result.get("cost", 0.0)
+        if cost > 0:
+            await billing_service.charge_usage(
+                user_id=user_id,
+                action=ActionType.IMAGE_GEN,
+                cost_usd=cost,
+                model_name=result.get("model", "Image"),
+                provider="Runware",
+                metadata={"project_id": project_id, "scene_id": scene_id, "prompt": prompt[:50]},
+            )
         
         if not result.get("success"):
             raise HTTPException(status_code=500, detail=result.get("error", "Image generation failed"))
@@ -769,13 +778,7 @@ async def generate_videos(
         
         print(f"[Canvas] Generating {len(scenes)} videos...")
         
-        # 1. Deduct credits first
-        await billing_service.deduct_credits(
-            user_id=user_id,
-            action=ActionType.VIDEO_GEN,
-            custom_cost=len(scenes) * 10,  # 10 credits per video
-            metadata={"project_id": project_id, "scene_count": len(scenes)}
-        )
+        total_cost = 0.0  # Track total cost across all scene video generations
         
         # Generate video for each scene
         updated_scenes = []
@@ -816,8 +819,20 @@ async def generate_videos(
             scene_copy = dict(scene)
             if result.get("success"):
                 scene_copy["video_url"] = result.get("video_url")
+                total_cost += result.get("cost", 0.0)
             
             updated_scenes.append(scene_copy)
+        
+        # Charge based on actual API cost for all clips
+        if total_cost > 0:
+            await billing_service.charge_usage(
+                user_id=user_id,
+                action=ActionType.VIDEO_GEN,
+                cost_usd=total_cost,
+                model_name="Video Generation",
+                provider="Runware",
+                metadata={"project_id": project_id, "scene_count": len(scenes)},
+            )
         
         # Update project
         await collection.update_one(
@@ -879,14 +894,6 @@ async def regenerate_video(
         
         print(f"[Canvas] Regenerating video for scene {scene_id}...")
         
-        # 1. Deduct credits first
-        await billing_service.deduct_credits(
-            user_id=user_id,
-            action=ActionType.VIDEO_GEN,
-            custom_cost=10,  # 10 credits per video
-            metadata={"project_id": project_id, "scene_id": scene_id}
-        )
-        
         result = await video_generator.generate_clip(
             prompt=prompt,
             duration=8,
@@ -897,6 +904,18 @@ async def regenerate_video(
         
         if not result.get("success"):
             raise HTTPException(status_code=500, detail=result.get("error", "Video generation failed"))
+        
+        # Charge based on actual API cost
+        cost = result.get("cost", 0.0)
+        if cost > 0:
+            await billing_service.charge_usage(
+                user_id=user_id,
+                action=ActionType.VIDEO_GEN,
+                cost_usd=cost,
+                model_name=result.get("model", "Video"),
+                provider="Runware",
+                metadata={"project_id": project_id, "scene_id": scene_id},
+            )
         
         # Update scene in project
         for s in scenes:
@@ -1024,12 +1043,14 @@ async def render_final_video(
         if not composition_url:
             raise HTTPException(status_code=400, detail="No video available to render")
             
-        # 1. Deduct credits first
-        await billing_service.deduct_credits(
+        # Charge for render (flat estimate — no external model API)
+        await billing_service.charge_usage(
             user_id=user_id,
             action=ActionType.RENDER,
-            custom_cost=20,  # 20 credits for final render
-            metadata={"project_id": project_id, "resolution": request.resolution}
+            cost_usd=0.05,  # Flat render cost
+            model_name="Final Render",
+            provider="Remotion",
+            metadata={"project_id": project_id, "resolution": request.resolution},
         )
         
         print(f"[Canvas] Final render at {request.resolution}: {composition_url}")

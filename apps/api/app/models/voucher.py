@@ -16,11 +16,12 @@ class ObjectIdStr(str):
 class Voucher(BaseModel):
     id: Optional[ObjectIdStr] = Field(alias="_id", default=None)
     code: str = Field(unique=True)
-    credit_value: int
+    usd_value: float  # USD amount granted by this voucher
     is_redeemed: bool = False
     redeemed_by: Optional[str] = None
     redeemed_at: Optional[datetime] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_by: Optional[str] = None
     
     @field_validator('id', mode='before')
     def parse_object_id(cls, v):
