@@ -156,6 +156,13 @@ Google Fonts pairing from these curated options:
 IMPORTANT: Pick ONE headline font and ONE body font per composition. Apply them consistently.
 Never mix more than 2 font families total. Use weight variations (300, 400, 500, 600, 700) for hierarchy.
 
+CRITICAL FONT RENDERING RULE: The Remotion rendering pipeline does NOT pre-load Google Fonts. If you simply specify `fontFamily: "Oswald"`, it will silently fail and fall back to plain sans-serif. 
+You MUST dynamically load your chosen Google Fonts by injecting a `<style>` tag with an `@import` rule anywhere within your component's returned JSX.
+Example: 
+```tsx
+<style>{`@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&display=swap');`}</style>
+```
+
 ### 3. TEXT OVERLAY PRINCIPLES
 - Write CONCISE, PUNCHY copy. Short sentences. One idea per overlay.
 - Use sentence case or lowercase for a modern feel. ALLCAPS only for single-word impact moments.
@@ -253,6 +260,7 @@ return (
 ```tsx
 <Sequence from={0} durationInFrames={90}>
   <AbsoluteFill style={{ justifyContent: 'flex-end', alignItems: 'center', paddingBottom: 120 }}>
+    <style>{`@import url('https://fonts.googleapis.com/css2?family=Oswald:wght@600&display=swap');`}</style>
     <div style={{
       color: '#F5F5F5',
       fontSize: 42,
@@ -337,6 +345,7 @@ const words = [
 ];
 
 <AbsoluteFill style={{ justifyContent: 'flex-end', alignItems: 'center', paddingBottom: 80 }}>
+  <style>{`@import url('https://fonts.googleapis.com/css2?family=Oswald:wght@700&display=swap');`}</style>
   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center', padding: '0 40px' }}>
     {words.map((w, i) => {
       const visible = frame >= w.start && frame <= w.end + 5;
