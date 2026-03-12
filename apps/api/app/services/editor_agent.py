@@ -326,6 +326,115 @@ When audio tracks are provided, FOLLOW THESE RULES:
 4. **NEVER drop or ignore** an audio track. Every track MUST appear as an `<Audio>` element in the output.
 5. **Don't trim** audio unless explicitly instructed. Let tracks play their natural duration.
 6. **Exact URLs**: Use the audio URLs exactly as provided — do NOT invent or modify URLs.
+
+#### Subtitles / Captions (Word-by-Word Timing)
+```tsx
+// Word-by-word animated captions — premium, modern look
+const words = [
+  { text: "This",    start: 0,   end: 8 },
+  { text: "changes", start: 8,   end: 18 },
+  { text: "everything.", start: 18, end: 30 },
+];
+
+<AbsoluteFill style={{ justifyContent: 'flex-end', alignItems: 'center', paddingBottom: 80 }}>
+  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center', padding: '0 40px' }}>
+    {words.map((w, i) => {
+      const visible = frame >= w.start && frame <= w.end + 5;
+      const localFrame = Math.max(0, frame - w.start);
+      const scale = spring({ frame: localFrame, fps, config: { damping: 12, stiffness: 200 } });
+      const opacity = interpolate(localFrame, [0, 4], [0, 1], { extrapolateRight: 'clamp' });
+      if (!visible) return null;
+      return (
+        <span key={i} style={{
+          fontSize: 38,
+          fontWeight: 700,
+          fontFamily: '"Oswald", sans-serif',
+          color: '#FFFFFF',
+          backgroundColor: 'rgba(0,0,0,0.65)',
+          borderRadius: 6,
+          padding: '4px 12px',
+          transform: `scale(${scale})`,
+          opacity,
+          textShadow: '0 2px 8px rgba(0,0,0,0.4)',
+        }}>
+          {w.text}
+        </span>
+      );
+    })}
+  </div>
+</AbsoluteFill>
+```
+
+Caption positioning: Bottom center for landscape (paddingBottom: 60–100px),
+center-bottom for portrait (paddingBottom: 180–240px).
+Keep backgrounds semi-transparent (#000000 at 55–70% opacity, rounded corners).
+Large bold text (32–44px) for readability on mobile.
+
+#### Transition Library
+Use these ready-made transition patterns between scenes:
+
+**Crossfade** (10–20 frame overlap):
+```tsx
+// Scene A fades out over last 15 frames, Scene B fades in over first 15 frames
+<Sequence from={0} durationInFrames={165}>
+  <AbsoluteFill style={{ opacity: interpolate(frame, [150, 165], [1, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }) }}>
+    <Video src={urlA} style={{ width: '100%', height: '100%', objectFit: 'cover' }} crossOrigin="anonymous" />
+  </AbsoluteFill>
+</Sequence>
+<Sequence from={150} durationInFrames={165}>
+  <AbsoluteFill style={{ opacity: interpolate(frame - 150, [0, 15], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }) }}>
+    <Video src={urlB} style={{ width: '100%', height: '100%', objectFit: 'cover' }} crossOrigin="anonymous" />
+  </AbsoluteFill>
+</Sequence>
+```
+
+**Slide Left** (scene B pushes scene A off-screen):
+```tsx
+const transitionFrames = 15;
+const progress = interpolate(frame - transitionStart, [0, transitionFrames], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+// Scene A
+<AbsoluteFill style={{ transform: `translateX(${-progress * 100}%)` }}>
+  <Video src={urlA} ... />
+</AbsoluteFill>
+// Scene B
+<AbsoluteFill style={{ transform: `translateX(${(1 - progress) * 100}%)` }}>
+  <Video src={urlB} ... />
+</AbsoluteFill>
+```
+
+**Slide Up** (same as Slide Left but vertical):
+```tsx
+const progress = interpolate(frame - transitionStart, [0, transitionFrames], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+// Scene A
+<AbsoluteFill style={{ transform: `translateY(${-progress * 100}%)` }}>...</AbsoluteFill>
+// Scene B
+<AbsoluteFill style={{ transform: `translateY(${(1 - progress) * 100}%)` }}>...</AbsoluteFill>
+```
+
+**Zoom Through** (subtle zoom into scene A, then scene B appears):
+```tsx
+const zoomProgress = interpolate(frame - transitionStart, [0, transitionFrames], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+// Scene A zooms in and fades
+<AbsoluteFill style={{ transform: `scale(${1 + zoomProgress * 0.15})`, opacity: 1 - zoomProgress }}>
+  <Video src={urlA} ... />
+</AbsoluteFill>
+// Scene B fades in at normal scale
+<AbsoluteFill style={{ opacity: zoomProgress }}>
+  <Video src={urlB} ... />
+</AbsoluteFill>
+```
+
+**Hard Cut** (default — no overlap, no animation):
+```tsx
+<Sequence from={0} durationInFrames={150}><Video src={urlA} ... /></Sequence>
+<Sequence from={150} durationInFrames={150}><Video src={urlB} ... /></Sequence>
+```
+
+Choose transitions based on content mood:
+- **Crossfade**: Emotional, documentary, lifestyle transitions
+- **Slide Left/Up**: Energetic, tech, product reveals
+- **Zoom Through**: Dramatic, emphasis moments
+- **Hard Cut**: Fast-paced, modern, music videos
 """
 
 

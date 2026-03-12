@@ -2,12 +2,21 @@ import React, { memo } from "react";
 import { NodeProps, useReactFlow } from "@xyflow/react";
 import { Music, Loader2, Download, ChevronDown, Mic, Volume2 } from "lucide-react";
 import { NodeWrapper } from "@/components/workflow/node-wrapper";
+import { HighlightedTextarea } from "@/components/workflow/nodes/highlighted-textarea";
 import { usePresignedUrl } from "@/lib/use-presigned-url";
 import { useWorkflowStore } from "@/lib/workflow-store";
+import { useModels } from "@/lib/use-models";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 
 type AudioType = "speech" | "music" | "sfx";
+
+// Map audioType → registry category
+const AUDIO_TYPE_TO_CATEGORY: Record<AudioType, string> = {
+    speech: "tts",
+    music: "music",
+    sfx: "sfx",
+};
 
 const AUDIO_TYPE_OPTIONS: { value: AudioType; label: string; icon: React.ReactNode; description: string }[] = [
     { value: "speech", label: "Speech", icon: <Mic className="w-3 h-3" />, description: "Text-to-speech with voice selection" },
@@ -24,7 +33,22 @@ const PLACEHOLDER_MAP: Record<AudioType, string> = {
 export const AudioGenNode = memo(({ id, selected, data }: NodeProps) => {
     const { deleteElements, updateNodeData } = useReactFlow();
     const { runNode, clearNodeOutput, outputs, runningNodeId } = useWorkflowStore();
+    const { models } = useModels();
 
+    // Filter audio models by current audioType's category
+    const audioType: AudioType = (typeof data.audioType === "string" ? data.audioType : "speech") as AudioType;
+    const category = AUDIO_TYPE_TO_CATEGORY[audioType];
+    const audioModels = React.useMemo(
+        () => models.filter(m => m.type === "audio" && m.category === category && !m.coming_soon),
+        [models, category]
+    );
+    const comingSoonModels = React.useMemo(
+        () => models.filter(m => m.type === "audio" && m.category === category && m.coming_soon),
+        [models, category]
+    );
+    const currentModel = typeof data.model === 'string'
+        ? data.model
+        : (audioModels.length > 0 ? audioModels[0].name : "MiniMax Speech 2.8");
 
 
     const isRunning = runningNodeId === id;
@@ -34,7 +58,6 @@ export const AudioGenNode = memo(({ id, selected, data }: NodeProps) => {
     const { url: presignedOutput } = usePresignedUrl(rawOutput);
     const output = presignedOutput || rawOutput;
 
-    const audioType: AudioType = (typeof data.audioType === "string" ? data.audioType : "speech") as AudioType;
 
     const handleDownload = () => {
         if (output) {
@@ -53,10 +76,12 @@ export const AudioGenNode = memo(({ id, selected, data }: NodeProps) => {
     const [showTypeMenu, setShowTypeMenu] = React.useState(false);
     const [showVoiceMenu, setShowVoiceMenu] = React.useState(false);
     const [showDurationMenu, setShowDurationMenu] = React.useState(false);
+    const [showModelMenu, setShowModelMenu] = React.useState(false);
 
     const typeMenuRef = React.useRef<HTMLDivElement>(null);
     const voiceMenuRef = React.useRef<HTMLDivElement>(null);
     const durationMenuRef = React.useRef<HTMLDivElement>(null);
+    const modelMenuRef = React.useRef<HTMLDivElement>(null);
 
     React.useEffect(() => {
         const handleClickOutside = (e: MouseEvent) => {
@@ -69,12 +94,15 @@ export const AudioGenNode = memo(({ id, selected, data }: NodeProps) => {
             if (durationMenuRef.current && !durationMenuRef.current.contains(e.target as Node)) {
                 setShowDurationMenu(false);
             }
+            if (modelMenuRef.current && !modelMenuRef.current.contains(e.target as Node)) {
+                setShowModelMenu(false);
+            }
         };
-        if (showTypeMenu || showVoiceMenu || showDurationMenu) {
+        if (showTypeMenu || showVoiceMenu || showDurationMenu || showModelMenu) {
             document.addEventListener('mousedown', handleClickOutside);
             return () => document.removeEventListener('mousedown', handleClickOutside);
         }
-    }, [showTypeMenu, showVoiceMenu, showDurationMenu]);
+    }, [showTypeMenu, showVoiceMenu, showDurationMenu, showModelMenu]);
 
     // Get only connected text nodes for suggestions
     const nodes = useWorkflowStore((state) => state.nodes);
@@ -149,14 +177,14 @@ export const AudioGenNode = memo(({ id, selected, data }: NodeProps) => {
                 { id: "prompt", label: "Text", type: "text", style: { bottom: '20px' } }
             ]}
             outputs={[{ id: "audio", label: "Audio", type: "audio" }]}
-            contentClassName="relative bg-black"
+            contentClassName="relative bg-black rounded-[17px]"
             onDelete={() => deleteElements({ nodes: [{ id }] })}
             onRun={() => runNode(id)}
             onClear={output ? () => clearNodeOutput(id) : undefined}
             isRunning={isRunning}
             executionStatus={data.executionStatus as "queued" | "running" | "completed" | "failed" | null}
         >
-            <div className="relative bg-muted/30 group/audio transition-all duration-300 ease-in-out overflow-hidden w-[320px]">
+            <div className="relative bg-muted/30 group/audio transition-all duration-300 ease-in-out w-[320px] rounded-[17px]">
 
                 {/* Top Section: Audio Player */}
                 <div className="relative h-[120px] flex items-center justify-center p-4">
@@ -194,10 +222,10 @@ export const AudioGenNode = memo(({ id, selected, data }: NodeProps) => {
                 </div>
 
                 {/* Divider Line */}
-                <div className="h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
+                <div className={cn("h-px bg-gradient-to-r from-transparent via-white/20 to-transparent transition-all duration-300", output ? "opacity-0 group-hover/audio:opacity-100" : "")} />
 
                 {/* Bottom Section: Text Input & Controls */}
-                <div className="relative bg-black/20">
+                <div className="relative bg-black/20 rounded-b-[17px]">
                     {/* Suggestions Popup */}
                     {showSuggestions && textNodes.length > 0 && (
                         <div className="absolute bottom-full left-4 mb-2 z-50 w-48 bg-popover text-popover-foreground rounded-md border shadow-md overflow-hidden animate-in fade-in zoom-in-95 duration-100">
@@ -223,18 +251,20 @@ export const AudioGenNode = memo(({ id, selected, data }: NodeProps) => {
                         </div>
                     )}
 
-                    {/* Text Input */}
-                    <textarea
-                        ref={textareaRef}
-                        className="w-full min-h-[100px] bg-transparent border-none px-4 py-3 text-sm font-medium placeholder:text-white/50 focus-visible:outline-none resize-none overflow-y-auto leading-relaxed text-white nodrag nowheel"
-                        placeholder={PLACEHOLDER_MAP[audioType]}
-                        value={typeof data.prompt === 'string' ? data.prompt : ''}
-                        onChange={handleTextChange}
-                        onKeyDown={(e) => e.stopPropagation()}
-                    />
+                    {/* Text Input Layer */}
+                    <div className={cn("relative z-10 transition-all duration-300", output ? "opacity-0 group-hover/audio:opacity-100 focus-within:opacity-100" : "")}>
+                        <HighlightedTextarea
+                            textareaRef={textareaRef}
+                            className="w-full min-h-[100px] bg-transparent border-none px-4 pb-2 pt-4 text-sm font-medium placeholder:text-white/50 focus-visible:outline-none resize-none overflow-y-auto leading-relaxed text-white nodrag nowheel pointer-events-auto"
+                            placeholder={PLACEHOLDER_MAP[audioType]}
+                            value={typeof data.prompt === 'string' ? data.prompt : ''}
+                            onChange={handleTextChange}
+                            onKeyDown={(e) => e.stopPropagation()}
+                        />
+                    </div>
 
                     {/* Controls Bar */}
-                    <div className="px-3 pb-3 flex items-center gap-2">
+                    <div className="relative z-20 px-3 pb-3 flex items-center gap-2 opacity-0 group-hover/audio:opacity-100 focus-within:opacity-100 transition-all duration-300 translate-y-2 group-hover/audio:translate-y-0 focus-within:translate-y-0">
                         {/* Audio Type Selector */}
                         <div className="relative flex-shrink-0" ref={typeMenuRef}>
                             <button
@@ -293,6 +323,81 @@ export const AudioGenNode = memo(({ id, selected, data }: NodeProps) => {
                                 )}
                             </AnimatePresence>
                         </div>
+
+                        {/* Model Selector */}
+                        {audioModels.length > 0 && (
+                            <div className="relative flex-shrink-0" ref={modelMenuRef}>
+                                <button
+                                    onClick={() => {
+                                        setShowModelMenu(!showModelMenu);
+                                        setShowTypeMenu(false);
+                                        setShowVoiceMenu(false);
+                                        setShowDurationMenu(false);
+                                    }}
+                                    className={cn(
+                                        "flex items-center gap-1.5 h-7 bg-black/40 backdrop-blur-sm border border-white/10 rounded-full px-3 text-white/90 hover:bg-black/60 transition-colors cursor-pointer max-w-[140px]",
+                                        showModelMenu && "bg-black/80 border-white/20"
+                                    )}
+                                >
+                                    <span className="text-[10px] font-medium truncate">{currentModel}</span>
+                                    <ChevronDown className="w-2.5 h-2.5 text-white/50 flex-shrink-0" />
+                                </button>
+
+                                <AnimatePresence>
+                                    {showModelMenu && (
+                                        <motion.div
+                                            initial={{ opacity: 0, y: 4, scale: 0.96 }}
+                                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                                            exit={{ opacity: 0, y: 4, scale: 0.96 }}
+                                            transition={{ duration: 0.12 }}
+                                            className="absolute bottom-full left-0 mb-2 w-52 bg-black/90 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50 pointer-events-auto flex flex-col"
+                                        >
+                                            <div className="px-3 py-2 text-[10px] font-semibold text-white/50 uppercase tracking-wider border-b border-white/10 bg-black/40">
+                                                Model
+                                            </div>
+                                            <div className="max-h-[200px] overflow-y-auto flex flex-col p-1 nodrag nowheel">
+                                                {audioModels.map((m) => (
+                                                    <button
+                                                        key={m.id}
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            updateNodeData(id, { model: m.name });
+                                                            setShowModelMenu(false);
+                                                        }}
+                                                        className={cn(
+                                                            "w-full text-left px-2.5 py-2 text-[11px] rounded-lg hover:bg-white/10 cursor-pointer flex flex-col gap-0.5 transition-colors",
+                                                            currentModel === m.name && "bg-white/15 text-white font-medium"
+                                                        )}
+                                                    >
+                                                        <div className="flex items-center justify-between">
+                                                            <span className={cn(currentModel !== m.name && "text-white/80")}>
+                                                                {m.name}
+                                                            </span>
+                                                            <span className="text-[9px] text-white/40">
+                                                                {m.tier === 'premium' ? '★' : m.tier === 'mid' ? '◆' : '○'}
+                                                            </span>
+                                                        </div>
+                                                        <span className="text-[9px] text-white/40">{m.provider}</span>
+                                                    </button>
+                                                ))}
+                                                {comingSoonModels.map((m) => (
+                                                    <div
+                                                        key={m.id}
+                                                        className="w-full text-left px-2.5 py-2 text-[11px] rounded-lg opacity-40 cursor-not-allowed flex flex-col gap-0.5"
+                                                    >
+                                                        <div className="flex items-center justify-between">
+                                                            <span className="text-white/50">{m.name}</span>
+                                                            <span className="text-[8px] text-white/30 uppercase">Soon</span>
+                                                        </div>
+                                                        <span className="text-[9px] text-white/30">{m.provider}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
+                            </div>
+                        )}
 
                         {/* Voice Selector (only visible for speech type) */}
                         {audioType === "speech" && (

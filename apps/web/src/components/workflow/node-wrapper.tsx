@@ -165,7 +165,7 @@ export const NodeWrapper = memo(({
             {/* Main Node Content Box */}
             <div
                 className={cn(
-                    "min-w-[240px] md:min-w-[300px] rounded-[20px] bg-card border-[3px] transition-all duration-300 overflow-hidden",
+                    "min-w-[240px] md:min-w-[300px] rounded-[20px] bg-card border-[3px] transition-all duration-300",
                     executionBorderClass || (
                         selected
                             ? "border-primary/20 shadow-[0_0_40px_-10px_color-mix(in_srgb,var(--primary)_20%,transparent)] ring-1 ring-primary/40"
@@ -175,7 +175,7 @@ export const NodeWrapper = memo(({
                 )}
                 style={style}
             >
-                <div className={cn("p-0 relative", contentClassName)}>
+                <div className={cn("p-0 relative rounded-[17px]", contentClassName)}>
                     {children}
                 </div>
             </div>

@@ -69,17 +69,19 @@ Your #1 priority is VISUAL CONSISTENCY — every character, background, and styl
    - Outputs: "text|text" (type: text)
    - Data: {{ "label": "Scene X Prompt", "text": "The actual prompt text here" }}
 
-2. **imageGen** - Image Generator (Imagen 4)
+2. **imageGen** - Image Generator (Multiple models via Runware)
    - Inputs: "text|prompt" (type: text), "image|image" (type: image, optional reference)
    - Outputs: "image|image" (type: image)
-   - Data: {{ "label": "Start Frame Scene X", "prompt": "Description", "width": 1024, "height": 576, "ratio": "16:9", "model": "Imagen 4" }}
+   - Data: {{ "label": "Start Frame Scene X", "prompt": "Description", "width": 1024, "height": 576, "ratio": "16:9", "model": "FLUX.2 [dev]" }}
+   - **Available Models**: "GPT Image 1.5", "FLUX.2 [max]", "Nano Banana 2", "Kling IMAGE O3", "Seedream 5.0 Lite", "Recraft V4", "Recraft V4 Pro", "Grok Imagine Image", "Imagen 4 Ultra", "Imagen 4 Preview", "FLUX.2 [dev]", "FLUX.2 [flex]", "FLUX.2 [klein] 9B"
+   - **Model Notes**: FLUX.2 [dev] cheapest ($0.005). GPT Image 1.5 best for editing. Kling IMAGE O3 for character consistency. FLUX.2 [max] highest quality.
 
 3. **videoGen** - Video Generator (Multiple models via Runware)
    - Inputs: "text|text" (type: text), "image|start_image" (type: image), "image|end_image" (type: image, optional)
    - Outputs: "video|video" (type: video), "image|start_frame" (type: image, first frame), "image|end_frame" (type: image, last frame)
-   - Data: {{ "label": "Video Scene X", "prompt": "Motion description", "duration": "5s", "ratio": "16:9", "model": "Kling 3.0 Standard" }}
-   - **Available Models**: "Veo 3.1", "Veo 3.1 Fast", "Veo 3", "Veo 3 Fast", "Veo 2", "Kling 3.0 Standard", "Kling 3.0 Pro", "Kling 2.1 Master", "Kling Lip Sync", "Runway Gen-4.5", "Runway Gen-4 Turbo", "Seedance 1.5 Pro", "Seedance 1.0 Pro", "Seedance 1.0 Pro Fast", "Seedance 1.0 Lite", "Wan2.6", "Wan2.6 Flash", "Hailuo 2.3", "Hailuo 2.3 Fast", "PixVerse V5.6"
-   - **Duration Constraints**: Veo 3/3.1 variants: "8s" only. Veo 2: "5s"-"8s". Kling: "5s"/"10s". Runway Gen-4.5: "5s"/"8s"/"10s". Runway Gen-4 Turbo: "2s"-"10s". Seedance: "4s"-"12s". Wan2.6: "5s"/"10s"/"15s". Wan2.6 Flash: "3s"/"5s"/"10s". Hailuo: "6s"/"10s". PixVerse: "5s"/"8s"/"10s".
+   - Data: {{ "label": "Video Scene X", "prompt": "Motion description", "duration": "5s", "ratio": "16:9", "model": "Kling VIDEO 3.0 Standard" }}
+   - **Available Models**: "Google Veo 3.1", "Google Veo 3.1 Fast", "Sora 2 Pro", "Sora 2", "Kling VIDEO 3.0 Pro", "Kling VIDEO 3.0 Standard", "LTX 2.3", "LTX 2.3 Fast", "Seedance 1.5 Pro", "Grok Imagine Video", "MiniMax Hailuo 2.3", "PixVerse v5.6", "Vidu Q3", "Vidu Q3 Turbo"
+   - **Duration Constraints**: Veo 3.1: 4s/8s. Veo 3.1 Fast: 4s/8s. Sora 2 Pro: 8s. Sora 2: 5s. Kling VIDEO 3.0 Pro: 5s. Kling VIDEO 3.0 Standard: 5s. LTX 2.3: 5s/9s. LTX 2.3 Fast: 5s. Seedance 1.5 Pro: 5s/10s. Grok Imagine Video: 5s/10s. MiniMax Hailuo 2.3: 6s/10s. PixVerse v5.6: 5s/8s. Vidu Q3: 4s/8s. Vidu Q3 Turbo: 4s/8s.
 
 4. **audioGen** - Audio Generator (Speech, Music, SFX)
    - Inputs: "text|prompt" (type: text, optional — for TTS script or music/SFX description)

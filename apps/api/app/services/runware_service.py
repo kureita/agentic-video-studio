@@ -131,7 +131,7 @@ class RunwareService:
             
         return {"success": False, "error": f"Task {task_uuid} timed out after {max_attempts*delay} seconds."}
 
-    async def generate_image(self, prompt: str, width: int = 1024, height: int = 1024, model: str = "runware:101@1", number_results: int = 1) -> dict:
+    async def generate_image(self, prompt: str, width: int = 1024, height: int = 1024, model: str = "bfl:flux-2@dev", number_results: int = 1) -> dict:
         """Generate an image from text."""
         task = {
             "taskType": "imageInference",
@@ -166,7 +166,7 @@ class RunwareService:
             "cost": data.get("cost", 0.0),
         }
 
-    async def image_to_image(self, prompt: str, image_url: str, width: int = 1024, height: int = 1024, model: str = "runware:101@1") -> dict:
+    async def image_to_image(self, prompt: str, image_url: str, width: int = 1024, height: int = 1024, model: str = "bfl:flux-2@dev") -> dict:
         """Generate an image based on an input image and prompt."""
         task = {
             "taskType": "imageInference",

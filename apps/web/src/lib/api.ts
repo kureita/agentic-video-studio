@@ -353,6 +353,8 @@ export interface Model {
   provider: string;
   type: "image" | "video" | "audio" | "llm";
   tier: string;
+  category?: string;        // Sub-type for audio: "tts" | "music" | "sfx"
+  coming_soon?: boolean;    // True if model is announced but not yet available
   capabilities: string[];
   configs: ModelConfig[];
   default_config_id: string;

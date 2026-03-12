@@ -381,7 +381,7 @@ class NodeRunner:
             prompt = "Variation of this image"
         
         # Get generation parameters
-        model = data.get("model", "FLUX Schnell")
+        model = data.get("model", "FLUX.2 [dev]")
         ratio = data.get("ratio", "1:1")
         count = data.get("count", 1)
         
@@ -478,9 +478,11 @@ class NodeRunner:
             else:
                 # Default: speech (TTS)
                 voice = data.get("voice", "Rachel")
+                model = data.get("model")  # From UI model selector
                 result = await self.audio_generator.generate_speech(
                     text=text,
                     voice=voice,
+                    model_id=model if model else "minimax-speech-2-8",
                 )
             
             if result.get("success"):
@@ -548,7 +550,7 @@ class NodeRunner:
         ratio = data.get("ratio", "16:9")
         resolution = data.get("resolution", "720p")
         # Determine model
-        model_str = data.get("model", "Kling 3.0 Standard")
+        model_str = data.get("model", "Kling VIDEO 3.0 Standard")
         use_fast_model = "Fast" in model_str
 
         if resolution not in ("720p", "1080p"):

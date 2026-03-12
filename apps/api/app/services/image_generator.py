@@ -27,7 +27,7 @@ class ImageGenerator:
             print("[ImageGenerator] Running in PRODUCTION mode - using Runware API")
         
         # Default model for general text-to-image
-        self.default_model = "runware:101@1" # Flux Schnell
+        self.default_model = "bfl:flux-2@dev"  # FLUX.2 [dev] — cheapest image model in registry
 
     def _get_mock_image(self) -> Optional[Path]:
         """Get a random existing image from static/images for mock mode."""

@@ -34,7 +34,7 @@ export const ImageGenNode = memo(({ id, selected, data }: NodeProps) => {
     const isRunning = runningNodeId === id;
     const output = (outputs[id] as string | undefined) || (data.output as string | undefined); // Use store output first, fallback to data.output
 
-    const currentModel = (typeof data.model === 'string' ? data.model : (imageModels.length > 0 ? imageModels[0].name : "FLUX Schnell"));
+    const currentModel = (typeof data.model === 'string' ? data.model : (imageModels.length > 0 ? imageModels[0].name : "FLUX.2 [dev]"));
     const configInputs = DEFAULT_INPUTS;
 
     const handleDownload = () => {
