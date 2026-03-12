@@ -15,12 +15,6 @@ from app.core.config import settings
 from app.core.dependencies import get_storage_service
 from app.services.runware_service import RunwareService
 
-_MODEL_MAP = {
-    # Frontend display name → Official Runware AIR ID
-    # Confirmed from: https://runware.ai/docs/providers/minimax (MiniMax Speech 2.8)
-    "MiniMax":    "minimax:speech@2.8",
-    "ElevenLabs": "minimax:speech@2.8",  # Map ElevenLabs to MiniMax via Runware
-}
 
 class AudioGenerator:
     """Generates audio using Runware API (speech, music, and sound effects)."""
@@ -151,9 +145,6 @@ class AudioGenerator:
         if model_info and "air_id" in model_info:
             return model_info["air_id"]
             
-        for key, val in _MODEL_MAP.items():
-            if key in model_name:
-                return val
         return model_name if ":" in model_name else self.default_model
 
     async def generate_speech(
