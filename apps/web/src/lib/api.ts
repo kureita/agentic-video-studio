@@ -382,7 +382,7 @@ export const assetsApi = {
       params: { filename, content_type: contentType },
     }),
 
-  upload: (file: File, onUploadProgress?: (progressEvent: any) => void) => {
+  upload: (file: File, onUploadProgress?: (progressEvent: { loaded: number; total?: number }) => void) => {
     const formData = new FormData();
     formData.append("file", file);
     return api.post("/api/assets/upload", formData, {

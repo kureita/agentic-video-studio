@@ -5,7 +5,7 @@ import { NodeWrapper } from "@/components/workflow/node-wrapper";
 import { S3Image } from "@/components/ui/s3-image";
 import { usePresignedUrl } from "@/lib/use-presigned-url";
 import { useWorkflowStore } from "@/lib/workflow-store";
-import { api, assetsApi } from "@/lib/api";
+import { assetsApi } from "@/lib/api";
 import axios from "axios";
 import { toast } from "sonner";
 import { workflowApi } from "@/lib/workflow-api";
@@ -115,7 +115,7 @@ export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
 
         try {
             let uploadedUrl: string;
-            let uploadedType = file.type.split('/')[0];
+            const uploadedType = file.type.split('/')[0];
 
             // 1. Try to get a presigned URL first (better for large files in prod)
             try {
@@ -126,7 +126,7 @@ export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
                     // Direct upload to S3 using PUT
                     await axios.put(upload_url, file, {
                         headers: { "Content-Type": file.type },
-                        onUploadProgress: (progressEvent) => {
+                        onUploadProgress: (progressEvent: { loaded: number; total?: number }) => {
                             const percentCompleted = progressEvent.total ? Math.round((progressEvent.loaded * 100) / progressEvent.total) : 0;
                             setUploadProgress(percentCompleted);
                         }
@@ -135,7 +135,7 @@ export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
                     uploadedUrl = file_url!;
                 } else {
                     // Fallback to standard multipart upload
-                    const response = await assetsApi.upload(file, (progressEvent: any) => {
+                    const response = await assetsApi.upload(file, (progressEvent: { loaded: number; total?: number }) => {
                         const percentCompleted = progressEvent.total ? Math.round((progressEvent.loaded * 100) / progressEvent.total) : 0;
                         setUploadProgress(percentCompleted);
                     });
@@ -143,7 +143,7 @@ export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
                 }
             } catch (err) {
                 console.warn("Presigned upload failed, falling back to standard upload:", err);
-                const response = await assetsApi.upload(file, (progressEvent: any) => {
+                const response = await assetsApi.upload(file, (progressEvent: { loaded: number; total?: number }) => {
                     const percentCompleted = progressEvent.total ? Math.round((progressEvent.loaded * 100) / progressEvent.total) : 0;
                     setUploadProgress(percentCompleted);
                 });
