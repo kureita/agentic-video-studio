@@ -110,35 +110,8 @@ class ImageGenerator:
         target_model = resolve_air_id(model_name, self.default_model, model_type="image")
                 
         try:
-            # Map aspect ratio to valid Runware dimensions
-            # For Kling and Seedream, they strictly enforce exact predefined dimensions that are NOT multiples of 64
-            is_strict_model = "kling" in target_model.lower() or "seedream" in target_model.lower()
-            
-            if is_strict_model:
-                dimensions = {
-                    "16:9": (1360, 768),
-                    "9:16": (768, 1360),
-                    "1:1":  (1024, 1024),
-                    "4:3":  (1168, 880),
-                    "3:4":  (880, 1168),
-                    "3:2":  (1248, 832),
-                    "2:3":  (832, 1248),
-                    "21:9": (1552, 656)
-                }
-            else:
-                # Standard models (FLUX) require dimensions to be strict multiples of 64
-                dimensions = {
-                    "16:9": (1280, 768),
-                    "9:16": (768, 1280),
-                    "1:1":  (1024, 1024),
-                    "4:3":  (1024, 768),
-                    "3:4":  (768, 1024),
-                    "3:2":  (1152, 768),
-                    "2:3":  (768, 1152),
-                    "21:9": (1536, 640)
-                }
-                
-            width, height = dimensions.get(aspect_ratio, (1024, 1024))
+            # Map aspect ratio to valid Runware dimensions using the service's robust resolver
+            width, height = self.runware._resolve_dimensions(target_model, aspect_ratio)
             
             # Enhance prompt with style
             style_prompts = {

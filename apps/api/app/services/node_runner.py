@@ -914,6 +914,7 @@ class NodeRunner:
                 text_input=text_input,
                 ref_images=ref_images,
                 mode=mode,
+                aspect_ratio=data.get("ratio", "9:16"),
                 upstream_scenes=upstream_scenes if mode == "compositor" else None,
             )
             

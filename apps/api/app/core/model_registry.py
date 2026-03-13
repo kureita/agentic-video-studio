@@ -15,25 +15,32 @@ from typing import Dict, List, Any
 IMAGE_MODELS: List[Dict[str, Any]] = [
     # ── Premium ────────────────────────────────────────────────
     {
-        "id": "gpt-image-1-5",
-        "name": "GPT Image 1.5",
+        "id": "gpt-image-1",
+        "name": "GPT Image 1",
         "provider": "OpenAI",
         "type": "image",
         "tier": "premium",
-        "air_id": "openai:gpt-image@1.5",
-        "capabilities": ["t2i", "i2i", "editing"],
+        "air_id": "openai:1@1",
+        "capabilities": ["t2i", "i2i"],
         "configs": [
-            {"id": "1024x1024-low",  "label": "1024×1024 · Low",    "width": 1024, "height": 1024, "quality": "low",    "est_price_usd": 0.009},
-            {"id": "1024x1536-low",  "label": "1024×1536 · Low",    "width": 1024, "height": 1536, "quality": "low",    "est_price_usd": 0.013},
-            {"id": "1536x1024-low",  "label": "1536×1024 · Low",    "width": 1536, "height": 1024, "quality": "low",    "est_price_usd": 0.013},
-            {"id": "1024x1024-med",  "label": "1024×1024 · Medium", "width": 1024, "height": 1024, "quality": "medium", "est_price_usd": 0.034},
-            {"id": "1024x1536-med",  "label": "1024×1536 · Medium", "width": 1024, "height": 1536, "quality": "medium", "est_price_usd": 0.051},
-            {"id": "1536x1024-med",  "label": "1536×1024 · Medium", "width": 1536, "height": 1024, "quality": "medium", "est_price_usd": 0.050},
-            {"id": "1024x1024-high", "label": "1024×1024 · High",   "width": 1024, "height": 1024, "quality": "high",   "est_price_usd": 0.133},
-            {"id": "1024x1536-high", "label": "1024×1536 · High",   "width": 1024, "height": 1536, "quality": "high",   "est_price_usd": 0.200},
-            {"id": "1536x1024-high", "label": "1536×1024 · High",   "width": 1536, "height": 1024, "quality": "high",   "est_price_usd": 0.199},
+            {"id": "default", "label": "Standard", "width": 1024, "height": 1024, "est_price_usd": 0.05},
         ],
-        "default_config_id": "1024x1024-med",
+        "default_config_id": "default",
+    },
+    {
+        "id": "dalle-3",
+        "name": "DALL-E 3",
+        "provider": "OpenAI",
+        "type": "image",
+        "tier": "premium",
+        "air_id": "openai:2@3",
+        "capabilities": ["t2i"],
+        "configs": [
+            {"id": "1024x1024", "label": "Square (1024x1024)", "width": 1024, "height": 1024, "est_price_usd": 0.08},
+            {"id": "1792x1024", "label": "Wide (1792x1024)", "width": 1792, "height": 1024, "est_price_usd": 0.12},
+            {"id": "1024x1792", "label": "Tall (1024x1792)", "width": 1024, "height": 1792, "est_price_usd": 0.12},
+        ],
+        "default_config_id": "1024x1024",
     },
     {
         "id": "flux-2-max",
@@ -62,12 +69,12 @@ IMAGE_MODELS: List[Dict[str, Any]] = [
         "air_id": "banana:nano@2",
         "capabilities": ["t2i", "i2i"],
         "configs": [
-            {"id": "1mp",   "label": "1 MP (1024×1024)",     "width": 1024, "height": 1024, "est_price_usd": 0.047},
-            {"id": "1.5mp", "label": "1.5 MP (1280×1152)",   "width": 1280, "height": 1152, "est_price_usd": 0.069},
-            {"id": "2mp",   "label": "2 MP (1536×1280)",     "width": 1536, "height": 1280, "est_price_usd": 0.103},
-            {"id": "2.5mp", "label": "2.5 MP (1792×1408)",   "width": 1792, "height": 1408, "est_price_usd": 0.153},
+            {"id": "1mp-sq",   "label": "1 MP (1024×1024)",     "width": 1024, "height": 1024, "est_price_usd": 0.047},
+            {"id": "1mp-land", "label": "1 MP (1376×768)",      "width": 1376, "height": 768,  "est_price_usd": 0.047},
+            {"id": "1mp-port", "label": "1 MP (768×1376)",      "width": 768,  "height": 1376, "est_price_usd": 0.047},
+            {"id": "2mp-sq",   "label": "2 MP (2048×2048)",     "width": 2048, "height": 2048, "est_price_usd": 0.103},
         ],
-        "default_config_id": "1mp",
+        "default_config_id": "1mp-sq",
     },
 
     # ── Mid-Range ──────────────────────────────────────────────
@@ -77,10 +84,12 @@ IMAGE_MODELS: List[Dict[str, Any]] = [
         "provider": "KlingAI",
         "type": "image",
         "tier": "mid",
-        "air_id": "klingai:kling-image@3",
+        "air_id": "klingai:kling-image@o3",
         "capabilities": ["t2i", "i2i"],
         "configs": [
             {"id": "1024x1024", "label": "1024×1024", "width": 1024, "height": 1024, "est_price_usd": 0.028},
+            {"id": "1360x768",  "label": "1360×768 (16:9)", "width": 1360, "height": 768, "est_price_usd": 0.028},
+            {"id": "768x1360",  "label": "768×1360 (9:16)", "width": 768, "height": 1360, "est_price_usd": 0.028},
             {"id": "2048x2048", "label": "2048×2048", "width": 2048, "height": 2048, "est_price_usd": 0.056},
         ],
         "default_config_id": "1024x1024",
@@ -104,7 +113,7 @@ IMAGE_MODELS: List[Dict[str, Any]] = [
         "provider": "Recraft",
         "type": "image",
         "tier": "mid",
-        "air_id": "recraft:recraft@4",
+        "air_id": "recraft:v4@0",
         "capabilities": ["t2i", "i2i", "vector", "svg"],
         "configs": [
             {"id": "default", "label": "Standard", "width": 1024, "height": 1024, "est_price_usd": 0.04},
@@ -117,7 +126,7 @@ IMAGE_MODELS: List[Dict[str, Any]] = [
         "provider": "Recraft",
         "type": "image",
         "tier": "premium",
-        "air_id": "recraft:recraft@4-pro",
+        "air_id": "recraft:v4-pro@0",
         "capabilities": ["t2i", "i2i", "vector", "svg"],
         "configs": [
             {"id": "default", "label": "Standard", "width": 1024, "height": 1024, "est_price_usd": 0.25},
@@ -144,7 +153,7 @@ IMAGE_MODELS: List[Dict[str, Any]] = [
         "provider": "Google",
         "type": "image",
         "tier": "mid",
-        "air_id": "google:imagen@4-ultra",
+        "air_id": "google:2@2",
         "capabilities": ["t2i"],
         "configs": [
             {"id": "default", "label": "Standard", "width": 1024, "height": 1024, "est_price_usd": 0.06},
@@ -157,7 +166,7 @@ IMAGE_MODELS: List[Dict[str, Any]] = [
         "provider": "Google",
         "type": "image",
         "tier": "mid",
-        "air_id": "google:imagen@4",
+        "air_id": "google:2@1",
         "capabilities": ["t2i"],
         "configs": [
             {"id": "default", "label": "Standard", "width": 1024, "height": 1024, "est_price_usd": 0.04},
@@ -724,17 +733,20 @@ def get_model_by_name(display_name: str) -> Dict[str, Any] | None:
 # We map mock/fake models displayed in the UI to valid alternatives
 _VALID_RUNWARE_OVERRIDES = {
     # Images (map to FLUX and Kling, which are natively supported)
-    "openai:gpt-image@1.5": "runware:101@1",
+    # OpenAI models
+    "openai:1@1": "openai:1@1",
+    "openai:2@3": "openai:2@3",
+    "openai:2@2": "openai:2@2",
     "bfl:flux-2@max": "runware:101@1",
-    "banana:nano@2": "runware:100@1",
+    "banana:nano@2": "google:4@3",
     "bfl:flux-2@dev": "runware:101@1",
     "bfl:flux-2@flex": "runware:100@1",
     "bfl:flux-2@klein-9b": "runware:100@1",
-    "bytedance:seedream@5.0-lite": "klingai:kling-image@3",
-    "recraft:recraft@4": "klingai:kling-image@3",
-    "recraft:recraft@4-pro": "klingai:kling-image@3",
-    "google:imagen@4-ultra": "xai:grok-imagine@image",
-    "google:imagen@4": "xai:grok-imagine@image",
+    "bytedance:seedream@5.0-lite": "bytedance:seedream@5.0-lite", # Native support
+    "recraft:recraft@4": "recraft:v4@0",
+    "recraft:recraft@4-pro": "recraft:v4-pro@0",
+    "google:imagen@4-ultra": "google:2@2",
+    "google:imagen@4": "google:2@1",
     
     # Video (map to Kling AI and Bytedance which are fully valid)
     "google:3@3": "google:3@2", # Veo 3.1 Fast -> Veo 3.1

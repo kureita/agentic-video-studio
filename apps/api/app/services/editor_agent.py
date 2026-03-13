@@ -582,6 +582,7 @@ class EditorAgent:
         text_input: Optional[str] = None,
         ref_images: Optional[List[str]] = None,
         mode: Optional[str] = None,  # 'scene', 'compositor', or None (default)
+        aspect_ratio: str = "9:16",
         upstream_scenes: Optional[List[Dict[str, Any]]] = None,  # For compositor mode
     ) -> dict:
         """
@@ -613,6 +614,7 @@ class EditorAgent:
                 text_input=text_input,
                 ref_images=ref_images,
                 mode=mode,
+                aspect_ratio=aspect_ratio,
                 upstream_scenes=upstream_scenes,
             )
 
@@ -666,6 +668,7 @@ class EditorAgent:
         text_input: Optional[str] = None,
         ref_images: Optional[List[str]] = None,
         mode: Optional[str] = None,
+        aspect_ratio: str = "16:9",
         upstream_scenes: Optional[List[Dict[str, Any]]] = None,
     ) -> str:
         """Use Anthropic Claude Sonnet 4.6 to write Remotion composition TSX code."""
@@ -723,7 +726,11 @@ Audio Tracks ({len(audio_tracks)} total):
 {audio_list if audio_list else "  (none)"}
 
 ### CRITICAL REMINDERS
-- DIMENSIONS: Read the instruction carefully to determine the aspect ratio (9:16 vertical = width 1080, height 1920). Set the exported `width` and `height` exactly as requested.
+- DIMENSIONS: Set the exported `width` and `height` to match the aspect ratio "{aspect_ratio}".
+  - If "16:9": width = 1920, height = 1080
+  - If "9:16": width = 1080, height = 1920
+  - If "1:1": width = 1080, height = 1080
+  Set these values EXACTLY in the code output.
 - ZERO emojis in any text overlay. Write professional copy and use 'lucide-react' icons exclusively.
 - Choose brand-appropriate fonts from the typography guide. Do NOT default to Inter unless the brand is tech/SaaS. For aesthetic brands, use elegant or refined typefaces.
 - Keep animations subtle and confident. No bouncing, spinning, or flashy effects.

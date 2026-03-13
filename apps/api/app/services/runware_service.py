@@ -171,15 +171,40 @@ class RunwareService:
 
         seed_image = await self._url_to_data_uri(image_url)
 
-        task = {
+        # Base task structure
+        task: Dict[str, Any] = {
             "taskType": "imageInference",
             "positivePrompt": prompt,
-            "seedImage": seed_image,
-            "strength": strength,
             "width": width,
             "height": height,
             "model": model
         }
+
+        provider = model.split(":")[0].lower() if ":" in model else ""
+
+        # Construct payload based on provider-specific requirements
+        if provider in ("google", "openai"):
+            # Google (Gemini/Imagen) & OpenAI (GPT Image):
+            # Uses top-level referenceImages array, no strength
+            task["referenceImages"] = [seed_image]
+        elif provider == "klingai":
+            # Kling AI: Uses nested inputs.referenceImages, no strength
+            task["inputs"] = {"referenceImages": [seed_image]}
+        elif provider == "bytedance":
+            # ByteDance (SeedEdit/Seedream): Uses top-level referenceImages array
+            task["referenceImages"] = [seed_image]
+        elif provider == "recraft":
+            # Recraft V4 currently has inconsistent I2I support on Runware REST.
+            # We'll try referenceImages (top-level) but it may still return 400.
+            task["referenceImages"] = [seed_image]
+        elif provider == "xai":
+            # Grok / xAI: Uses seedImage + strength
+            task["seedImage"] = seed_image
+            task["strength"] = strength
+        else:
+            # Default (Flux/SD/Runware): Uses seedImage (string) and strength (float)
+            task["seedImage"] = seed_image
+            task["strength"] = strength
         
         resp = await self._post([task])
         if not resp["success"]:
@@ -229,6 +254,56 @@ class RunwareService:
             "16:9": (1366, 768),
             "9:16": (768, 1366),
             "1:1":  (1024, 1024), 
+        },
+        # ByteDance Seedream requires high resolution (min ~3.6M pixels)
+        "bytedance:seedream": {
+            "16:9": (2560, 1440),
+            "9:16": (1440, 2560),
+            "1:1":  (2048, 2048),
+            "4:3":  (2048, 1536),
+            "3:4":  (1536, 2048),
+        },
+        # Recraft V4 supports standard multiples of 64 or 1024x1024
+        "recraft:v4": {
+            "16:9": (1280, 720),
+            "9:16": (720, 1280),
+            "1:1":  (1024, 1024),
+            "4:3":  (1024, 768),
+            "3:4":  (768, 1024),
+        },
+        # Google models (Gemini/Imagen)
+        "google:": {
+            "16:9": (1376, 768),
+            "9:16": (768, 1376),
+            "1:1":  (1024, 1024),
+            "4:3":  (1200, 896),
+            "3:4":  (896, 1200),
+            "3:2":  (1264, 848),
+            "2:3":  (848, 1264),
+            "21:9": (1548, 672)
+        },
+        # Kling Image
+        "klingai:kling-image": {
+            "16:9": (1360, 768),
+            "9:16": (768, 1360),
+            "1:1":  (1024, 1024),
+            "4:3":  (1168, 880),
+            "3:4":  (880, 1168),
+            "3:2":  (1248, 832),
+            "2:3":  (832, 1248),
+            "21:9": (1552, 656)
+        },
+        # OpenAI GPT Image 1 (openai:1@1) - supports max 1536
+        "openai:1": {
+            "16:9": (1536, 1024),
+            "9:16": (1024, 1536),
+            "1:1":  (1024, 1024),
+        },
+        # OpenAI DALL-E 3 (openai:2@3) - supports max 1792
+        "openai:2": {
+            "16:9": (1792, 1024),
+            "9:16": (1024, 1792),
+            "1:1":  (1024, 1024),
         },
     }
 
