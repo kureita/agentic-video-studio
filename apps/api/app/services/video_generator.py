@@ -13,7 +13,7 @@ from app.core.config import settings
 from app.core.dependencies import get_storage_service
 from app.services.runware_service import RunwareService
 
-from app.core.model_registry import get_model_by_name
+from app.core.model_registry import resolve_air_id
 
 class VideoGenerator:
     """Generates video clips using Runware API (Kling, Runway, PixVerse, etc)."""
@@ -31,7 +31,7 @@ class VideoGenerator:
         else:
             print("[VideoGenerator] Running in PRODUCTION mode - using Runware API")
         
-        self.default_model = "klingai-video-3-0-standard"
+        self.default_model = "klingai:kling-video@3-standard"  # AIR ID — must be valid for Runware
 
     def _get_mock_video(self) -> Optional[Path]:
         """Get a random existing video from static/videos for mock mode."""
@@ -90,7 +90,7 @@ class VideoGenerator:
         return url  # fallback to runware url
 
     def _get_model(self, model_name: Optional[str]) -> str:
-        """Map frontend model display name to Runware internal ID.
+        """Resolve frontend model display name / stable ID to a Runware AIR ID.
         Returns '__lipsync__' sentinel for Kling Lip Sync so callers can route correctly.
         """
         print(f"[VideoGenerator] Resolving model for input: '{model_name}'")
@@ -98,16 +98,13 @@ class VideoGenerator:
             print(f"[VideoGenerator] Model name empty, using default: '{self.default_model}'")
             return self.default_model
             
-        if "Lip Sync" in model_name:
+        lower = model_name.lower()
+        if "lip sync" in lower or "lip-sync" in lower or "lipsync" in lower:
             return "__lipsync__"
-            
-        model_info = get_model_by_name(model_name)
-        if model_info and "air_id" in model_info:
-            print(f"[VideoGenerator] Found model mapping '{model_name}' -> '{model_info['air_id']}'")
-            return model_info['air_id']
         
-        print(f"[VideoGenerator] No match found for '{model_name}', returning literally or default")
-        return model_name if ":" in model_name else self.default_model
+        resolved = resolve_air_id(model_name, self.default_model, model_type="video")
+        print(f"[VideoGenerator] Resolved model '{model_name}' -> '{resolved}'")
+        return resolved
 
 
     async def generate_clip(

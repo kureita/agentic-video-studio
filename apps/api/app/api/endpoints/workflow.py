@@ -690,6 +690,13 @@ async def run_workflow(workflow_id: str, current_user: dict = Depends(get_curren
     
     runner = NodeRunner()
     
+    action_type_map = {
+        "imageGen": ActionType.IMAGE_GEN,
+        "videoGen": ActionType.VIDEO_GEN,
+        "audioGen": ActionType.AUDIO_GEN,
+        "editorAgent": ActionType.RENDER,
+    }
+    
     for node_id in execution_order:
         node = next((n for n in nodes if n["id"] == node_id), None)
         if not node:
@@ -706,6 +713,34 @@ async def run_workflow(workflow_id: str, current_user: dict = Depends(get_curren
         
         if result.get("success"):
             outputs[node_id] = result.get("output")
+            
+            # Billing
+            cost = result.get("cost", 0.0)
+            node_type = node.get("type")
+            if node_type in action_type_map and cost > 0:
+                try:
+                    billing_service = BillingService(get_database())
+                    node_data = node.get("data", {})
+                    meta = {"workflow_id": workflow_id, "node_id": node_id, "node_type": node_type}
+                    if node_type == "imageGen":
+                        meta["ratio"] = node_data.get("ratio", "1:1")
+                    elif node_type == "videoGen":
+                        meta["resolution"] = node_data.get("resolution", "720p")
+                        meta["duration"] = node_data.get("duration", "4s")
+                    if "prompt" in node_data:
+                        meta["prompt"] = node_data["prompt"]
+
+                    await billing_service.charge_usage(
+                        user_id=user_id,
+                        action=action_type_map[node_type],
+                        cost_usd=cost,
+                        model_name=result.get("model", node_type),
+                        provider=result.get("provider", "Runware"),
+                        metadata=meta,
+                    )
+                    print(f"[Workflow] ✅ Billed ${cost:.4f} for {node_type}")
+                except Exception as billing_err:
+                    print(f"[Workflow] ⚠️ Billing failed: {billing_err}")
         else:
             errors.append({
                 "node_id": node_id,
@@ -1059,6 +1094,13 @@ async def _execute_workflow_async(workflow_id: str, run_id: str):
     outputs: Dict[str, Any] = {}
     errors: List[Dict[str, str]] = []
     current = 0
+    user_id = workflow.get("user_id")
+    action_type_map = {
+        "imageGen": ActionType.IMAGE_GEN,
+        "videoGen": ActionType.VIDEO_GEN,
+        "audioGen": ActionType.AUDIO_GEN,
+        "editorAgent": ActionType.RENDER,
+    }
     
     for node_id in execution_order:
         node = next((n for n in nodes if n["id"] == node_id), None)
@@ -1095,6 +1137,34 @@ async def _execute_workflow_async(workflow_id: str, run_id: str):
                 outputs[node_id] = result.get("output")
                 node_states[node_id]["status"] = "completed"
                 node_states[node_id]["completed_at"] = completed_at
+                
+                # Billing
+                cost = result.get("cost", 0.0)
+                node_type = node.get("type")
+                if node_type in action_type_map and cost > 0:
+                    try:
+                        billing_service = BillingService(get_database())
+                        node_data = node.get("data", {})
+                        meta = {"workflow_id": workflow_id, "node_id": node_id, "node_type": node_type}
+                        if node_type == "imageGen":
+                            meta["ratio"] = node_data.get("ratio", "1:1")
+                        elif node_type == "videoGen":
+                            meta["resolution"] = node_data.get("resolution", "720p")
+                            meta["duration"] = node_data.get("duration", "4s")
+                        if "prompt" in node_data:
+                            meta["prompt"] = node_data["prompt"]
+
+                        await billing_service.charge_usage(
+                            user_id=user_id,
+                            action=action_type_map[node_type],
+                            cost_usd=cost,
+                            model_name=result.get("model", node_type),
+                            provider=result.get("provider", "Runware"),
+                            metadata=meta,
+                        )
+                        print(f"[WorkflowAsync] ✅ Billed ${cost:.4f} for {node_type}")
+                    except Exception as billing_err:
+                        print(f"[WorkflowAsync] ⚠️ Billing failed: {billing_err}")
                 
                 await collection.update_one(
                     {"_id": oid},

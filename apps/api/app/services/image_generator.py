@@ -12,7 +12,7 @@ from app.core.config import settings
 from app.core.dependencies import get_storage_service
 from app.services.runware_service import RunwareService
 
-from app.core.model_registry import get_model_by_name
+from app.core.model_registry import resolve_air_id
 class ImageGenerator:
     """Generates images using Runware API (Flux, Recraft, Kling, etc) for consistent scene visuals."""
 
@@ -106,15 +106,8 @@ class ImageGenerator:
         if self.use_mock:
             return await self._mock_generate(prompt)
         
-        # Determine the target model
-        target_model = self.default_model
-        if model_name:
-            model_info = get_model_by_name(model_name)
-            if model_info and "air_id" in model_info:
-                target_model = model_info["air_id"]
-            else:
-                # Pass through literally if it looks like an AIR ID (has ':'), else fallback
-                target_model = model_name if ":" in model_name else self.default_model
+        # Determine the target model — always resolve to a valid AIR ID
+        target_model = resolve_air_id(model_name, self.default_model, model_type="image")
                 
         try:
             # Map aspect ratio to valid Runware dimensions

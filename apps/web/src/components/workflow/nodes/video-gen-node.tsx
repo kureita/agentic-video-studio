@@ -155,10 +155,12 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
         );
     };
 
-    const currentModel = (typeof data.model === 'string' ? data.model : (videoModels.length > 0 ? videoModels[0].name : "Google Veo 3.1"));
+    const currentModelId = (typeof data.model === 'string' ? data.model : (videoModels.length > 0 ? videoModels[0].id : "kling-video-3-standard"));
+    const currentModelEntry = videoModels.find(m => m.id === currentModelId) || videoModels.find(m => m.name === currentModelId);
+    const currentModelDisplayName = currentModelEntry?.name || currentModelId;
     const configInputs = DEFAULT_INPUTS;
 
-    const selectedModelData = videoModels.find(m => m.name === currentModel);
+    const selectedModelData = currentModelEntry;
     let validDurations = ["5s", "8s", "10s"];
     let validResolutions = ["720p", "1080p"];
     if (selectedModelData && selectedModelData.configs) {
@@ -177,8 +179,8 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
         ? (data.resolution as string || validResolutions[0])
         : validResolutions[0];
 
-    const handleModelChange = (newModel: string) => {
-        const newModelData = videoModels.find(m => m.name === newModel);
+    const handleModelChange = (newModelId: string) => {
+        const newModelData = videoModels.find(m => m.id === newModelId);
         let newValidDurations = ["5s", "8s", "10s"];
         let newValidResolutions = ["720p", "1080p"];
 
@@ -202,7 +204,7 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
             newResolution = newValidResolutions[0];
         }
 
-        updateData({ model: newModel, duration: newDuration, resolution: newResolution });
+        updateData({ model: newModelId, duration: newDuration, resolution: newResolution });
     };
 
     const handleDownload = () => {
@@ -508,7 +510,7 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
                                 showModelMenu && "bg-black/80 border-white/20"
                             )}
                         >
-                            <span className="text-[10px] font-medium truncate flex-grow text-left">{currentModel}</span>
+                            <span className="text-[10px] font-medium truncate flex-grow text-left">{currentModelDisplayName}</span>
                             <ChevronDown className="w-2.5 h-2.5 text-white/50 flex-shrink-0" />
                         </button>
 
@@ -530,16 +532,16 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
                                                 key={m.id}
                                                 onClick={(e) => {
                                                     e.stopPropagation();
-                                                    handleModelChange(m.name);
+                                                    handleModelChange(m.id);
                                                     setShowModelMenu(false);
                                                 }}
                                                 className={cn(
                                                     "w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-white/10 cursor-pointer flex items-center justify-between transition-colors",
-                                                    currentModel === m.name && "bg-white/15 text-white"
+                                                    currentModelId === m.id && "bg-white/15 text-white"
                                                 )}
                                             >
                                                 <div className="flex flex-col gap-0.5">
-                                                    <span className={cn("text-[11px] font-medium", currentModel !== m.name && "text-white/80")}>
+                                                    <span className={cn("text-[11px] font-medium", currentModelId !== m.id && "text-white/80")}>
                                                         {m.name}
                                                     </span>
                                                     {getCapabilitiesLabel(m.capabilities) && (

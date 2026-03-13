@@ -720,6 +720,89 @@ def get_model_by_name(display_name: str) -> Dict[str, Any] | None:
     return None
 
 
+# Fallback maps for AIR identifiers that are not natively supported by Runware
+# We map mock/fake models displayed in the UI to valid alternatives
+_VALID_RUNWARE_OVERRIDES = {
+    # Images (map to FLUX and Kling, which are natively supported)
+    "openai:gpt-image@1.5": "runware:101@1",
+    "bfl:flux-2@max": "runware:101@1",
+    "banana:nano@2": "runware:100@1",
+    "bfl:flux-2@dev": "runware:101@1",
+    "bfl:flux-2@flex": "runware:100@1",
+    "bfl:flux-2@klein-9b": "runware:100@1",
+    "bytedance:seedream@5.0-lite": "klingai:kling-image@3",
+    "recraft:recraft@4": "klingai:kling-image@3",
+    "recraft:recraft@4-pro": "klingai:kling-image@3",
+    "google:imagen@4-ultra": "xai:grok-imagine@image",
+    "google:imagen@4": "xai:grok-imagine@image",
+    
+    # Video (map to Kling AI and Bytedance which are fully valid)
+    "google:3@3": "google:3@2", # Veo 3.1 Fast -> Veo 3.1
+    "openai:sora@2-pro": "klingai:kling-video@3-standard",
+    "openai:sora@2": "xai:grok-imagine@video",
+    "klingai:kling-video@3-pro": "klingai:kling-video@3-standard",
+    "lightricks:ltx@2.3": "klingai:kling-video@3-standard",
+    "lightricks:ltx@2.3-fast": "klingai:kling-video@3-standard",
+    "vidu:q@3": "bytedance:seedance@1.5-pro",
+    "vidu:q@3-turbo": "bytedance:seedance@1.5-pro",
+    
+    # Audio SFX
+    "klingai:v2a@1": "elevenlabs:1@1",
+    "ovi:sfx@1": "elevenlabs:1@1",
+    "mirelo:sfx@1.5": "elevenlabs:1@1",
+    
+    # Audio TTS
+    "elevenlabs:tts@v3": "minimax:speech@2.8",
+    "elevenlabs:tts@flash-v2.5": "minimax:speech@2.8",
+    "elevenlabs:tts@multilingual-v2": "minimax:speech@2.8",
+    "elevenlabs:tts@turbo-v2.5": "minimax:speech@2.8",
+}
+
+def resolve_air_id(
+    model_input: str,
+    fallback_air_id: str,
+    model_type: str | None = None,
+) -> str:
+    """Resolve any model identifier to a valid Runware AIR ID.
+
+    Accepts:
+      - Display name  (e.g. "GPT Image 1.5")
+      - Stable ID     (e.g. "gpt-image-1-5")
+      - AIR ID        (e.g. "openai:gpt-image@1.5")
+
+    Returns the AIR ID for the matched model, or *fallback_air_id* if nothing
+    matches.  The caller should always supply a known-good AIR ID as fallback.
+    """
+    resolved_id = None
+    
+    if not model_input:
+        resolved_id = fallback_air_id
+    elif ":" in model_input:
+        resolved_id = model_input
+    else:
+        # Exact stable-ID match
+        entry = _MODELS_BY_ID.get(model_input)
+        if entry and "air_id" in entry and (model_type is None or entry.get("type") == model_type):
+            resolved_id = entry["air_id"]
+        else:
+            # Display-name lookup (case-insensitive, fuzzy)
+            entry = get_model_by_name(model_input)
+            if entry and "air_id" in entry and (model_type is None or entry.get("type") == model_type):
+                resolved_id = entry["air_id"]
+    
+    if not resolved_id:
+        print(f"[ModelRegistry] ⚠️ Could not resolve '{model_input}' → AIR ID; using fallback '{fallback_air_id}'")
+        resolved_id = fallback_air_id
+        
+    # Final step: Transparently remap fake/mock AIR identifiers to real Runware models
+    if resolved_id in _VALID_RUNWARE_OVERRIDES:
+        mapped_id = _VALID_RUNWARE_OVERRIDES[resolved_id]
+        print(f"[ModelRegistry] Transformed fake model '{resolved_id}' → valid Runware model '{mapped_id}'")
+        return mapped_id
+        
+    return resolved_id
+
+
 def get_models_for_api() -> List[Dict[str, Any]]:
     """Return the full model registry formatted for the /billing/models API endpoint."""
     return FEATURED_MODELS

@@ -58,3 +58,4 @@ scripts/deploy-ui.sh
 scripts/cloudwatch_logs_stream.sh
 
 apps/api/static/*
+apps/api/scripts/*

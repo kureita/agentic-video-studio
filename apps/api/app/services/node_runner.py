@@ -381,7 +381,7 @@ class NodeRunner:
             prompt = "Variation of this image"
         
         # Get generation parameters
-        model = data.get("model", "FLUX.2 [dev]")
+        model = data.get("model", "flux-2-dev")
         ratio = data.get("ratio", "1:1")
         count = data.get("count", 1)
         
@@ -390,7 +390,7 @@ class NodeRunner:
         
         # Determine style based on model
         style = "realistic"
-        if "Stable" in model:
+        if "stable" in model.lower():
             style = "cinematic"
         
         print(f"[NodeRunner] Generating image: prompt='{prompt[:50]}...', model={model}, ratio={ratio}, has_ref_image={bool(reference_image)}")
@@ -410,6 +410,9 @@ class NodeRunner:
                 return {
                     "success": True,
                     "output": result.get("image_url"),
+                    "cost": result.get("cost", 0.0),
+                    "model": result.get("model", model),
+                    "provider": result.get("provider", "Runware"),
                 }
             else:
                 return {
@@ -489,6 +492,9 @@ class NodeRunner:
                 return {
                     "success": True,
                     "output": result.get("audio_url"),
+                    "cost": result.get("cost", 0.0),
+                    "model": result.get("model", data.get("model", audio_type)),
+                    "provider": result.get("provider", "Runware"),
                 }
             else:
                 return {
@@ -550,8 +556,8 @@ class NodeRunner:
         ratio = data.get("ratio", "16:9")
         resolution = data.get("resolution", "720p")
         # Determine model
-        model_str = data.get("model", "Kling VIDEO 3.0 Standard")
-        use_fast_model = "Fast" in model_str
+        model_str = data.get("model", "kling-video-3-standard")
+        use_fast_model = "fast" in model_str.lower()
 
         if resolution not in ("720p", "1080p"):
             resolution = "720p"
@@ -648,6 +654,9 @@ class NodeRunner:
                     "output": video_url,
                     "start_frame": start_frame,
                     "end_frame": end_frame,
+                    "cost": result.get("cost", 0.0),
+                    "model": result.get("model", model_str),
+                    "provider": result.get("provider", "Runware"),
                 }
             else:
                 return {

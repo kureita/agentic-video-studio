@@ -46,9 +46,11 @@ export const AudioGenNode = memo(({ id, selected, data }: NodeProps) => {
         () => models.filter(m => m.type === "audio" && m.category === category && m.coming_soon),
         [models, category]
     );
-    const currentModel = typeof data.model === 'string'
+    const currentModelId = typeof data.model === 'string'
         ? data.model
-        : (audioModels.length > 0 ? audioModels[0].name : "MiniMax Speech 2.8");
+        : (audioModels.length > 0 ? audioModels[0].id : "minimax-speech-2-8");
+    const currentModelEntry = audioModels.find(m => m.id === currentModelId) || audioModels.find(m => m.name === currentModelId);
+    const currentModelDisplayName = currentModelEntry?.name || currentModelId;
 
 
     const isRunning = runningNodeId === id;
@@ -339,7 +341,7 @@ export const AudioGenNode = memo(({ id, selected, data }: NodeProps) => {
                                         showModelMenu && "bg-black/80 border-white/20"
                                     )}
                                 >
-                                    <span className="text-[10px] font-medium truncate">{currentModel}</span>
+                                    <span className="text-[10px] font-medium truncate">{currentModelDisplayName}</span>
                                     <ChevronDown className="w-2.5 h-2.5 text-white/50 flex-shrink-0" />
                                 </button>
 
@@ -361,16 +363,16 @@ export const AudioGenNode = memo(({ id, selected, data }: NodeProps) => {
                                                         key={m.id}
                                                         onClick={(e) => {
                                                             e.stopPropagation();
-                                                            updateNodeData(id, { model: m.name });
+                                                            updateNodeData(id, { model: m.id });
                                                             setShowModelMenu(false);
                                                         }}
                                                         className={cn(
                                                             "w-full text-left px-2.5 py-2 text-[11px] rounded-lg hover:bg-white/10 cursor-pointer flex flex-col gap-0.5 transition-colors",
-                                                            currentModel === m.name && "bg-white/15 text-white font-medium"
+                                                            currentModelId === m.id && "bg-white/15 text-white font-medium"
                                                         )}
                                                     >
                                                         <div className="flex items-center justify-between">
-                                                            <span className={cn(currentModel !== m.name && "text-white/80")}>
+                                                            <span className={cn(currentModelId !== m.id && "text-white/80")}>
                                                                 {m.name}
                                                             </span>
                                                             <span className="text-[9px] text-white/40">

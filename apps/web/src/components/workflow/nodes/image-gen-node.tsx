@@ -34,7 +34,9 @@ export const ImageGenNode = memo(({ id, selected, data }: NodeProps) => {
     const isRunning = runningNodeId === id;
     const output = (outputs[id] as string | undefined) || (data.output as string | undefined); // Use store output first, fallback to data.output
 
-    const currentModel = (typeof data.model === 'string' ? data.model : (imageModels.length > 0 ? imageModels[0].name : "FLUX.2 [dev]"));
+    const currentModelId = (typeof data.model === 'string' ? data.model : (imageModels.length > 0 ? imageModels[0].id : "flux-2-dev"));
+    const currentModelEntry = imageModels.find(m => m.id === currentModelId) || imageModels.find(m => m.name === currentModelId);
+    const currentModelDisplayName = currentModelEntry?.name || currentModelId;
     const configInputs = DEFAULT_INPUTS;
 
     const handleDownload = () => {
@@ -314,7 +316,7 @@ export const ImageGenNode = memo(({ id, selected, data }: NodeProps) => {
                                 showModelMenu && "bg-black/80 border-white/20"
                             )}
                         >
-                            <span className="text-[10px] font-medium truncate flex-grow text-left">{currentModel}</span>
+                            <span className="text-[10px] font-medium truncate flex-grow text-left">{currentModelDisplayName}</span>
                             <ChevronDown className="w-2.5 h-2.5 text-white/50 flex-shrink-0" />
                         </button>
 
@@ -336,16 +338,16 @@ export const ImageGenNode = memo(({ id, selected, data }: NodeProps) => {
                                                 key={m.id}
                                                 onClick={(e) => {
                                                     e.stopPropagation();
-                                                    updateNodeData(id, { model: m.name });
+                                                    updateNodeData(id, { model: m.id });
                                                     setShowModelMenu(false);
                                                 }}
                                                 className={cn(
                                                     "w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-white/10 cursor-pointer flex items-center justify-between transition-colors",
-                                                    currentModel === m.name && "bg-white/15 text-white"
+                                                    currentModelId === m.id && "bg-white/15 text-white"
                                                 )}
                                             >
                                                 <div className="flex flex-col gap-0.5">
-                                                    <span className={cn("text-[11px] font-medium", currentModel !== m.name && "text-white/80")}>
+                                                    <span className={cn("text-[11px] font-medium", currentModelId !== m.id && "text-white/80")}>
                                                         {m.name}
                                                     </span>
                                                     {getCapabilitiesLabel(m.capabilities) && (

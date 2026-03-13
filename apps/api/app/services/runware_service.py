@@ -220,6 +220,12 @@ class RunwareService:
             "4:3":  (1440, 1080),
             "3:4":  (1080, 1440),
         },
+        # Minimax Video requires specific resolutions
+        "minimax:4@1": {
+            "16:9": (1366, 768),
+            "9:16": (768, 1366),
+            "1:1":  (1024, 1024), 
+        },
     }
 
     def _resolve_dimensions(self, model: str, aspect_ratio: str) -> tuple:
@@ -229,10 +235,21 @@ class RunwareService:
                 return dim_map.get(aspect_ratio, dim_map.get("16:9", (1920, 1080)))
         return self._DEFAULT_DIMENSIONS.get(aspect_ratio, (1280, 720))
 
+    def _resolve_duration(self, model: str, duration: int) -> int | float:
+        """Return valid duration for the model constraints."""
+        if model.startswith("google:"):
+            # Veo 3.1 only supports 4, 6, 8
+            if duration <= 4: return 4
+            elif duration <= 6: return 6
+            else: return 8
+        return duration
+
     async def generate_video(self, prompt: str, model: str = "klingai:kling-video@3-standard", duration: int = 5, aspect_ratio: str = "16:9") -> dict:
         """Generate a video from text."""
         width, height = self._resolve_dimensions(model, aspect_ratio)
-        print(f"[VideoGenerator] Resolved dimensions for {model} ({aspect_ratio}): {width}x{height}")
+        resolved_duration = self._resolve_duration(model, duration)
+        
+        print(f"[VideoGenerator] Resolved dimensions for {model} ({aspect_ratio}): {width}x{height}, duration: {resolved_duration}")
 
         task = {
             "taskType": "videoInference",
@@ -240,7 +257,7 @@ class RunwareService:
             "outputType": "URL",
             "outputFormat": "MP4",
             "positivePrompt": prompt,
-            "duration": duration,
+            "duration": resolved_duration,
             "width": width,
             "height": height
         }
