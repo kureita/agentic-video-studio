@@ -166,12 +166,16 @@ class RunwareService:
             "cost": data.get("cost", 0.0),
         }
 
-    async def image_to_image(self, prompt: str, image_url: str, width: int = 1024, height: int = 1024, model: str = "bfl:flux-2@dev") -> dict:
+    async def image_to_image(self, prompt: str, image_url: str, width: int = 1024, height: int = 1024, model: str = "bfl:flux-2@dev", strength: float = 0.8) -> dict:
         """Generate an image based on an input image and prompt."""
+
+        seed_image = await self._url_to_data_uri(image_url)
+
         task = {
             "taskType": "imageInference",
             "positivePrompt": prompt,
-            "inputImage": image_url, # Can be direct URL to public image
+            "seedImage": seed_image,
+            "strength": strength,
             "width": width,
             "height": height,
             "model": model

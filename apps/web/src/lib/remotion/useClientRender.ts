@@ -139,6 +139,7 @@ export function useClientRender(): UseClientRender {
                     onProgress,
                     signal: abortController.signal,
                     licenseKey: "free-license",
+                    delayRenderTimeoutInMilliseconds: 600_000
                 });
 
                 const blob = await getBlob();

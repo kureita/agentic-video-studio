@@ -5,7 +5,8 @@ import { NodeWrapper } from "@/components/workflow/node-wrapper";
 import { S3Image } from "@/components/ui/s3-image";
 import { usePresignedUrl } from "@/lib/use-presigned-url";
 import { useWorkflowStore } from "@/lib/workflow-store";
-import { api } from "@/lib/api";
+import { api, assetsApi } from "@/lib/api";
+import axios from "axios";
 import { toast } from "sonner";
 import { workflowApi } from "@/lib/workflow-api";
 import { extractFrameFromVideo } from "@/lib/video-utils";
@@ -113,69 +114,90 @@ export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
         const { setNodes, nodes } = useWorkflowStore.getState();
 
         try {
-            const formData = new FormData();
-            formData.append("file", file);
+            let uploadedUrl: string;
+            let uploadedType = file.type.split('/')[0];
 
-            const response = await api.post("/api/assets/upload", formData, {
-                headers: { "Content-Type": "multipart/form-data" },
-                onUploadProgress: (progressEvent) => {
+            // 1. Try to get a presigned URL first (better for large files in prod)
+            try {
+                const presignedRes = await assetsApi.getPresignedUrl(file.name, file.type);
+                if (presignedRes.data.success && presignedRes.data.upload_url && !presignedRes.data.is_local) {
+                    const { upload_url, file_url } = presignedRes.data;
+
+                    // Direct upload to S3 using PUT
+                    await axios.put(upload_url, file, {
+                        headers: { "Content-Type": file.type },
+                        onUploadProgress: (progressEvent) => {
+                            const percentCompleted = progressEvent.total ? Math.round((progressEvent.loaded * 100) / progressEvent.total) : 0;
+                            setUploadProgress(percentCompleted);
+                        }
+                    });
+
+                    uploadedUrl = file_url!;
+                } else {
+                    // Fallback to standard multipart upload
+                    const response = await assetsApi.upload(file, (progressEvent: any) => {
+                        const percentCompleted = progressEvent.total ? Math.round((progressEvent.loaded * 100) / progressEvent.total) : 0;
+                        setUploadProgress(percentCompleted);
+                    });
+                    uploadedUrl = response.data.url;
+                }
+            } catch (err) {
+                console.warn("Presigned upload failed, falling back to standard upload:", err);
+                const response = await assetsApi.upload(file, (progressEvent: any) => {
                     const percentCompleted = progressEvent.total ? Math.round((progressEvent.loaded * 100) / progressEvent.total) : 0;
                     setUploadProgress(percentCompleted);
+                });
+                uploadedUrl = response.data.url;
+            }
+
+            // Update mediaType and ratio locally before output
+            setNodes(nodes.map(n => n.id === id ? {
+                ...n,
+                data: { ...n.data, mediaType: uploadedType, output: uploadedUrl }
+            } : n));
+
+            setNodeOutput(id, uploadedUrl);
+
+            // Clear any running state for this node forcefully after a short delay
+            const { nodeExecutionStates } = useWorkflowStore.getState();
+            useWorkflowStore.setState({
+                runningNodeId: null,
+                nodeExecutionStates: {
+                    ...nodeExecutionStates,
+                    [id]: { status: "completed" }
                 }
             });
 
-            if (response.data.success) {
-                const uploadedUrl = response.data.url;
-                const uploadedType = file.type.split('/')[0];
+            // Auto-evaluate the node
+            runNode(id);
 
-                // Update mediaType and ratio locally before output
-                setNodes(nodes.map(n => n.id === id ? {
-                    ...n,
-                    data: { ...n.data, mediaType: uploadedType, output: uploadedUrl }
-                } : n));
+            // For videos, start auto-extraction
+            if (uploadedType === 'video') {
+                // Create a blob URL for safe local extraction without CORS
+                const safeBlobUrl = URL.createObjectURL(file);
 
-                setNodeOutput(id, uploadedUrl);
+                setTimeout(async () => {
+                    try {
+                        const startFrame = await extractFrameFromVideo(safeBlobUrl, 0);
+                        setRawOutput(`${id}__start_frame`, startFrame);
+                        const endFrame = await extractFrameFromVideo(safeBlobUrl, 1);
+                        setRawOutput(`${id}__end_frame`, endFrame);
 
-                // Clear any running state for this node forcefully after a short delay
-                // since this node type completes instantaneously and may outpace the poller
-                const { nodeExecutionStates } = useWorkflowStore.getState();
-                useWorkflowStore.setState({
-                    runningNodeId: null,
-                    nodeExecutionStates: {
-                        ...nodeExecutionStates,
-                        [id]: { status: "completed" }
-                    }
-                });
-
-                // Auto-evaluate the node
-                runNode(id);
-
-                // For videos, start auto-extraction
-                if (uploadedType === 'video') {
-                    // Create a blob URL for safe local extraction without CORS
-                    const safeBlobUrl = URL.createObjectURL(file);
-
-                    setTimeout(async () => {
-                        try {
-                            const startFrame = await extractFrameFromVideo(safeBlobUrl, 0);
-                            setRawOutput(`${id}__start_frame`, startFrame);
-                            const endFrame = await extractFrameFromVideo(safeBlobUrl, 1);
-                            setRawOutput(`${id}__end_frame`, endFrame);
-
-                            if (workflowId) {
-                                await workflowApi.extractFrames(workflowId, id, startFrame, endFrame);
-                            }
-                        } catch (err) {
-                            console.error('[VideoNode auto-extraction] Error:', err);
-                        } finally {
-                            URL.revokeObjectURL(safeBlobUrl);
+                        if (workflowId) {
+                            await workflowApi.extractFrames(workflowId, id, startFrame, endFrame);
                         }
-                    }, 1000);
-                }
+                    } catch (err) {
+                        console.error('[VideoNode auto-extraction] Error:', err);
+                    } finally {
+                        URL.revokeObjectURL(safeBlobUrl);
+                    }
+                }, 1000);
             }
         } catch (error: unknown) {
             console.error("Upload error:", error);
             const axiosError = error as { response?: { status?: number } };
+            // If it's a 413, even with presigned URL attempt, it might be an S3 limit or something else
+            // but usually 413 comes from API Gateway/Lambda
             if (axiosError.response?.status === 413) {
                 toast.error("File is too large.");
             } else {

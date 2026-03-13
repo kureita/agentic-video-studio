@@ -37,3 +37,32 @@ async def upload_asset(
     except Exception as e:
         print(f"Upload error: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to upload file: {str(e)}")
+
+
+@router.get("/upload/presigned")
+async def get_presigned_upload_url(
+    filename: str,
+    content_type: str,
+    storage: StorageService = Depends(get_storage_service)
+) -> Dict[str, Any]:
+    """
+    Generate a presigned URL for direct upload to S3.
+    Use this for large files to bypass Lambda payload limits.
+    """
+    try:
+        # Generate unique filename
+        file_extension = os.path.splitext(filename)[1]
+        unique_filename = f"{uuid.uuid4()}{file_extension}"
+        
+        presigned_data = storage.generate_presigned_upload_url(unique_filename, content_type)
+        
+        return {
+            "success": True,
+            **presigned_data # Returns upload_url, file_url, key (or is_local: True)
+        }
+    except NotImplementedError:
+        # Fallback for local storage which might not support presigned URLs
+        return {"success": False, "is_local": True}
+    except Exception as e:
+        print(f"Presigned upload error: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate presigned URL: {str(e)}")

@@ -365,6 +365,34 @@ export const billingApi = {
 };
 
 // ============================================
+// Assets API
+// ============================================
+
+export interface PresignedUploadResponse {
+  success: boolean;
+  upload_url?: string;
+  file_url?: string;
+  key?: string;
+  is_local?: boolean;
+}
+
+export const assetsApi = {
+  getPresignedUrl: (filename: string, contentType: string) =>
+    api.get<PresignedUploadResponse>("/api/assets/upload/presigned", {
+      params: { filename, content_type: contentType },
+    }),
+
+  upload: (file: File, onUploadProgress?: (progressEvent: any) => void) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return api.post("/api/assets/upload", formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+      onUploadProgress,
+    });
+  },
+};
+
+// ============================================
 // Health Check
 // ============================================
 
