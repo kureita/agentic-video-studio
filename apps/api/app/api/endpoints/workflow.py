@@ -2192,7 +2192,6 @@ async def fail_task(jobs_collection, job_id: str, task_index: int, error: str):
     )
     print(f"[RunAll] Task {task_index} hard-failed: {error}")
 
-@router.post("/job-processor")
 async def job_processor_background(request: JobProcessorRequest):
     """Internal endpoint: Lambda self-invocation target for job processing."""
     expected_secret = os.environ.get("LAMBDA_INVOKE_SECRET", "kureita-internal")

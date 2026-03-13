@@ -1,7 +1,16 @@
 import { create } from "zustand";
 import { Node, Edge } from "@xyflow/react";
-import { workflowApi, Workflow, ChatMessage, WorkflowNode, NodeState, WorkflowRunStatus, JobStatusResponse } from "./workflow-api";
+import { workflowApi, Workflow, ChatMessage, WorkflowNode, NodeState, WorkflowRunStatus, JobStatusResponse, JobTaskStatus } from "./workflow-api";
 import { toast } from "sonner";
+
+function taskToNodeState(task: JobTaskStatus): NodeState {
+    return {
+        status: (task.status === "pending" ? "queued" : task.status) as NodeState["status"],
+        started_at: task.started_at,
+        completed_at: task.completed_at,
+        error: task.error
+    }
+}
 
 // ============================================
 // Types
@@ -435,12 +444,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
                 // Build nodeExecutionStates from job tasks for visual feedback 
                 const nodeStates: Record<string, NodeState> = {};
                 for (const task of status.tasks) {
-                    nodeStates[task.node_id] = {
-                        status: task.status as NodeState["status"],
-                        started_at: task.started_at,
-                        completed_at: task.completed_at,
-                        error: task.error,
-                    }
+                    nodeStates[task.node_id] = taskToNodeState(task);
                 }
 
 
@@ -452,7 +456,6 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
                     },
                 });
 
-                // Update outputs as they become available
                 if (Object.keys(status.outputs).length > 0) {
                     set((state) => ({
                         outputs: { ...state.outputs, ...status.outputs },
@@ -463,12 +466,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
             // Final update
             const finalNodeStates: Record<string, NodeState> = {};
             for (const task of finalStatus.tasks) {
-                finalNodeStates[task.node_id] = {
-                    status: task.status as NodeState["status"],
-                    started_at: task.started_at,
-                    completed_at: task.completed_at,
-                    error: task.error,
-                }
+                finalNodeStates[task.node_id] = taskToNodeState(task);
             }
 
             set({
@@ -542,12 +540,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
             // Hydrate state from the active job
             const nodeStates: Record<string, NodeState> = {};
             for (const task of job.tasks) {
-                nodeStates[task.node_id] = {
-                    status: task.status as NodeState["status"],
-                    started_at: task.started_at,
-                    completed_at: task.completed_at,
-                    error: task.error,
-                };
+                nodeStates[task.node_id] = taskToNodeState(task)
             }
 
             set({
@@ -571,12 +564,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
             const finalStatus = await workflowApi.pollJob(id, job.job_id, (status: JobStatusResponse) => {
                 const states: Record<string, NodeState> = {};
                 for (const task of status.tasks) {
-                    states[task.node_id] = {
-                        status: task.status as NodeState["status"],
-                        started_at: task.started_at,
-                        completed_at: task.completed_at,
-                        error: task.error,
-                    };
+                    states[task.node_id] = taskToNodeState(task)
                 }
                 set({
                     nodeExecutionStates: states,
@@ -595,12 +583,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
             // Finalize
             const finalNodeStates: Record<string, NodeState> = {};
             for (const task of finalStatus.tasks) {
-                finalNodeStates[task.node_id] = {
-                    status: task.status as NodeState["status"],
-                    started_at: task.started_at,
-                    completed_at: task.completed_at,
-                    error: task.error,
-                };
+                finalNodeStates[task.node_id] = taskToNodeState(task);
             }
             set({
                 isRunning: false,

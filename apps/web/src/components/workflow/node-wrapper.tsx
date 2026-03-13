@@ -93,7 +93,7 @@ export const NodeWrapper = memo(({
     return (
         <div className="relative group/node">
             {/* Execution Status Badge */}
-            {executionStatus && executionStatus !== "queued" && (
+            {executionStatus && (
                 <div className={cn(
                     "absolute -top-10 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium whitespace-nowrap z-50 transition-all duration-300",
                     executionStatus === "running" && "bg-amber-500/10 text-amber-500 border border-amber-500/20",

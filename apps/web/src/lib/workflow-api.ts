@@ -328,7 +328,7 @@ export const workflowApi = {
         api.post<CreateJobResponse>(`/api/workflows/${workflowId}/jobs`),
 
     getJobStatus: (workflowId: string, jobId: string) =>
-        api.get<JobStatusResponse>(`/api/workflow/${workflowId}/jobs/${jobId}/status`),
+        api.get<JobStatusResponse>(`/api/workflows/${workflowId}/jobs/${jobId}/status`),
 
     getActiveJob: (workflowId: string) =>
         api.get<JobStatusResponse | null>(`/api/workflows/${workflowId}/jobs/active`),
