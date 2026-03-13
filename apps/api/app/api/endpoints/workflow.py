@@ -11,11 +11,14 @@ from bson import ObjectId
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
 from pydantic import BaseModel
 
-from app.core.database import get_database
+from app.core.database import get_database, get_workflow_jobs_collection
 from app.core.auth import get_current_user
 from app.services.node_runner import NodeRunner
 from app.services.billing import BillingService
 from app.models.usage import ActionType
+from app.models.workflow_job import (
+    JobTask, CreateJobResponse, JobTaskStatus, JobStatusResponse, JobProcessorRequest
+)
 
 router = APIRouter()
 
@@ -1657,3 +1660,548 @@ async def upload_rendered_video(
     except Exception as e:
         print(f"Error uploading rendered video: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================
+# Run-All Job Orchestration
+# ============================================
+NON_EXECUTABLE_TYPES = {"comment"}
+SKIP_IF_HAS_DATA_TYPES = {"text", "upload", "mediaUpload"}
+
+@router.post("/{workflow_id}/jobs", response_model=CreateJobResponse)
+async def create_job(workflow_id: str, current_user: dict = Depends(get_current_user)):
+    """Create a Run-All job: topological sort, build task list, kick off processor."""
+    collection = get_workflows_collection()
+    jobs_collection = get_workflow_jobs_collection()
+
+    try:
+        oid = ObjectId(workflow_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid workflow ID")
+
+    user_id = current_user.get("_id")
+    workflow = await collection.find_one({
+        "_id": oid,
+        "$or": [{"user_id": user_id}, {"user_id": {"$exists": False}}],
+    })
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    # Reject if a job is already running for this workflow
+    existing = await jobs_collection.find_one({
+        "workflow_id": workflow_id,
+        "status": {"$in": ["pending", "running"]},
+    })
+    if existing:
+        return CreateJobResponse(job_id=existing["id"], status=existing["status"])
+
+    nodes = workflow.get("nodes", [])
+    edges = workflow.get("edges", [])
+    outputs = workflow.get("outputs", {})
+    execution_order = get_topological_order(nodes, edges)
+    node_map = {n["id"]: n for n in nodes}
+
+    tasks: List[Dict[str, Any]] = []
+    for nid in execution_order:
+        node = node_map.get(nid)
+        if not node:
+            continue
+        ntype = node.get("type", "unknown")
+
+        if ntype in NON_EXECUTABLE_TYPES:
+            tasks.append(JobTask(node_id=nid, node_type=ntype, status="skipped").model_dump())
+            continue
+
+        if ntype in SKIP_IF_HAS_DATA_TYPES:
+            has_output = bool(outputs.get(nid))
+            has_data = bool(node.get("data", {}).get("text")) or bool(node.get("data", {}).get("url"))
+            if has_output or has_data:
+                tasks.append(JobTask(node_id=nid, node_type=ntype, status="skipped").model_dump())
+                continue
+
+        if outputs.get(nid):
+            tasks.append(JobTask(node_id=nid, node_type=ntype, status="skipped").model_dump())
+            continue
+
+        tasks.append(JobTask(node_id=nid, node_type=ntype, status="pending").model_dump())
+
+    job_id = str(uuid4())
+    run_id = str(uuid4())
+    now = datetime.now(timezone.utc)
+
+    job_doc = {
+        "id": job_id,
+        "workflow_id": workflow_id,
+        "user_id": user_id,
+        "run_id": run_id,
+        "tasks": tasks,
+        "status": "running",
+        "current_task_index": 0,
+        "total_tasks": len(tasks),
+        "heartbeat_at": now,
+        "max_retries": 2,
+        "skip_completed": True,
+        "stop_on_failure": True,
+        "created_at": now,
+        "updated_at": now,
+        "completed_at": None,
+        "outputs": {},
+        "errors": [],
+    }
+    await jobs_collection.insert_one(job_doc)
+
+    print(f"[RunAll] Created job {job_id} for workflow {workflow_id}: {len(tasks)} tasks")
+
+    await _invoke_job_processor_lambda(job_id)
+
+    return CreateJobResponse(job_id=job_id, status="running")
+
+@router.get("/{workflow_id}/jobs/active", response_model=Optional[JobStatusResponse])
+async def get_active_job(workflow_id: str, current_user: dict = Depends(get_current_user)):
+    """Return the currently running job for this workflow (for page reload recovery)."""
+    jobs_collection = get_workflow_jobs_collection()
+    job = await jobs_collection.find_one({
+        "workflow_id": workflow_id,
+        "status": {"$in": ["pending", "running"]},
+    })
+    if not job:
+        return None
+    return _serialize_job_status(job)
+
+@router.get("/{workflow_id}/jobs/{job_id}/status", response_model=JobStatusResponse)
+async def get_job_status(workflow_id: str, job_id: str, current_user: dict = Depends(get_current_user)):
+    """Poll job progress."""
+    jobs_collection = get_workflow_jobs_collection()
+    job = await jobs_collection.find_one({"id": job_id, "workflow_id": workflow_id})
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return _serialize_job_status(job)
+
+@router.post("/{workflow_id}/jobs/{job_id}/cancel")
+async def cancel_job(workflow_id: str, job_id: str, current_user: dict = Depends(get_current_user)):
+    """Cancel a running job. Current node finishes, rest are skipped."""
+    jobs_collection = get_workflow_jobs_collection()
+    result = await jobs_collection.update_one(
+        {"id": job_id, "workflow_id": workflow_id, "status": {"$in": ["pending", "running"]}},
+        {"$set": {"status": "cancelled", "updated_at": datetime.now(timezone.utc)}},
+    )
+    if result.modified_count == 0:
+        raise HTTPException(status_code=404, detail="No active job found to cancel")
+    print(f"[RunAll] Job {job_id} cancelled")
+    return {"ok": True}
+
+@router.post("/{workflow_id}/jobs/{job_id}/nudge")
+async def nudge_job(workflow_id: str, job_id: str, current_user: dict = Depends(get_current_user)):
+    """Client-assisted heartbeat: re-invoke processor if a job appears stuck."""
+    jobs_collection = get_workflow_jobs_collection()
+    job = await jobs_collection.find_one({"id": job_id, "workflow_id": workflow_id})
+    if not job or job["status"] not in ("pending", "running"):
+        raise HTTPException(status_code=404, detail="No active job to nudge")
+
+    heartbeat = job.get("heartbeat_at")
+    if heartbeat and isinstance(heartbeat, datetime):
+        stale_threshold = datetime.now(timezone.utc) - timedelta(minutes=5)
+        if heartbeat > stale_threshold:
+            return {"ok": True, "message": "Job heartbeat is recent, no nudge needed"}
+
+    # Reset any stuck running task back to pending
+    tasks = job.get("tasks", [])
+    updated = False
+    for task in tasks:
+        if task["status"] == "running":
+            task["status"] = "pending"
+            task["attempt"] = task.get("attempt", 0) + 1
+            updated = True
+    if updated:
+        await jobs_collection.update_one(
+            {"id": job_id},
+            {"$set": {"tasks": tasks, "updated_at": datetime.now(timezone.utc)}},
+        )
+
+    await _invoke_job_processor_lambda(job_id)
+    print(f"[RunAll] Job {job_id} nudged — processor re-invoked")
+    return {"ok": True, "message": "Processor re-invoked"}
+
+
+def _serialize_job_status(job: dict) -> JobStatusResponse:
+    """Convert a MongoDB job doc to a JobStatusResponse, presigning output URLs."""
+    tasks = [
+        JobTaskStatus(
+            node_id=t["node_id"],
+            node_type=t["node_type"],
+            status=t["status"],
+            attempt=t.get("attempt", 0),
+            started_at=t.get("started_at"),
+            completed_at=t.get("completed_at"),
+            error=t.get("error"),
+        )
+        for t in job.get("tasks", [])
+    ]
+    raw_outputs = job.get("outputs", {})
+    presigned = presign_urls(raw_outputs)
+    return JobStatusResponse(
+        job_id=job["id"],
+        status=job["status"],
+        current_task_index=job.get("current_task_index", 0),
+        total_tasks=job.get("total_tasks", 0),
+        tasks=tasks,
+        outputs=presigned,
+        errors=job.get("errors", []),
+    )
+
+# ── Job Processor (Lambda self-invoke target) ────────────────────────────────
+async def _invoke_job_processor_lambda(job_id: str) -> bool:
+    """Fire-and-forget: invoke this Lambda to process the next task in a job."""
+    function_name = _get_lambda_function_name()
+
+    if not function_name:
+        print(f"[RunAll] Local mode — using asyncio.create_task for job {job_id}")
+        task = asyncio.create_task(_process_job(job_id))
+        _running_tasks.add(task)
+        task.add_done_callback(_running_tasks.discard)
+        return True
+
+    payload = {
+        "job_id": job_id,
+        "invoke_secret": os.environ.get("LAMBDA_INVOKE_SECRET", "kureita-internal"),
+    }
+
+    api_gw_event = {
+        "version": "2.0",
+        "routeKey": "POST /api/workflows/job-processor",
+        "rawPath": "/api/workflows/job-processor",
+        "rawQueryString": "",
+        "headers": {
+            "content-type": "application/json",
+            "x-invoke-source": "lambda-self",
+        },
+        "requestContext": {
+            "http": {
+                "method": "POST",
+                "path": "/api/workflows/job-processor",
+                "protocol": "HTTP/1.1",
+                "sourceIp": "127.0.0.1",
+                "userAgent": "lambda-self-invoke",
+            },
+            "accountId": os.environ.get("AWS_ACCOUNT_ID", ""),
+            "requestId": job_id,
+            "stage": "$default",
+            "apiId": "self",
+        },
+        "body": json.dumps(payload),
+        "isBase64Encoded": False,
+    }
+
+    try:
+        import boto3
+        lambda_client = boto3.client("lambda", region_name=os.environ.get("AWS_REGION", "ap-south-1"))
+        response = lambda_client.invoke(
+            FunctionName=function_name,
+            InvocationType="Event",
+            Payload=json.dumps(api_gw_event).encode("utf-8"),
+        )
+        status = response.get("StatusCode")
+        print(f"[RunAll] Lambda self-invoke dispatched for job {job_id} — status: {status}")
+        return status == 202
+    except Exception as e:
+        print(f"[RunAll] Lambda self-invoke failed for job {job_id}: {e}")
+        task = asyncio.create_task(_process_job(job_id))
+        _running_tasks.add(task)
+        task.add_done_callback(_running_tasks.discard)
+        return False
+
+
+async def _process_job(job_id: str):
+    """
+    Core job processor: execute one pending task, persist results, chain to next.
+    Each Lambda invocation handles exactly one node.
+    """
+    jobs_collection = get_workflow_jobs_collection()
+    wf_collection = get_workflows_collection()
+
+    job = await jobs_collection.find_one({"id": job_id})
+    if not job:
+        print(f"[RunAll] Job {job_id} not found — aborting")
+        return
+
+    # ── Guard checks ──
+    if job["status"] in ("cancelled", "completed", "failed"):
+        print(f"[RunAll] Job {job_id} is {job['status']} — stopping")
+        return
+
+    tasks = job.get("tasks", [])
+    workflow_id = job["workflow_id"]
+    user_id = job["user_id"]
+
+    # Find next pending task
+    pending_tasks = [(i, t) for i, t in enumerate(tasks) if t["status"] == "pending"]
+
+    if not pending_tasks:
+        # All done
+        now = datetime.now(timezone.utc)
+        has_errors = len(job.get("errors", [])) > 0
+        final_status = "failed" if has_errors else "completed"
+        await jobs_collection.update_one(
+            {"id": job_id},
+            {"$set": {
+                "status": final_status,
+                "completed_at": now,
+                "updated_at": now,
+            }},
+        )
+        # Copy accumulated outputs to the workflow document
+        if job.get("outputs"):
+            try:
+                wf_oid = ObjectId(workflow_id)
+                await wf_collection.update_one(
+                    {"_id": wf_oid},
+                    {"$set": {
+                        **{f"outputs.{k}": v for k, v in job["outputs"].items()},
+                        "updated_at": now,
+                    }},
+                )
+            except Exception as e:
+                print(f"[RunAll] Failed to copy outputs to workflow: {e}")
+        print(f"[RunAll] Job {job_id} {final_status} ({len(tasks)} tasks)")
+        return
+
+    task_index, task = pending_tasks[0]
+    node_id = task["node_id"]
+    node_type = task["node_type"]
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    print(f"[RunAll] Job {job_id} — processing task {task_index}/{len(tasks)}: {node_id} ({node_type})")
+
+    # Update heartbeat + mark task running
+    await jobs_collection.update_one(
+        {"id": job_id},
+        {"$set": {
+            f"tasks.{task_index}.status": "running",
+            f"tasks.{task_index}.started_at": now_iso,
+            "current_task_index": task_index,
+            "heartbeat_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
+        }},
+    )
+
+    # Load fresh workflow data (outputs may have changed from previous tasks)
+    try:
+        wf_oid = ObjectId(workflow_id)
+    except Exception:
+        await fail_task(jobs_collection, job_id, task_index, "Invalid workflow ID")
+        return
+
+    workflow = await wf_collection.find_one({"_id": wf_oid})
+    if not workflow:
+        await fail_task(jobs_collection, job_id, task_index, "Workflow not found")
+        return
+
+    nodes = workflow.get("nodes", [])
+    edges = workflow.get("edges", [])
+    outputs = workflow.get("outputs", {})
+
+    target_node = next((n for n in nodes if n["id"] == node_id), None)
+    if not target_node:
+        await fail_task(jobs_collection, job_id, task_index, f"Node {node_id} not found in workflow")
+        return
+
+
+    # ── Execute the node ──
+    runner = NodeRunner()
+    action_type_map = {
+        "imageGen": ActionType.IMAGE_GEN,
+        "videoGen": ActionType.VIDEO_GEN,
+        "audioGen": ActionType.AUDIO_GEN,
+        "editorAgent": ActionType.RENDER,
+    }
+
+    try:
+        result = await runner.run_node(
+            node=target_node,
+            nodes=nodes,
+            edges=edges,
+            outputs=outputs,
+        )
+
+        completed_at = datetime.now(timezone.utc).isoformat()
+
+        if result.get("success"):
+            # ── Billing ──
+            cost = result.get("cost", 0.0)
+            if node_type in action_type_map and cost > 0:
+                try:
+                    billing_service = BillingService(get_database())
+                    node_data = target_node.get("data", {})
+                    meta = {"workflow_id": workflow_id, "node_id": node_id, "node_type": node_type}
+                    if node_type == "imageGen":
+                        meta["ratio"] = node_data.get("ratio", "1:1")
+                    elif node_type == "videoGen":
+                        meta["resolution"] = node_data.get("resolution", "720p")
+                        meta["duration"] = node_data.get("duration", "4s")
+                    if "prompt" in node_data:
+                        meta["prompt"] = node_data["prompt"]
+                    await billing_service.charge_usage(
+                        user_id=user_id,
+                        action=action_type_map[node_type],
+                        cost_usd=cost,
+                        model_name=result.get("model", node_type),
+                        provider=result.get("provider", "Runware"),
+                        metadata=meta,
+                    )
+                    print(f"[RunAll] Billed ${cost:.4f} for {node_type}")
+                except Exception as billing_err:
+                    print(f"[RunAll] Billing failed (node succeeded): {billing_err}")
+
+            new_output = result.get("output")
+
+            # Persist to job doc
+            set_fields: Dict[str, Any] = {
+                f"tasks.{task_index}.status": "completed",
+                f"tasks.{task_index}.completed_at": completed_at,
+                f"outputs.{node_id}": new_output,
+                "updated_at": datetime.now(timezone.utc),
+                "heartbeat_at": datetime.now(timezone.utc),
+            }
+
+            start_frame = result.get("start_frame")
+            end_frame = result.get("end_frame")
+            if start_frame:
+                set_fields[f"outputs.{node_id}__start_frame"] = start_frame
+            if end_frame:
+                set_fields[f"outputs.{node_id}__end_frame"] = end_frame
+
+            await jobs_collection.update_one({"id": job_id}, {"$set": set_fields})
+
+            # Also persist to workflow.outputs so the next node's _resolve_inputs() sees it
+            wf_set: Dict[str, Any] = {
+                f"outputs.{node_id}": new_output,
+                "updated_at": datetime.now(timezone.utc),
+            }
+            if start_frame:
+                wf_set[f"outputs.{node_id}__start_frame"] = start_frame
+            if end_frame:
+                wf_set[f"outputs.{node_id}__end_frame"] = end_frame
+            await wf_collection.update_one({"_id": wf_oid}, {"$set": wf_set})
+
+            print(f"[RunAll] Task {node_id} completed")
+
+        else:
+            error_msg = result.get("error", "Unknown error")
+            attempt = task.get("attempt", 0)
+            max_retries = job.get("max_retries", 2)
+
+            if attempt < max_retries:
+                # Retry: reset to pending with incremented attempt
+                await jobs_collection.update_one(
+                    {"id": job_id},
+                    {"$set": {
+                        f"tasks.{task_index}.status": "pending",
+                        f"tasks.{task_index}.attempt": attempt + 1,
+                        f"tasks.{task_index}.error": error_msg,
+                        "heartbeat_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(timezone.utc),
+                    }},
+                )
+                print(f"[RunAll] Task {node_id} failed (attempt {attempt + 1}/{max_retries}), retrying")
+            else:
+                await jobs_collection.update_one(
+                    {"id": job_id},
+                    {"$set": {
+                        f"tasks.{task_index}.status": "failed",
+                        f"tasks.{task_index}.completed_at": completed_at,
+                        f"tasks.{task_index}.error": error_msg,
+                        "heartbeat_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(timezone.utc),
+                    },
+                    "$push": {
+                        "errors": {"node_id": node_id, "error": error_msg, "attempt": attempt},
+                    }},
+                )
+                print(f"[RunAll] Task {node_id} failed permanently: {error_msg}")
+
+                if job.get("stop_on_failure", True):
+                    await jobs_collection.update_one(
+                        {"id": job_id},
+                        {"$set": {"status": "failed", "updated_at": datetime.now(timezone.utc)}},
+                    )
+                    print(f"[RunAll] Job {job_id} stopped due to failure (stop_on_failure=True)")
+                    return
+
+
+    except Exception as e:
+        error_msg = str(e)
+        completed_at = datetime.now(timezone.utc).isoformat()
+        attempt = task.get("attempt", 0)
+        max_retries = job.get("max_retries", 2)
+
+        if attempt < max_retries:
+            await jobs_collection.update_one(
+                {"id": job_id},
+                {"$set": {
+                    f"tasks.{task_index}.status": "pending",
+                    f"tasks.{task_index}.attempt": attempt + 1,
+                    f"tasks.{task_index}.error": error_msg,
+                    "heartbeat_at": datetime.now(timezone.utc),
+                    "updated_at": datetime.now(timezone.utc),
+                }},
+            )
+            print(f"[RunAll] Task {node_id} exception (attempt {attempt + 1}/{max_retries}), retrying: {e}")
+        else:
+            await jobs_collection.update_one(
+                {"id": job_id},
+                {"$set": {
+                    f"tasks.{task_index}.status": "failed",
+                    f"tasks.{task_index}.completed_at": completed_at,
+                    f"tasks.{task_index}.error": error_msg,
+                    "heartbeat_at": datetime.now(timezone.utc),
+                    "updated_at": datetime.now(timezone.utc),
+                },
+                "$push": {
+                    "errors": {"node_id": node_id, "error": error_msg, "attempt": attempt},
+                }},
+            )
+            print(f"[RunAll] Task {node_id} exception (final): {e}")
+
+            if job.get("stop_on_failure", True):
+                await jobs_collection.update_one(
+                    {"id": job_id},
+                    {"$set": {"status": "failed", "updated_at": datetime.now(timezone.utc)}},
+                )
+                print(f"[RunAll] Job {job_id} stopped due to exception")
+                return
+
+    # ── Chain: invoke next task ──
+    await _invoke_job_processor_lambda(job_id)
+
+
+async def fail_task(jobs_collection, job_id: str, task_index: int, error: str):
+    """Mark a task as failed and stop the job."""
+    now = datetime.now(timezone.utc)
+    await jobs_collection.update_one(
+        {"id": job_id},
+        {"$set": {
+            f"tasks.{task_index}.status": "failed",
+            f"tasks.{task_index}.completed_at": now.isoformat(),
+            f"tasks.{task_index}.error": error,
+            "status": "failed",
+            "updated_at": now,
+        },
+        "$push": {
+            "errors": {"node_id": f"task{task_index}", "error": error},
+        }},
+    )
+    print(f"[RunAll] Task {task_index} hard-failed: {error}")
+
+@router.post("/job-processor")
+async def job_processor_background(request: JobProcessorRequest):
+    """Internal endpoint: Lambda self-invocation target for job processing."""
+    expected_secret = os.environ.get("LAMBDA_INVOKE_SECRET", "kureita-internal")
+    if request.invoke_secret != expected_secret:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    print(f"[RunAll] job-processor invoked for job {request.job_id}")
+    await _process_job(request.job_id)
+    print(f"[RunAll] job-processor done for job {request.job_id}")
+    return {"ok": True}
+
+

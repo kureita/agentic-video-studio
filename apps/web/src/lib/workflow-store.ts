@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { Node, Edge } from "@xyflow/react";
-import { workflowApi, Workflow, ChatMessage, WorkflowNode, NodeState, WorkflowRunStatus } from "./workflow-api";
+import { workflowApi, Workflow, ChatMessage, WorkflowNode, NodeState, WorkflowRunStatus, JobStatusResponse } from "./workflow-api";
 import { toast } from "sonner";
 
 // ============================================
@@ -33,6 +33,9 @@ interface WorkflowState {
     isDirty: boolean;
     isRunningAsync: boolean;
 
+    // Job orchestration (Run All)
+    activeJobId: string | null;
+
     // Actions
     setWorkflow: (workflow: Workflow) => void;
     setName: (name: string) => void;
@@ -56,6 +59,8 @@ interface WorkflowState {
     runNode: (nodeId: string) => Promise<void>;
     clearExecutionStates: () => void;
     uploadRenderedVideo: (nodeId: string, file: File) => Promise<string | null>;
+    cancelJob: () => Promise<void>;
+    checkActiveJob: () => Promise<void>;
 
     // Reset
     reset: () => void;
@@ -77,6 +82,7 @@ const initialState = {
     executionProgress: null as { current: number; total: number } | null,
     error: null,
     isDirty: false,
+    activeJobId: null
 };
 
 // ============================================
@@ -350,6 +356,9 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
                 isLoading: false,
                 isDirty: false,
             });
+
+            // Check for an active Run All job and resume polling if found
+            get().checkActiveJob();
         } catch (error) {
             console.error("[WorkflowStore] Load error:", error);
             set({ isLoading: false, error: "Failed to load workflow" });
@@ -394,44 +403,8 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
         }
     },
 
-    // Run the entire workflow
+    // Run the entire workflow via job orchestration (self-chaining lambda)
     runWorkflow: async () => {
-        const { id } = get();
-        if (!id) {
-            console.error("[WorkflowStore] No workflow ID to run");
-            return;
-        }
-
-        // Save first to ensure latest nodes/edges are persisted
-        await get().saveWorkflow();
-
-        set({ isRunning: true, error: null });
-        try {
-            const response = await workflowApi.runWorkflow(id);
-            const result = response.data;
-
-            // Update outputs from result
-            set((state) => ({
-                outputs: { ...state.outputs, ...result.outputs },
-                isRunning: false,
-            }));
-
-            if (!result.success && result.errors.length > 0) {
-                console.error("[WorkflowStore] Run errors:", result.errors);
-                set({ error: `Errors in ${result.errors.length} node(s)` });
-                toast.error(`Workflow completed with errors in ${result.errors.length} node(s)`);
-            } else {
-                toast.success("Workflow run completed");
-            }
-        } catch (error) {
-            console.error("[WorkflowStore] Run error:", error);
-            set({ isRunning: false, error: "Failed to run workflow" });
-            toast.error("Failed to run workflow");
-        }
-    },
-
-    // Run the entire workflow (async + polling for real-time progress)
-    runWorkflowAsync: async () => {
         const { id } = get();
         if (!id) {
             console.error("[WorkflowStore] No workflow ID to run");
@@ -447,18 +420,36 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
             error: null,
             nodeExecutionStates: {},
             executionProgress: null,
+            activeJobId: null
         });
 
         try {
-            // Start the async run
-            await workflowApi.runWorkflowAsync(id);
 
-            // Poll for status updates
-            const finalStatus = await workflowApi.pollWorkflowRun(id, (status: WorkflowRunStatus) => {
-                // Update node execution states for real-time visual feedback
+            const response = await workflowApi.createJob(id);
+            const { job_id } = response.data;
+            set({ activeJobId: job_id });
+
+            console.log(`[WorkflowStore] Job Created: ${job_id}`);
+
+            const finalStatus = await workflowApi.pollJob(id, job_id, (status: JobStatusResponse) => {
+                // Build nodeExecutionStates from job tasks for visual feedback 
+                const nodeStates: Record<string, NodeState> = {};
+                for (const task of status.tasks) {
+                    nodeStates[task.node_id] = {
+                        status: task.status as NodeState["status"],
+                        started_at: task.started_at,
+                        completed_at: task.completed_at,
+                        error: task.error,
+                    }
+                }
+
+
                 set({
-                    nodeExecutionStates: status.node_states,
-                    executionProgress: status.progress,
+                    nodeExecutionStates: nodeStates,
+                    executionProgress: {
+                        current: status.current_task_index,
+                        total: status.total_tasks
+                    },
                 });
 
                 // Update outputs as they become available
@@ -470,31 +461,162 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
             });
 
             // Final update
+            const finalNodeStates: Record<string, NodeState> = {};
+            for (const task of finalStatus.tasks) {
+                finalNodeStates[task.node_id] = {
+                    status: task.status as NodeState["status"],
+                    started_at: task.started_at,
+                    completed_at: task.completed_at,
+                    error: task.error,
+                }
+            }
+
             set({
                 isRunning: false,
                 isRunningAsync: false,
+                activeJobId: null,
                 outputs: { ...get().outputs, ...finalStatus.outputs },
-                nodeExecutionStates: finalStatus.node_states,
-                executionProgress: finalStatus.progress,
+                nodeExecutionStates: finalNodeStates,
+                executionProgress: {
+                    current: finalStatus.current_task_index,
+                    total: finalStatus.total_tasks
+                },
             });
 
             if (finalStatus.status === "failed" && finalStatus.errors.length > 0) {
-                console.error("[WorkflowStore] Run errors:", finalStatus.errors);
+                console.error("[WorkflowStore] Job errors:", finalStatus.errors);
                 set({ error: `Errors in ${finalStatus.errors.length} node(s)` });
-                toast.error(`Workflow completed with errors in ${finalStatus.errors.length} node(s)`);
-            } else {
+                toast.error(`Run completed with errors in ${finalStatus.errors.length} node(s)`);
+            }
+            else if (finalStatus.status === "cancelled") {
+                toast.info("Run cancelled");
+            }
+            else {
                 toast.success("Workflow run completed");
             }
         } catch (error) {
-            console.error("[WorkflowStore] Async run error:", error);
+            console.error("[WorkflowStore] Job run error:", error);
             set({
                 isRunning: false,
                 isRunningAsync: false,
+                activeJobId: null,
                 error: "Failed to run workflow",
                 nodeExecutionStates: {},
                 executionProgress: null,
             });
             toast.error("Failed to run workflow");
+        }
+    },
+
+    // keep for backward compat but now delegates to runWorkflow (which uses jobs)
+    runWorkflowAsync: async () => {
+        await get().runWorkflow();
+    },
+
+    // Cancel a running job
+    cancelJob: async () => {
+        const { id, activeJobId } = get();
+        if (!id || !activeJobId) return;
+
+        try {
+            await workflowApi.cancelJob(id, activeJobId);
+            toast.info("Cancelling run...")
+        } catch (error) {
+            console.error("[WorkflowStore] Job cancel error:", error);
+            toast.error("Failed to cancel run");
+        }
+    },
+
+    // Check for an active job on page load (reconnect after refresh)
+    checkActiveJob: async () => {
+        const { id } = get();
+        if (!id) return;
+
+        try {
+            const response = await workflowApi.getActiveJob(id);
+            const job = response.data;
+            if (!job || !job.job_id) return;
+
+            console.log(`[WorkflowStore] Reconnecting to active job: ${job.job_id}`);
+
+            // Hydrate state from the active job
+            const nodeStates: Record<string, NodeState> = {};
+            for (const task of job.tasks) {
+                nodeStates[task.node_id] = {
+                    status: task.status as NodeState["status"],
+                    started_at: task.started_at,
+                    completed_at: task.completed_at,
+                    error: task.error,
+                };
+            }
+
+            set({
+                isRunning: true,
+                isRunningAsync: true,
+                activeJobId: job.job_id,
+                nodeExecutionStates: nodeStates,
+                executionProgress: {
+                    current: job.current_task_index,
+                    total: job.total_tasks,
+                },
+            });
+
+            if (Object.keys(job.outputs).length > 0) {
+                set((state) => ({
+                    outputs: { ...state.outputs, ...job.outputs },
+                }));
+            }
+
+            // Resume polling
+            const finalStatus = await workflowApi.pollJob(id, job.job_id, (status: JobStatusResponse) => {
+                const states: Record<string, NodeState> = {};
+                for (const task of status.tasks) {
+                    states[task.node_id] = {
+                        status: task.status as NodeState["status"],
+                        started_at: task.started_at,
+                        completed_at: task.completed_at,
+                        error: task.error,
+                    };
+                }
+                set({
+                    nodeExecutionStates: states,
+                    executionProgress: {
+                        current: status.current_task_index,
+                        total: status.total_tasks,
+                    },
+                });
+                if (Object.keys(status.outputs).length > 0) {
+                    set((state) => ({
+                        outputs: { ...state.outputs, ...status.outputs },
+                    }));
+                }
+            });
+
+            // Finalize
+            const finalNodeStates: Record<string, NodeState> = {};
+            for (const task of finalStatus.tasks) {
+                finalNodeStates[task.node_id] = {
+                    status: task.status as NodeState["status"],
+                    started_at: task.started_at,
+                    completed_at: task.completed_at,
+                    error: task.error,
+                };
+            }
+            set({
+                isRunning: false,
+                isRunningAsync: false,
+                activeJobId: null,
+                outputs: { ...get().outputs, ...finalStatus.outputs },
+                nodeExecutionStates: finalNodeStates,
+            });
+
+            if (finalStatus.status === "failed" && finalStatus.errors.length > 0) {
+                toast.error(`Run completed with errors in ${finalStatus.errors.length} node(s)`);
+            } else if (finalStatus.status !== "cancelled") {
+                toast.success("Workflow run completed");
+            }
+        } catch {
+            // No active job or network error — silent
         }
     },
 

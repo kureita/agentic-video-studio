@@ -113,6 +113,33 @@ export interface WorkflowRunStatus {
     progress: { current: number; total: number };
 }
 
+// --- Job Orchestration Types ---
+
+export interface JobTaskStatus {
+    node_id: string;
+    node_type: string;
+    status: "pending" | "running" | "completed" | "failed" | "skipped";
+    attempt: number;
+    started_at?: string;
+    completed_at?: string;
+    error?: string;
+}
+
+export interface JobStatusResponse {
+    job_id: string;
+    status: "pending" | "running" | "completed" | "failed" | "cancelled";
+    current_task_index: number;
+    total_tasks: number;
+    tasks: JobTaskStatus[];
+    outputs: Record<string, string>;
+    errors: Array<{ node_id: string, error: string }>;
+}
+
+export interface CreateJobResponse {
+    job_id: string;
+    status: string;
+}
+
 // ============================================
 // API Client
 // ============================================
@@ -283,6 +310,61 @@ export const workflowApi = {
 
                     const nodeState = status.node_states[nodeId];
                     if (!nodeState || nodeState.status === "running" || nodeState.status === "queued") {
+                        setTimeout(poll, intervalMs);
+                    } else {
+                        resolve(status);
+                    }
+                } catch (err) {
+                    reject(err);
+                }
+            };
+            poll();
+        });
+    },
+
+    // -- Job Orchestration (Run All) --
+
+    createJob: (workflowId: string) =>
+        api.post<CreateJobResponse>(`/api/workflows/${workflowId}/jobs`),
+
+    getJobStatus: (workflowId: string, jobId: string) =>
+        api.get<JobStatusResponse>(`/api/workflow/${workflowId}/jobs/${jobId}/status`),
+
+    getActiveJob: (workflowId: string) =>
+        api.get<JobStatusResponse | null>(`/api/workflows/${workflowId}/jobs/active`),
+
+    cancelJob: (workflowId: string, jobId: string) =>
+        api.post(`/api/workflows/${workflowId}/jobs/${jobId}/cancel`),
+
+    nudgeJob: (workflowId: string, jobId: string) =>
+        api.post(`/api/workflows/${workflowId}/jobs/${jobId}/nudge`),
+
+    pollJob: (
+        workflowId: string,
+        jobId: string,
+        onUpdate: (status: JobStatusResponse) => void,
+        intervalMs = 2500,
+    ): Promise<JobStatusResponse> => {
+        return new Promise((resolve, reject) => {
+            let nudgeChecked = false;
+            const poll = async () => {
+                try {
+                    const response = await workflowApi.getJobStatus(workflowId, jobId);
+                    const status = response.data;
+                    onUpdate(status);
+
+                    if (status.status === "pending" || status.status === "running") {
+                        // Client-assisted nudge: if a task has been running for >5 min, nudge
+                        if (!nudgeChecked) {
+                            const runningTask = status.tasks.find(t => t.status === "running");
+                            if (runningTask?.started_at) {
+                                const elapsed = Date.now() - new Date(runningTask.started_at).getTime();
+                                if (elapsed > 5 * 60 * 1000) {
+                                    nudgeChecked = true;
+                                    workflowApi.nudgeJob(workflowId, jobId).catch(() => { });
+                                }
+                            }
+                        }
                         setTimeout(poll, intervalMs);
                     } else {
                         resolve(status);

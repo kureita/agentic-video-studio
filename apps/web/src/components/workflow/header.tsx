@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Loader2, CheckCircle2, Cloud, MessageSquare, Play } from "lucide-react";
+import { ArrowLeft, Loader2, CheckCircle2, Cloud, MessageSquare, Play, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useWorkflowStore } from "@/lib/workflow-store";
@@ -10,7 +10,7 @@ import { useMobileTab } from "@/app/dashboard/layout";
 
 export function WorkflowHeader() {
     const router = useRouter();
-    const { name, setName, isSaving, isDirty, saveWorkflow, isRunning, runWorkflow } = useWorkflowStore();
+    const { name, setName, isSaving, isDirty, saveWorkflow, isRunning, runWorkflow, cancelJob, activeJobId, executionProgress } = useWorkflowStore();
     const [editingName, setEditingName] = useState(name);
     const { setActiveTab } = useMobileTab();
 
@@ -74,21 +74,39 @@ export function WorkflowHeader() {
             </div>
 
             <div className="flex items-center gap-2">
-                {/* Run All Button (Visible on all screens) */}
-                <Button
-                    onClick={runWorkflow}
-                    disabled={isRunning}
-                    className="h-8 shadow-sm gap-2"
-                    variant="default"
-                >
-                    {isRunning ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                        <Play className="w-4 h-4 fill-current" />
-                    )}
-                    <span className="hidden sm:inline">Run All</span>
-                    <span className="sm:hidden">Run</span>
-                </Button>
+                {/* Run All / Cancel Button */}
+                {isRunning && activeJobId ? (
+                    <div className="flex items-center gap-2">
+                        {executionProgress && (
+                            <span className="text-[10px] text-muted-foreground font-mono tabular-nums hidden sm:inline">
+                                {executionProgress.current}/{executionProgress.total}
+                            </span>
+                        )}
+                        <Button
+                            variant="destructive"
+                            className="h-8 shadow-sm gap-2"
+                            onClick={cancelJob}
+                        >
+                            <Square className="w-3.5 h-3.5 fill-current" />
+                            <span className="hidden sm:inline">Cancel</span>
+                        </Button>
+                    </div>
+                ) : (
+                    <Button
+                        onClick={runWorkflow}
+                        disabled={isRunning}
+                        className="h-8 shadow-sm gap-2"
+                        variant="default"
+                    >
+                        {isRunning ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                            <Play className="w-4 h-4 fill-current" />
+                        )}
+                        <span className="hidden sm:inline">Run All</span>
+                        <span className="sm:hidden">Run</span>
+                    </Button>
+                )}
 
                 {/* Mobile: Switch to AI Chat */}
                 <button

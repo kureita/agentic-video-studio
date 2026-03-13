@@ -11,9 +11,16 @@ internal_router = APIRouter()
 
 # Import and mount only the internal background endpoint
 from app.api.endpoints.workflow import execute_node_background, BackgroundExecuteRequest
+from app.api.endpoints.workflow import job_processor_background
 internal_router.add_api_route(
     "/workflows/execute-background",
     execute_node_background,
+    methods=["POST"],
+    tags=["internal"],
+)
+internal_router.add_api_route(
+    "/workflows/job-processor",
+    job_processor_background,
     methods=["POST"],
     tags=["internal"],
 )

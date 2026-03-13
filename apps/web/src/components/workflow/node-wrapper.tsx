@@ -1,6 +1,6 @@
 import { memo, useState, useRef } from "react";
 import { Handle, Position } from "@xyflow/react";
-import { Copy, Trash2, Play, Type, Image as ImageIcon, Video, Music, Loader2, Eraser, Scan } from "lucide-react";
+import { Copy, Trash2, Play, Type, Image as ImageIcon, Video, Music, Loader2, Eraser, Scan, SkipForward, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
@@ -85,8 +85,10 @@ export const NodeWrapper = memo(({
             : executionStatus === "failed"
                 ? "border-red-500/60 shadow-[0_0_20px_-5px_rgba(239,68,68,0.3)]"
                 : executionStatus === "queued"
-                    ? "border-border/60"
-                    : "";
+                    ? "border-blue-400/40 shadow-[0_0_12px_-5px_rgba(96,165,250,0.2)]"
+                    : executionStatus === "skipped"
+                        ? "border-border/40 opacity-60"
+                        : "";
 
     return (
         <div className="relative group/node">
@@ -97,10 +99,14 @@ export const NodeWrapper = memo(({
                     executionStatus === "running" && "bg-amber-500/10 text-amber-500 border border-amber-500/20",
                     executionStatus === "completed" && "bg-green-500/10 text-green-500 border border-green-500/20",
                     executionStatus === "failed" && "bg-red-500/10 text-red-500 border border-red-500/20",
+                    executionStatus === "queued" && "bg-blue-400/10 text-blue-400 border border-blue-400/20",
+                    executionStatus === "skipped" && "bg-muted text-muted-foreground border border-border/40"
                 )}>
                     {executionStatus === "running" && <Loader2 className="w-2.5 h-2.5 animate-spin" />}
                     {executionStatus === "completed" && <div className="w-2 h-2 rounded-full bg-green-500" />}
                     {executionStatus === "failed" && <div className="w-2 h-2 rounded-full bg-red-500" />}
+                    {executionStatus === "queued" && <Clock className="w-2.5 h-2.5" />}
+                    {executionStatus === "skipped" && <SkipForward className="w-2.5 h-2.5" />}
                     {executionStatus.charAt(0).toUpperCase() + executionStatus.slice(1)}
                 </div>
             )}

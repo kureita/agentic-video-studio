@@ -55,5 +55,7 @@ def get_users_collection():
     db = get_database()
     return db.users
 
-
-
+def get_workflow_jobs_collection():
+    """Get the workflow_jobs collection for Run All job orchestration."""
+    db = get_database()
+    return db.workflow_jobs
