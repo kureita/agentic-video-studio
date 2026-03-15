@@ -94,7 +94,7 @@ export default function UsageDashboard() {
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border/40 pb-6">
                     <div>
                         <h1 className="text-3xl font-bold tracking-tight">Usage & Billing</h1>
-                        <p className="text-muted-foreground mt-2">Track your API costs and view generation history.</p>
+                        <p className="text-muted-foreground mt-2">Track your credits and view generation history.</p>
                     </div>
                     <Button
                         onClick={() => setIsCreditsModalOpen(true)}
@@ -159,7 +159,7 @@ export default function UsageDashboard() {
                             How Pricing Works
                         </CardTitle>
                         <CardDescription>
-                            You pay actual API cost + 30% commission per generation
+                            Simple pay-per-use pricing based on model and duration
                         </CardDescription>
                     </CardHeader>
                     <CardContent>
@@ -169,7 +169,6 @@ export default function UsageDashboard() {
                                     <MessageSquare className="w-3.5 h-3.5" /> AI Chat
                                 </div>
                                 <div className="text-sm font-bold">Pay-per-use</div>
-                                <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Actual LLM cost</div>
                             </div>
 
                             <div className="flex flex-col items-start gap-1 p-4 rounded-lg bg-muted/40 border border-border/50 hover:bg-muted/60 transition-colors">
@@ -177,7 +176,6 @@ export default function UsageDashboard() {
                                     <ImageIcon className="w-3.5 h-3.5" /> Image Gen
                                 </div>
                                 <div className="text-sm font-bold">Pay-per-use</div>
-                                <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Actual API cost</div>
                             </div>
 
                             <div className="flex flex-col items-start gap-1 p-4 rounded-lg bg-muted/40 border border-border/50 hover:bg-muted/60 transition-colors">
@@ -185,7 +183,6 @@ export default function UsageDashboard() {
                                     <Music className="w-3.5 h-3.5" /> Audio
                                 </div>
                                 <div className="text-sm font-bold">Pay-per-use</div>
-                                <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Actual API cost</div>
                             </div>
 
                             <div className="flex flex-col items-start gap-1 p-4 rounded-lg bg-muted/40 border border-border/50 hover:bg-muted/60 transition-colors">
@@ -193,15 +190,13 @@ export default function UsageDashboard() {
                                     <Video className="w-3.5 h-3.5" /> Video Gen
                                 </div>
                                 <div className="text-sm font-bold">Pay-per-use</div>
-                                <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Actual API cost</div>
                             </div>
 
                             <div className="flex flex-col items-start gap-1 p-4 rounded-lg bg-muted/40 border border-border/50 hover:bg-muted/60 transition-colors">
                                 <div className="text-xs font-medium flex items-center gap-1.5 mb-1 text-foreground/80">
                                     <CheckCircle2 className="w-3.5 h-3.5" /> Final Export
                                 </div>
-                                <div className="text-sm font-bold">$0.05</div>
-                                <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Flat rate</div>
+                                <div className="text-sm font-bold">Pay-per-use</div>
                             </div>
                         </div>
                     </CardContent>
@@ -277,11 +272,7 @@ export default function UsageDashboard() {
                                                         </Badge>
                                                     ) : null}
 
-                                                    {log.tokens_used ? (
-                                                        <Badge variant="default" className="ml-2 text-[10px] scale-90 origin-left">
-                                                            {log.tokens_used.toLocaleString()} tokens
-                                                        </Badge>
-                                                    ) : null}
+
                                                 </TableCell>
                                                 <TableCell className="text-xs text-muted-foreground">
                                                     <div className="flex items-center gap-1.5">
@@ -293,11 +284,7 @@ export default function UsageDashboard() {
                                                     <div className={`inline-flex items-center gap-1 font-medium text-sm ${isCredit ? "text-green-600 dark:text-green-400" : "text-red-500/90"}`}>
                                                         {isCredit ? "+" : "-"}${displayValue}
                                                     </div>
-                                                    {!isCredit && log.commission_usd > 0 && (
-                                                        <div className="text-[10px] text-muted-foreground mt-0.5">
-                                                            (API: ${log.cost_usd?.toFixed(4)} + fee: ${log.commission_usd?.toFixed(4)})
-                                                        </div>
-                                                    )}
+
                                                 </TableCell>
                                             </TableRow>
                                         );

@@ -4,7 +4,7 @@ import os
 import json
 import asyncio
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 
 from openai import AsyncOpenAI, RateLimitError, APIStatusError
 
@@ -607,7 +607,7 @@ class EditorAgent:
             if not effective_tracks and audio:
                 effective_tracks = [{"url": audio, "type": "unknown", "duration_seconds": 10, "description": "Audio track"}]
 
-            code = await self._generate_composition_code(
+            code, cost_usd, tokens_used = await self._generate_composition_code(
                 instruction=instruction,
                 ref_videos=ref_videos,
                 audio_tracks=effective_tracks,
@@ -632,6 +632,10 @@ class EditorAgent:
                 "success": True,
                 "code": code,
                 "mode": mode,
+                "cost": cost_usd,
+                "tokens": tokens_used,
+                "model": "claude-sonnet-4.6",
+                "provider": "Anthropic",
             }
 
             # For scene mode, try to extract scene config from the generated code
@@ -663,14 +667,14 @@ class EditorAgent:
     async def _generate_composition_code(
         self,
         instruction: str,
-        ref_videos: List[str],
+        ref_videos: Optional[List[str]] = None,
         audio_tracks: Optional[List[Dict[str, Any]]] = None,
         text_input: Optional[str] = None,
         ref_images: Optional[List[str]] = None,
         mode: Optional[str] = None,
-        aspect_ratio: str = "16:9",
+        aspect_ratio: str = "9:16",
         upstream_scenes: Optional[List[Dict[str, Any]]] = None,
-    ) -> str:
+    ) -> Tuple[str, float, int]:
         """Use Anthropic Claude Sonnet 4.6 to write Remotion composition TSX code."""
 
         # Build input descriptions
@@ -795,7 +799,8 @@ Return ONLY the TSX code. No markdown fences, no explanations. Do NOT use negati
         # Retry with exponential backoff for transient API errors
         max_retries = 3
         base_delay = 5  # seconds
-
+        
+        last_error = None
         for attempt in range(1, max_retries + 1):
             try:
                 if not self.client:
@@ -808,10 +813,25 @@ Return ONLY the TSX code. No markdown fences, no explanations. Do NOT use negati
                         {"role": "user", "content": user_prompt}
                     ],
                     stream=True,
+                    stream_options={"include_usage": True},
                 )
 
                 code_chunks = []
+                tokens_used = 0
+                cost_usd = 0.0
+                
                 async for chunk in stream:
+                    # Capture usage from the last chunk if present
+                    if hasattr(chunk, 'usage') and chunk.usage:
+                        tokens_used = getattr(chunk.usage, 'total_tokens', 0)
+                        # OpenRouter cost estimation (if available in the usage object)
+                        # Some versions of the openapi client might not have 'cost' in usage
+                        # but OpenRouter specifically includes it in their payload.
+                        # We try to get it if possible, otherwise we'll have to rely on tokens
+                        # but OpenRouter is better at telling us the exact cost.
+                        usage_dict = chunk.usage.model_dump() if hasattr(chunk.usage, 'model_dump') else {}
+                        cost_usd = usage_dict.get('cost', 0.0)
+
                     if chunk.choices and len(chunk.choices) > 0:
                         content = chunk.choices[0].delta.content
                         if content:
@@ -821,6 +841,7 @@ Return ONLY the TSX code. No markdown fences, no explanations. Do NOT use negati
                 break  # Success — exit retry loop
 
             except RateLimitError as e:
+                last_error = e
                 if attempt < max_retries:
                     delay = base_delay * (2 ** (attempt - 1))  # 5s, 10s, 20s
                     print(f"[EditorAgent] Rate limit error, retrying in {delay}s (attempt {attempt}/{max_retries})...")
@@ -828,6 +849,7 @@ Return ONLY the TSX code. No markdown fences, no explanations. Do NOT use negati
                 else:
                     raise
             except APIStatusError as e:
+                last_error = e
                 retryable = e.status_code in (429, 529, 502, 503, 504)
                 if retryable and attempt < max_retries:
                     delay = base_delay * (2 ** (attempt - 1))  # 5s, 10s, 20s
@@ -835,6 +857,10 @@ Return ONLY the TSX code. No markdown fences, no explanations. Do NOT use negati
                     await asyncio.sleep(delay)
                 else:
                     raise  # Non-retryable or final attempt — propagate
+            except Exception as e:
+                last_error = e
+                raise
+
 
         # Strip markdown fences if present
         if code.startswith("```"):
@@ -860,4 +886,4 @@ Return ONLY the TSX code. No markdown fences, no explanations. Do NOT use negati
             if "export default" not in code and "export function" not in code:
                 raise ValueError("Generated code does not contain a default export. The AI may have produced invalid output.")
 
-        return code
+        return code, cost_usd, tokens_used

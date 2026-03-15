@@ -940,6 +940,10 @@ class NodeRunner:
                 return {
                     "success": True,
                     "output": output_data,
+                    "cost": result.get("cost", 0.0),
+                    "tokens": result.get("tokens", 0),
+                    "model": result.get("model", "claude-sonnet-4.6"),
+                    "provider": result.get("provider", "Anthropic"),
                 }
             else:
                 return {
