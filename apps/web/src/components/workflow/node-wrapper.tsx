@@ -3,6 +3,7 @@ import { Handle, Position } from "@xyflow/react";
 import { Copy, Trash2, Play, Type, Image as ImageIcon, Video, Music, Loader2, Eraser, Scan, SkipForward, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { usePublicView } from "@/lib/public-view-context";
 
 interface NodeHandle {
     id: string;
@@ -64,6 +65,13 @@ export const NodeWrapper = memo(({
     style,
     inputBaseOffset = 75,
 }: NodeWrapperProps) => {
+    const { isPublicView, requireLogin } = usePublicView();
+
+    const gatedOnRun = isPublicView
+        ? () => requireLogin("Sign in to run nodes and generate media.")
+        : onRun;
+    const gatedOnDelete = isPublicView ? undefined : onDelete;
+    const gatedOnClear = isPublicView ? undefined : onClear;
 
     // ── Per-handle hover state (avoids CSS group-hover bleed between adjacent handles) ──
     const [activeHandle, setActiveHandle] = useState<string | null>(null);
@@ -121,12 +129,12 @@ export const NodeWrapper = memo(({
                 "absolute -top-10 right-0 flex items-center gap-1 bg-background/80 backdrop-blur-md border border-border/50 rounded-full shadow-xl p-0.5 transition-all duration-200 z-50 scale-90 origin-right",
                 selected && !isRunning && executionStatus !== "running" && executionStatus !== "queued" ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2 pointer-events-none"
             )}>
-                {onRun && (
+                {gatedOnRun && (
                     <Button
                         variant="ghost"
                         size="icon"
                         className="h-7 w-7 text-green-500 hover:text-green-600 hover:bg-green-500/10 rounded-full disabled:opacity-50"
-                        onClick={onRun}
+                        onClick={gatedOnRun}
                         disabled={isRunning}
                     >
                         {isRunning ? (
@@ -136,26 +144,30 @@ export const NodeWrapper = memo(({
                         )}
                     </Button>
                 )}
-                {onRun && <div className="w-[1px] h-3 bg-border/50" />}
+                {gatedOnRun && <div className="w-[1px] h-3 bg-border/50" />}
 
-                {onClear && (
+                {gatedOnClear && (
                     <Button
                         variant="ghost"
                         size="icon"
                         className="h-7 w-7 text-muted-foreground hover:text-amber-500 hover:bg-amber-500/10 rounded-full"
-                        onClick={onClear}
+                        onClick={gatedOnClear}
                         title="Clear Output"
                     >
                         <Eraser className="h-3.5 w-3.5" />
                     </Button>
                 )}
 
-                <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground rounded-full">
-                    <Copy className="h-3.5 w-3.5" />
-                </Button>
-                <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive/70 hover:text-destructive hover:bg-destructive/10 rounded-full" onClick={onDelete}>
-                    <Trash2 className="h-3.5 w-3.5" />
-                </Button>
+                {!isPublicView && (
+                    <>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground rounded-full">
+                            <Copy className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive/70 hover:text-destructive hover:bg-destructive/10 rounded-full" onClick={gatedOnDelete}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                    </>
+                )}
             </div>
 
             {/* Running Overlay */}

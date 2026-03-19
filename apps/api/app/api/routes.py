@@ -1,7 +1,12 @@
 from fastapi import APIRouter, Depends
 
 from app.api.endpoints import projects, scrape, generate, canvas, workflow, agent, assets, billing
+from app.api.endpoints import public_workflow
 from app.core.auth import get_current_user
+
+# ── Public (unauthenticated) router for read-only public access ───────────────
+public_router = APIRouter()
+public_router.include_router(public_workflow.router, prefix="/public", tags=["public"])
 
 # ── Internal (unauthenticated) router for Lambda-to-Lambda endpoints ──────────
 # These endpoints use their own invoke_secret verification instead of JWT auth.

@@ -13,6 +13,7 @@
  */
 
 import { api } from "./api";
+import { publicWorkflowApi } from "./workflow-api";
 
 // Cache entry: stores the presigned URL and when it expires
 interface CacheEntry {
@@ -29,6 +30,13 @@ const pendingRequests = new Map<string, Promise<string>>();
 // Presigned URLs last 1 hour (3600s) from the backend.
 // We consider them expired 5 minutes early to prevent edge-case failures.
 const TTL_MS = 55 * 60 * 1000; // 55 minutes (5 min buffer before actual 1hr expiry)
+
+let _publicMode = false;
+
+/** Switch presign requests between authenticated and public endpoints. */
+export function setPresignPublicMode(enabled: boolean) {
+    _publicMode = enabled;
+}
 
 /**
  * Strip presigned query params from an S3 URL to get the raw/base URL.
@@ -67,14 +75,18 @@ function isExpired(entry: CacheEntry): boolean {
 
 /**
  * Fetch fresh presigned URLs from the backend API.
+ * Uses the public endpoint when in public mode (no auth required).
  */
 async function fetchPresignedUrls(urls: string[]): Promise<Record<string, string>> {
     try {
+        if (_publicMode) {
+            const response = await publicWorkflowApi.presign(urls);
+            return response.data.urls;
+        }
         const response = await api.post<{ urls: Record<string, string> }>("/api/workflows/presign", { urls });
         return response.data.urls;
     } catch (error) {
         console.error("[PresignedUrlCache] Failed to fetch presigned URLs:", error);
-        // Return original URLs as fallback
         return Object.fromEntries(urls.map(u => [u, u]));
     }
 }

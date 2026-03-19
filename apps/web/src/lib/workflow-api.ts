@@ -43,6 +43,7 @@ export interface Workflow {
     edges: WorkflowEdge[];
     outputs: Record<string, string>;
     chat_history: ChatMessage[];
+    is_public: boolean;
     created_at: string;
     updated_at: string;
 }
@@ -376,4 +377,40 @@ export const workflowApi = {
             poll();
         });
     },
+
+    togglePublic: (workflowId: string, isPublic: boolean) =>
+        api.post<{ success: boolean; is_public: boolean }>(
+            `/api/workflows/${workflowId}/toggle-public`,
+            { is_public: isPublic },
+        ),
+
+    fork: (workflowId: string) =>
+        api.post<{ id: string; name: string; forked_from: string }>(
+            `/api/workflows/${workflowId}/fork`,
+        ),
+};
+
+
+// ============================================
+// Public (unauthenticated) API Client
+// ============================================
+
+import axios from "axios";
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+const publicApi = axios.create({
+    baseURL: API_BASE_URL,
+    headers: { "Content-Type": "application/json" },
+});
+
+export const publicWorkflowApi = {
+    get: (id: string) =>
+        publicApi.get<Workflow>(`/api/public/workflows/${id}`),
+
+    presign: (urls: string[]) =>
+        publicApi.post<{ urls: Record<string, string> }>(
+            "/api/public/workflows/presign",
+            { urls },
+        ),
 };

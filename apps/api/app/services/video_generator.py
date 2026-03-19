@@ -117,6 +117,7 @@ class VideoGenerator:
         negative_prompt: Optional[str] = None,
         model_name: Optional[str] = None,
         audio_url: Optional[str] = None,
+        generate_audio: bool = False,
     ) -> dict:
         """Generate a video clip from a text prompt."""
         if self.use_mock:
@@ -135,7 +136,8 @@ class VideoGenerator:
                 prompt=prompt,
                 model=target_model,
                 duration=duration,
-                aspect_ratio=aspect_ratio
+                aspect_ratio=aspect_ratio,
+                generate_audio=generate_audio,
             )
             
             # Optionally add lip-sync if audio_url provided and supported
@@ -168,6 +170,7 @@ class VideoGenerator:
         model_name: Optional[str] = None,
         audio_url: Optional[str] = None,
         end_image_url: Optional[str] = None,
+        generate_audio: bool = False,
     ) -> dict:
         """Generate video using an image as the starting frame.
         
@@ -189,6 +192,7 @@ class VideoGenerator:
                 duration=duration,
                 aspect_ratio=aspect_ratio,
                 end_image_url=end_image_url,
+                generate_audio=generate_audio,
             )
             
             # Optionally add lip-sync
@@ -217,6 +221,7 @@ class VideoGenerator:
         duration: int = 5,
         aspect_ratio: str = "16:9",
         model_name: Optional[str] = None,
+        generate_audio: bool = False,
     ) -> dict:
         """Generate video using reference images."""
         if not reference_images:
@@ -229,7 +234,8 @@ class VideoGenerator:
             image_path=reference_images[0],
             duration=duration,
             aspect_ratio=aspect_ratio,
-            model_name=model_name
+            model_name=model_name,
+            generate_audio=generate_audio,
         )
 
     async def generate_with_interpolation(
@@ -240,6 +246,7 @@ class VideoGenerator:
         duration: int = 5,
         aspect_ratio: str = "16:9",
         model_name: Optional[str] = None,
+        generate_audio: bool = False,
     ) -> dict:
         """Generate video by specifying first and last frames (interpolation).
         
@@ -255,6 +262,7 @@ class VideoGenerator:
             duration=duration,
             aspect_ratio=aspect_ratio,
             model_name=model_name,
+            generate_audio=generate_audio,
         )
 
     async def extend_video(

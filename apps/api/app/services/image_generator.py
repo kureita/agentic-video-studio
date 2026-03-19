@@ -110,8 +110,7 @@ class ImageGenerator:
         target_model = resolve_air_id(model_name, self.default_model, model_type="image")
                 
         try:
-            # Map aspect ratio to valid Runware dimensions using the service's robust resolver
-            width, height = self.runware._resolve_dimensions(target_model, aspect_ratio)
+            width, height = self.runware._resolve_image_dimensions(target_model, aspect_ratio)
             
             # Enhance prompt with style
             style_prompts = {

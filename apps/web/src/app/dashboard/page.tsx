@@ -12,6 +12,8 @@ import { workflowInspirations, WorkflowInspiration } from "@/lib/inspirations"
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
+const FORK_SESSION_KEY = "kureita_fork_workflow_id";
+
 export default function DashboardPage() {
     const router = useRouter();
     const [workflows, setWorkflows] = useState<WorkflowListItem[]>([]);
@@ -26,6 +28,16 @@ export default function DashboardPage() {
     const [isCreating, setIsCreating] = useState(false);
     const [creatingInspirationId, setCreatingInspirationId] = useState<string | null>(null);
     const heroInputRef = useRef<HTMLInputElement>(null);
+
+    // Check for pending workflow redirect (from public viewer → login → here)
+    useEffect(() => {
+        const pendingId = sessionStorage.getItem(FORK_SESSION_KEY);
+        if (pendingId) {
+            sessionStorage.removeItem(FORK_SESSION_KEY);
+            router.replace(`/dashboard/workflow/?id=${pendingId}`);
+            return;
+        }
+    }, [router]);
 
     // Fetch workflows on mount
     useEffect(() => {

@@ -46,9 +46,12 @@ api.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       if (typeof window !== "undefined") {
-        toast.error("Session expired. Please log in again.");
-        window.dispatchEvent(new CustomEvent("auth:unauthorized"));
-        // The event listener in AuthProvider will handle the logout and redirect
+        // Don't trigger logout/toast on public view pages
+        const isPublicPage = window.location.pathname.startsWith("/w");
+        if (!isPublicPage) {
+          toast.error("Session expired. Please log in again.");
+          window.dispatchEvent(new CustomEvent("auth:unauthorized"));
+        }
       }
     }
     return Promise.reject(error);

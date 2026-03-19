@@ -82,6 +82,7 @@ class WorkflowResponse(BaseModel):
     edges: List[Dict[str, Any]] = []
     outputs: Dict[str, Any] = {}
     chat_history: List[Dict[str, Any]] = []
+    is_public: bool = False
     created_at: str
     updated_at: str
 
@@ -174,7 +175,6 @@ def serialize_workflow(workflow: dict) -> dict:
     if not isinstance(chat_history, list):
         print(f"[Workflow] Warning: chat_history is not a list, got {type(chat_history)}")
         chat_history = []
-    # Let the router handle presigning output URLs if necessary
     return {
         "id": str(workflow.get("_id")) if "_id" in workflow else workflow.get("id"),
         "name": workflow.get("name", "Untitled Workflow"),
@@ -182,6 +182,7 @@ def serialize_workflow(workflow: dict) -> dict:
         "edges": edges,
         "outputs": workflow.get("outputs", {}),
         "chat_history": chat_history,
+        "is_public": workflow.get("is_public", False),
         "created_at": workflow.get("created_at", datetime.now(timezone.utc)).isoformat(),
         "updated_at": workflow.get("updated_at", datetime.now(timezone.utc)).isoformat(),
     }
@@ -507,6 +508,7 @@ async def run_node(
         edges=edges,
         outputs=outputs,
         input_overrides=request.input_overrides if request else None,
+        strict_model_selection=True,
     )
     
     if result.get("success"):
@@ -957,6 +959,7 @@ async def _execute_node_async(workflow_id: str, node_id: str, run_id: str, input
             edges=edges,
             outputs=outputs,
             input_overrides=input_overrides,
+            strict_model_selection=True,
         )
         
         completed_at = datetime.now(timezone.utc).isoformat()
@@ -1517,6 +1520,103 @@ async def cleanup_presigned_urls(current_user: dict = Depends(get_current_user))
 
     print(f"[Cleanup] Done. Cleaned {cleaned_count}/{len(workflows)} workflows.")
     return {"cleaned": cleaned_count, "total": len(workflows)}
+
+class ForkWorkflowResponse(BaseModel):
+    id: str
+    name: str
+    forked_from: str
+
+
+@router.post("/{workflow_id}/fork", response_model=ForkWorkflowResponse)
+async def fork_workflow(workflow_id: str, current_user: dict = Depends(get_current_user)):
+    """Fork (clone) a public workflow into the current user's account."""
+    collection = get_workflows_collection()
+
+    try:
+        oid = ObjectId(workflow_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid workflow ID")
+
+    # First check if user already owns this workflow
+    user_id = current_user.get("_id")
+    own_workflow = await collection.find_one({
+        "_id": oid,
+        "$or": [{"user_id": user_id}, {"user_id": {"$exists": False}}],
+    })
+
+    if own_workflow:
+        # User already owns it, just return the existing ID
+        return ForkWorkflowResponse(
+            id=str(own_workflow["_id"]),
+            name=own_workflow.get("name", "Untitled Workflow"),
+            forked_from=workflow_id,
+        )
+
+    # Otherwise, look for it as a public workflow
+    source = await collection.find_one({"_id": oid, "is_public": True})
+    if not source:
+        raise HTTPException(status_code=404, detail="Workflow not found or is not public")
+
+    now = datetime.now(timezone.utc)
+    fork_data = {
+        "name": source.get("name", "Untitled Workflow"),
+        "user_id": user_id,
+        "nodes": source.get("nodes", []),
+        "edges": source.get("edges", []),
+        "outputs": source.get("outputs", {}),
+        "chat_history": [],
+        "forked_from": workflow_id,
+        "created_at": now,
+        "updated_at": now,
+    }
+
+    result = await collection.insert_one(fork_data)
+    new_id = str(result.inserted_id)
+
+    print(f"[Workflow] Forked {workflow_id} → {new_id} for user {user_id}")
+
+    return ForkWorkflowResponse(
+        id=new_id,
+        name=fork_data["name"],
+        forked_from=workflow_id,
+    )
+
+
+class TogglePublicRequest(BaseModel):
+    is_public: bool
+
+
+@router.post("/{workflow_id}/toggle-public")
+async def toggle_workflow_public(
+    workflow_id: str,
+    request: TogglePublicRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """Toggle the public visibility of a workflow."""
+    collection = get_workflows_collection()
+
+    try:
+        oid = ObjectId(workflow_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid workflow ID")
+
+    user_id = current_user.get("_id")
+    query = {
+        "_id": oid,
+        "$or": [{"user_id": user_id}, {"user_id": {"$exists": False}}],
+    }
+
+    result = await collection.update_one(
+        query,
+        {"$set": {"is_public": request.is_public, "updated_at": datetime.now(timezone.utc)}},
+    )
+
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    print(f"[Workflow] Set is_public={request.is_public} for workflow {workflow_id}")
+    return {"success": True, "is_public": request.is_public}
+
 
 class UploadRenderPresignRequest(BaseModel):
     filename: str

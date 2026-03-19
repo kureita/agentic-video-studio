@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { Node, Edge } from "@xyflow/react";
-import { workflowApi, Workflow, ChatMessage, WorkflowNode, NodeState, WorkflowRunStatus, JobStatusResponse, JobTaskStatus } from "./workflow-api";
+import { workflowApi, publicWorkflowApi, Workflow, ChatMessage, WorkflowNode, NodeState, WorkflowRunStatus, JobStatusResponse, JobTaskStatus } from "./workflow-api";
 import { toast } from "sonner";
 
 function taskToNodeState(task: JobTaskStatus): NodeState {
@@ -45,6 +45,10 @@ interface WorkflowState {
     // Job orchestration (Run All)
     activeJobId: string | null;
 
+    // Public view (read-only, no auth required)
+    isPublicView: boolean;
+    isPublic: boolean; // whether the workflow owner has set it as public
+
     // Actions
     setWorkflow: (workflow: Workflow) => void;
     setName: (name: string) => void;
@@ -62,6 +66,7 @@ interface WorkflowState {
     // API actions
     createWorkflow: (name?: string) => Promise<string | null>;
     loadWorkflow: (id: string) => Promise<void>;
+    loadPublicWorkflow: (id: string) => Promise<void>;
     saveWorkflow: () => Promise<void>;
     runWorkflow: () => Promise<void>;
     runWorkflowAsync: () => Promise<void>;
@@ -70,6 +75,7 @@ interface WorkflowState {
     uploadRenderedVideo: (nodeId: string, file: File) => Promise<string | null>;
     cancelJob: () => Promise<void>;
     checkActiveJob: () => Promise<void>;
+    togglePublic: (isPublic: boolean) => Promise<void>;
 
     // Reset
     reset: () => void;
@@ -91,7 +97,9 @@ const initialState = {
     executionProgress: null as { current: number; total: number } | null,
     error: null,
     isDirty: false,
-    activeJobId: null
+    activeJobId: null,
+    isPublicView: false,
+    isPublic: false,
 };
 
 // ============================================
@@ -138,7 +146,9 @@ function inferMissingHandles(edge: RawEdge, nodes: Node[]) {
                 targetHandle = sourceNode.type === 'text' ? 'text|prompt' : 'image|image';
                 break;
             case 'videoGen':
-                targetHandle = sourceNode.type === 'text' ? 'text|text' : 'image|start_image';
+                if (sourceNode.type === 'text') targetHandle = 'text|text';
+                else if (sourceNode.type === 'audioGen') targetHandle = 'audio|audio';
+                else targetHandle = 'image|start_image';
                 break;
             case 'editorAgent':
                 if (sourceNode.type === 'videoGen') targetHandle = 'video|ref_videos';
@@ -193,6 +203,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
             outputs: workflow.outputs || {},
             chatHistory: chatHistory,
             isDirty: false,
+            isPublic: workflow.is_public ?? false,
         });
     },
 
@@ -364,6 +375,8 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
                 chatHistory: chatHistory,
                 isLoading: false,
                 isDirty: false,
+                isPublic: workflow.is_public ?? false,
+                isPublicView: false,
             });
 
             // Check for an active Run All job and resume polling if found
@@ -373,6 +386,57 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
             set({ isLoading: false, error: "Failed to load workflow" });
             toast.error("Failed to load workflow");
             throw error; // Re-throw to allow caller to handle
+        }
+    },
+
+    // Load a public workflow (no auth required, read-only)
+    loadPublicWorkflow: async (id: string) => {
+        set({ isLoading: true, error: null, isPublicView: true });
+        try {
+            const response = await publicWorkflowApi.get(id);
+            const workflow = response.data;
+
+            const nodes = Array.isArray(workflow.nodes) ? workflow.nodes : [];
+            const edges = Array.isArray(workflow.edges) ? workflow.edges : [];
+            const chatHistory = Array.isArray(workflow.chat_history) ? workflow.chat_history : [];
+
+            const validNodes = nodes.map((node: WorkflowNode) => ({
+                id: node.id || String(Math.random()),
+                type: node.type || 'default',
+                position: node.position || { x: 0, y: 0 },
+                data: node.data || {},
+            })) as Node[];
+
+            const validEdges = edges.map((edge: RawEdge | unknown) => {
+                const safeEdge = edge as RawEdge;
+                const { sourceHandle, targetHandle } = inferMissingHandles(safeEdge, validNodes);
+                return {
+                    id: safeEdge.id || `${safeEdge.source}-${safeEdge.target}`,
+                    source: safeEdge.source,
+                    target: safeEdge.target,
+                    sourceHandle,
+                    targetHandle,
+                };
+            }) as Edge[];
+
+            console.log(`[WorkflowStore] Loaded public workflow ${id}: ${validNodes.length} nodes, ${validEdges.length} edges`);
+
+            set({
+                id: workflow.id,
+                name: workflow.name,
+                nodes: validNodes,
+                edges: validEdges,
+                outputs: workflow.outputs || {},
+                chatHistory: chatHistory,
+                isLoading: false,
+                isDirty: false,
+                isPublicView: true,
+                isPublic: workflow.is_public,
+            });
+        } catch (error) {
+            console.error("[WorkflowStore] Public load error:", error);
+            set({ isLoading: false, error: "Failed to load workflow", isPublicView: true });
+            throw error;
         }
     },
 
@@ -846,6 +910,19 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
             console.error("[WorkflowStore] Upload rendered video error:", error);
             toast.error("Failed to upload rendered video");
             return null;
+        }
+    },
+
+    // Toggle public visibility
+    togglePublic: async (isPublic: boolean) => {
+        const { id } = get();
+        if (!id) return;
+        try {
+            await workflowApi.togglePublic(id, isPublic);
+            set({ isPublic });
+        } catch (error) {
+            console.error("[WorkflowStore] Toggle public error:", error);
+            toast.error("Failed to update sharing settings");
         }
     },
 

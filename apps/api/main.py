@@ -93,7 +93,8 @@ async def health_check():
     return {"status": "healthy", "version": "0.1.0"}
 
 
-# Include API routes
-from app.api.routes import internal_router
+# Include API routes (order matters: public & internal before authenticated)
+from app.api.routes import internal_router, public_router
+app.include_router(public_router, prefix="/api")
 app.include_router(internal_router, prefix="/api")
 app.include_router(api_router, prefix="/api")

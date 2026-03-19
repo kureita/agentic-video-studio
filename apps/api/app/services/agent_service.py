@@ -2,10 +2,20 @@ import json
 import os
 import time
 from typing import Dict, Any, List, Optional
+from copy import deepcopy
 from pydantic import BaseModel
 from openai import AsyncOpenAI
 
 from app.core.config import settings
+from app.core.model_registry import (
+    AUDIO_MODELS,
+    IMAGE_MODELS,
+    VIDEO_MODELS,
+    get_model_by_air_id,
+    get_model_by_id,
+    get_model_by_name,
+    resolve_air_id,
+)
 from app.services.firecrawl_service import FirecrawlService
 
 class AgentService:
@@ -24,6 +34,171 @@ class AgentService:
             )
             
         self.firecrawl_service = FirecrawlService()
+        self._default_video_model_id = "kling-video-3-standard"
+        self._default_video_air_id = "klingai:kling-video@3-standard"
+
+    def _resolve_video_model_entry(self, model_input: str) -> Optional[Dict[str, Any]]:
+        if not model_input:
+            return get_model_by_id(self._default_video_model_id)
+
+        by_id = get_model_by_id(model_input)
+        if by_id and by_id.get("type") == "video":
+            return by_id
+
+        by_name = get_model_by_name(model_input)
+        if by_name and by_name.get("type") == "video":
+            return by_name
+
+        air_id = resolve_air_id(
+            model_input=model_input,
+            fallback_air_id=self._default_video_air_id,
+            model_type="video",
+        )
+        by_air = get_model_by_air_id(air_id)
+        if by_air and by_air.get("type") == "video":
+            return by_air
+
+        return get_model_by_air_id(self._default_video_air_id)
+
+    def _pick_best_video_model(self, need_i2v: bool, need_audio: bool) -> Dict[str, Any]:
+        def has_caps(entry: Dict[str, Any]) -> bool:
+            caps = {c.lower() for c in entry.get("capabilities", [])}
+            return (not need_i2v or "i2v" in caps) and (not need_audio or "audio" in caps)
+
+        candidates = [m for m in VIDEO_MODELS if has_caps(m)]
+        if not candidates:
+            return get_model_by_id(self._default_video_model_id) or VIDEO_MODELS[0]
+
+        def rank(entry: Dict[str, Any]) -> int:
+            tier = str(entry.get("tier", "budget")).lower()
+            return {"premium": 0, "mid": 1, "budget": 2}.get(tier, 3)
+
+        candidates.sort(key=rank)
+        return candidates[0]
+
+    def _resolve_audio_model_entry(self, model_input: str) -> Optional[Dict[str, Any]]:
+        if not model_input:
+            return None
+
+        by_id = get_model_by_id(model_input)
+        if by_id and by_id.get("type") == "audio":
+            return by_id
+
+        by_name = get_model_by_name(model_input)
+        if by_name and by_name.get("type") == "audio":
+            return by_name
+
+        air_id = resolve_air_id(model_input=model_input, fallback_air_id="minimax:speech@2.8", model_type="audio")
+        by_air = get_model_by_air_id(air_id)
+        if by_air and by_air.get("type") == "audio":
+            return by_air
+        return None
+
+    def _pick_best_audio_model(self, category: str) -> Optional[Dict[str, Any]]:
+        candidates = [
+            m for m in AUDIO_MODELS
+            if str(m.get("category", "")).lower() == category.lower() and not bool(m.get("coming_soon", False))
+        ]
+        if not candidates:
+            return None
+
+        def rank(entry: Dict[str, Any]) -> int:
+            tier = str(entry.get("tier", "budget")).lower()
+            return {"premium": 0, "mid": 1, "budget": 2}.get(tier, 3)
+
+        candidates.sort(key=rank)
+        return candidates[0]
+
+    def _normalize_audio_nodes_for_category(self, nodes: List[Dict[str, Any]]) -> tuple[List[Dict[str, Any]], List[str]]:
+        """Ensure audioGen model category matches audioType (speech/music/sfx)."""
+        normalized_nodes = deepcopy(nodes)
+        warnings: List[str] = []
+        type_to_category = {"speech": "tts", "music": "music", "sfx": "sfx"}
+
+        for node in normalized_nodes:
+            if node.get("type") != "audioGen":
+                continue
+
+            node_data = node.get("data", {})
+            if not isinstance(node_data, dict):
+                continue
+
+            audio_type = str(node_data.get("audioType", "speech")).lower()
+            expected_category = type_to_category.get(audio_type, "tts")
+            selected_model = str(node_data.get("model") or "")
+            entry = self._resolve_audio_model_entry(selected_model) if selected_model else None
+            selected_category = str((entry or {}).get("category", "")).lower()
+
+            if (not entry) or selected_category != expected_category or bool((entry or {}).get("coming_soon", False)):
+                replacement = self._pick_best_audio_model(expected_category)
+                if replacement:
+                    replacement_name = str(replacement.get("name") or replacement.get("id") or "")
+                    node_data["model"] = replacement_name
+                    warnings.append(
+                        f"Node '{node.get('id', 'unknown')}' audio model adjusted to '{replacement_name}' for audioType '{audio_type}'."
+                    )
+            node["data"] = node_data
+
+        return normalized_nodes, warnings
+
+    def _normalize_video_nodes_for_capabilities(
+        self,
+        nodes: List[Dict[str, Any]],
+        edges: List[Dict[str, Any]],
+    ) -> tuple[List[Dict[str, Any]], List[str]]:
+        """Ensure assistant-selected video model/audio combos match registry capabilities."""
+        normalized_nodes = deepcopy(nodes)
+        warnings: List[str] = []
+
+        has_start_image_by_target: Dict[str, bool] = {}
+        for e in edges or []:
+            target = e.get("target")
+            if not target:
+                continue
+            target_handle = e.get("targetHandle") or e.get("target_handle") or ""
+            if isinstance(target_handle, str) and target_handle.endswith("start_image"):
+                has_start_image_by_target[target] = True
+
+        for node in normalized_nodes:
+            if node.get("type") != "videoGen":
+                continue
+
+            node_data = node.get("data", {})
+            if not isinstance(node_data, dict):
+                continue
+
+            requested_model = str(node_data.get("model") or self._default_video_model_id)
+            entry = self._resolve_video_model_entry(requested_model)
+            if not entry:
+                continue
+
+            caps = {c.lower() for c in entry.get("capabilities", [])}
+            need_i2v = bool(has_start_image_by_target.get(str(node.get("id"))))
+            wants_audio = bool(node_data.get("generateAudio", False))
+
+            supports_i2v = "i2v" in caps
+            supports_audio = "audio" in caps
+
+            if (need_i2v and not supports_i2v) or (wants_audio and not supports_audio):
+                replacement = self._pick_best_video_model(need_i2v=need_i2v, need_audio=wants_audio)
+                replacement_name = str(replacement.get("name") or replacement.get("id") or self._default_video_model_id)
+                node_data["model"] = replacement_name
+                warnings.append(
+                    f"Node '{node.get('id', 'unknown')}' model adjusted to '{replacement_name}' for capability compatibility."
+                )
+
+            # If a replacement still cannot satisfy audio, force-disable generateAudio.
+            final_entry = self._resolve_video_model_entry(str(node_data.get("model", requested_model)))
+            final_caps = {c.lower() for c in (final_entry or {}).get("capabilities", [])}
+            if bool(node_data.get("generateAudio", False)) and "audio" not in final_caps:
+                node_data["generateAudio"] = False
+                warnings.append(
+                    f"Node '{node.get('id', 'unknown')}' had generateAudio disabled because selected model lacks native audio."
+                )
+
+            node["data"] = node_data
+
+        return normalized_nodes, warnings
         
     async def generate_workflow(self, prompt: str, model: str = "Gemini 3.1 Flash Lite Preview (Low)", current_nodes: List[Dict] = [], current_edges: List[Dict] = [], chat_history: List[Dict] = []) -> Dict[str, Any]:
         """
@@ -58,6 +233,54 @@ class AgentService:
              
         mapped_model = MODEL_MAPPING.get(model, "google/gemini-3.1-flash-lite-preview")
 
+        # Build capability-accurate model guidance from registry (single source of truth).
+        image_model_names = ", ".join(f'"{m.get("name", m.get("id", "Unknown"))}"' for m in IMAGE_MODELS)
+        video_model_names = ", ".join(f'"{m.get("name", m.get("id", "Unknown"))}"' for m in VIDEO_MODELS)
+        tts_model_names = ", ".join(
+            f'"{m.get("name", m.get("id", "Unknown"))}"'
+            for m in AUDIO_MODELS
+            if str(m.get("category", "")).lower() == "tts"
+        )
+        music_model_names = ", ".join(
+            f'"{m.get("name", m.get("id", "Unknown"))}"'
+            for m in AUDIO_MODELS
+            if str(m.get("category", "")).lower() == "music"
+        )
+        sfx_model_names = ", ".join(
+            f'"{m.get("name", m.get("id", "Unknown"))}"'
+            for m in AUDIO_MODELS
+            if str(m.get("category", "")).lower() == "sfx"
+        )
+        i2v_model_names = ", ".join(
+            f'"{m.get("name", m.get("id", "Unknown"))}"'
+            for m in VIDEO_MODELS
+            if "i2v" in {c.lower() for c in m.get("capabilities", [])}
+        )
+        native_audio_model_names = ", ".join(
+            f'"{m.get("name", m.get("id", "Unknown"))}"'
+            for m in VIDEO_MODELS
+            if "audio" in {c.lower() for c in m.get("capabilities", [])}
+        )
+        i2v_audio_model_names = ", ".join(
+            f'"{m.get("name", m.get("id", "Unknown"))}"'
+            for m in VIDEO_MODELS
+            if {"i2v", "audio"}.issubset({c.lower() for c in m.get("capabilities", [])})
+        )
+
+        duration_parts = []
+        for m in VIDEO_MODELS:
+            name = m.get("name", m.get("id", "Unknown"))
+            durations = sorted(
+                {
+                    int(cfg.get("duration"))
+                    for cfg in m.get("configs", [])
+                    if isinstance(cfg, dict) and isinstance(cfg.get("duration"), int)
+                }
+            )
+            if durations:
+                duration_parts.append(f"{name}: {'/'.join(f'{d}s' for d in durations)}")
+        duration_constraints_text = ". ".join(duration_parts) + "."
+
         start_prompt = f"""
 You are an expert AI Video Agent that builds workflows for a visual node-based video generation studio.
 The user describes a video they want to create, and you generate nodes and edges for a workflow editor.
@@ -73,24 +296,37 @@ Your #1 priority is VISUAL CONSISTENCY — every character, background, and styl
    - Inputs: "text|prompt" (type: text), "image|image" (type: image, optional reference)
    - Outputs: "image|image" (type: image)
    - Data: {{ "label": "Start Frame Scene X", "prompt": "Description", "width": 1024, "height": 576, "ratio": "16:9", "model": "FLUX.2 [dev]" }}
-   - **Available Models**: "GPT Image 1.5", "FLUX.2 [max]", "Nano Banana 2", "Kling IMAGE O3", "Seedream 5.0 Lite", "Recraft V4", "Recraft V4 Pro", "Grok Imagine Image", "Imagen 4 Ultra", "Imagen 4 Preview", "FLUX.2 [dev]", "FLUX.2 [flex]", "FLUX.2 [klein] 9B"
+   - **Available Models**: {image_model_names}
    - **Model Notes**: FLUX.2 [dev] cheapest ($0.005). GPT Image 1.5 best for editing. Kling IMAGE O3 for character consistency. FLUX.2 [max] highest quality.
 
 3. **videoGen** - Video Generator (Multiple models via Runware)
-   - Inputs: "text|text" (type: text), "image|start_image" (type: image), "image|end_image" (type: image, optional)
+   - Inputs: "text|text" (type: text), "image|start_image" (type: image), "image|end_image" (type: image, optional), "audio|audio" (type: audio, optional)
    - Outputs: "video|video" (type: video), "image|start_frame" (type: image, first frame), "image|end_frame" (type: image, last frame)
-   - Data: {{ "label": "Video Scene X", "prompt": "Motion description", "duration": "5s", "ratio": "16:9", "model": "Kling VIDEO 3.0 Standard" }}
-   - **Available Models**: "Google Veo 3.1", "Google Veo 3.1 Fast", "Sora 2 Pro", "Sora 2", "Kling VIDEO 3.0 Pro", "Kling VIDEO 3.0 Standard", "LTX 2.3", "LTX 2.3 Fast", "Seedance 1.5 Pro", "Grok Imagine Video", "MiniMax Hailuo 2.3", "PixVerse v5.6", "Vidu Q3", "Vidu Q3 Turbo"
-   - **Duration Constraints**: Veo 3.1: 4s/8s. Veo 3.1 Fast: 4s/8s. Sora 2 Pro: 8s. Sora 2: 5s. Kling VIDEO 3.0 Pro: 5s. Kling VIDEO 3.0 Standard: 5s. LTX 2.3: 5s/9s. LTX 2.3 Fast: 5s. Seedance 1.5 Pro: 5s/10s. Grok Imagine Video: 5s/10s. MiniMax Hailuo 2.3: 6s/10s. PixVerse v5.6: 5s/8s. Vidu Q3: 4s/8s. Vidu Q3 Turbo: 4s/8s.
+   - Data: {{ "label": "Video Scene X", "prompt": "Motion description", "duration": "5s", "ratio": "16:9", "model": "Kling VIDEO 3.0 Standard", "generateAudio": false }}
+   - **Available Models**: {video_model_names}
+   - **Duration Constraints**: {duration_constraints_text}
+   - **Model Selection Rules (CRITICAL)**:
+     - If `start_image` is connected, prefer models with I2V support: {i2v_model_names}.
+     - If native video audio is explicitly requested, prefer models with native-audio capability: {native_audio_model_names}.
+     - If both image-to-video AND native audio are needed in the same video node, choose from: {i2v_audio_model_names}.
+   - **Audio Rules**:
+     - Set `generateAudio: true` ONLY when the user explicitly wants model-native video audio (ambience/dialogue generated by the video model itself).
+     - Set `generateAudio: false` by default.
+     - If the user wants custom voiceover/music/SFX from separate audio nodes, keep `generateAudio: false` and connect `audioGen` output (`audio|audio`) to `videoGen` input (`audio|audio`) or `editorAgent` input (`audio|audio`).
 
 4. **audioGen** - Audio Generator (Speech, Music, SFX)
    - Inputs: "text|prompt" (type: text, optional — for TTS script or music/SFX description)
    - Outputs: "audio|audio" (type: audio)
-   - Data: {{ "label": "Audio: [Name]", "audioType": "speech" | "music" | "sfx", "prompt": "Content or description", "voice": "Rachel", "duration": 15 }}
+   - Data: {{ "label": "Audio: [Name]", "audioType": "speech" | "music" | "sfx", "prompt": "Content or description", "voice": "Rachel", "duration": 15, "model": "MiniMax Speech 2.8" }}
    - **Audio Types**:
      - `"speech"`: Text-to-speech using a selected voice. Set `prompt` to the spoken script. Set `voice` to one of the supported voices (see below).
      - `"music"`: AI-generated background music. Set `prompt` to a descriptive music brief (genre, mood, instruments). Set `duration` in seconds (10–300).
      - `"sfx"`: AI-generated sound effects. Set `prompt` to describe the sound. Set `duration` in seconds (10–300).
+   - **Model by Type (CRITICAL)**:
+     - speech/tts models only: {tts_model_names}
+     - music models only: {music_model_names}
+     - sfx models only: {sfx_model_names}
+     - NEVER assign a model from the wrong category for the selected `audioType`.
    - **Available Voices** (for speech only): "Rachel", "Domi", "Bella", "Antoni", "Elli", "Josh", "Arnold", "Adam", "Sam", "English_Upbeat_Woman", "English_Calm_Man"
    - **Connection Rule**: Connect `audioGen` output (`audio|audio`) to:
      - `editorAgent` input `audio|audio` — to layer audio over a video composition
@@ -646,13 +882,23 @@ Note: If `action` is "update", you ONLY need to return the `updates` object. Lea
                     if "target_handle" in e:
                         e["targetHandle"] = e.pop("target_handle")
             
+            normalized_audio_nodes, audio_warnings = self._normalize_audio_nodes_for_category(result_nodes)
+            normalized_nodes, model_warnings = self._normalize_video_nodes_for_capabilities(
+                normalized_audio_nodes,
+                result_edges,
+            )
+
+            message = result.get("message", "Workflow generated")
+            if model_warnings or audio_warnings:
+                message = f"{message} (Adjusted some nodes to valid model capabilities.)"
+
             return {
                 "success": True,
-                "message": result.get("message", "Workflow generated"),
+                "message": message,
                 "thinking": thinking,
                 "thinking_duration_ms": elapsed_ms,
                 "tool_calls": sanitized_tool_calls,
-                "nodes": result_nodes,
+                "nodes": normalized_nodes,
                 "edges": result_edges,
                 "token_usage": token_usage,
                 "cost_usd": cost_usd

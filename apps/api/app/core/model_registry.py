@@ -230,7 +230,7 @@ VIDEO_MODELS: List[Dict[str, Any]] = [
         "type": "video",
         "tier": "premium",
         "air_id": "google:3@2",
-        "capabilities": ["t2v", "audio"],
+        "capabilities": ["t2v", "i2v", "audio"],
         "configs": [
             {"id": "720p-4s-audio",  "label": "720p · 4s · Audio",   "resolution": "720p",  "duration": 4,  "audio": True,  "est_price_usd": 0.80},
             {"id": "720p-8s-audio",  "label": "720p · 8s · Audio",   "resolution": "720p",  "duration": 8,  "audio": True,  "est_price_usd": 1.60},
@@ -264,10 +264,10 @@ VIDEO_MODELS: List[Dict[str, Any]] = [
         "type": "video",
         "tier": "premium",
         "air_id": "openai:sora@2-pro",
-        "capabilities": ["t2v", "i2v", "audio"],
+        "capabilities": ["t2v", "i2v"],
         "configs": [
-            {"id": "720p-8s",  "label": "720p · 8s",  "resolution": "720p", "duration": 8, "audio": True, "est_price_usd": 2.40},
-            {"id": "1080p-8s", "label": "1080p · 8s", "resolution": "1080p", "duration": 8, "audio": True, "est_price_usd": 4.00},
+            {"id": "720p-8s",  "label": "720p · 8s",  "resolution": "720p", "duration": 8, "est_price_usd": 2.40},
+            {"id": "1080p-8s", "label": "1080p · 8s", "resolution": "1080p", "duration": 8, "est_price_usd": 4.00},
         ],
         "default_config_id": "720p-8s",
     },
@@ -278,7 +278,7 @@ VIDEO_MODELS: List[Dict[str, Any]] = [
         "type": "video",
         "tier": "premium",
         "air_id": "openai:sora@2",
-        "capabilities": ["t2v", "i2v"],
+        "capabilities": ["t2v"],
         "configs": [
             {"id": "720p-5s",  "label": "720p · 5s",  "resolution": "720p", "duration": 5, "est_price_usd": 0.80},
         ],
@@ -749,7 +749,7 @@ _VALID_RUNWARE_OVERRIDES = {
     "google:imagen@4": "google:2@1",
     
     # Video (map to Kling AI and Bytedance which are fully valid)
-    "google:3@3": "google:3@2", # Veo 3.1 Fast -> Veo 3.1
+    # google:3@3 (Veo 3.1 Fast) — natively supported on Runware, no override needed
     "openai:sora@2-pro": "klingai:kling-video@3-standard",
     "openai:sora@2": "xai:grok-imagine@video",
     "klingai:kling-video@3-pro": "klingai:kling-video@3-standard",

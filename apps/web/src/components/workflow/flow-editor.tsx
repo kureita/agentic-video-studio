@@ -33,6 +33,7 @@ import { CommentNode } from "./nodes/comment-node";
 
 // Store
 import { useWorkflowStore } from "@/lib/workflow-store";
+import { usePublicView } from "@/lib/public-view-context";
 
 const nodeTypes = {
     text: TextNode,
@@ -67,7 +68,9 @@ function FlowEditorInner({ workflowId }: FlowEditorProps) {
         loadWorkflow,
         runNode,
         nodeExecutionStates,
+        isPublicView,
     } = useWorkflowStore();
+    const { isPublicView: isPublicCtx, requireLogin } = usePublicView();
 
     const [activeTool, setActiveTool] = useState("hand");
     const [isInitialized, setIsInitialized] = useState(false);
@@ -77,15 +80,21 @@ function FlowEditorInner({ workflowId }: FlowEditorProps) {
 
     const reactFlowInstance = useReactFlow();
 
+    const storeId = useWorkflowStore((s) => s.id);
+
     // Load workflow on mount if ID is provided
     useEffect(() => {
         let mounted = true;
 
         const loadWorkflowData = async () => {
             if (workflowId && workflowId !== "new" && !isInitialized) {
+                // If the store already has this workflow loaded (page did it), skip re-fetching
+                if (isPublicView || storeId === workflowId) {
+                    setIsInitialized(true);
+                    return;
+                }
                 try {
                     await loadWorkflow(workflowId);
-                    // Small delay to ensure state has propagated
                     await new Promise(resolve => setTimeout(resolve, 50));
                     if (mounted) {
                         setIsInitialized(true);
@@ -106,7 +115,9 @@ function FlowEditorInner({ workflowId }: FlowEditorProps) {
         return () => {
             mounted = false;
         };
-    }, [workflowId, loadWorkflow, isInitialized]);
+    }, [workflowId, loadWorkflow, isInitialized, isPublicView, storeId]);
+
+    const isReadOnly = isPublicView || isPublicCtx;
 
     // Inject outputs and execution state into node data for display
     const nodesWithOutputs = nodes.map((node) => ({
@@ -116,13 +127,25 @@ function FlowEditorInner({ workflowId }: FlowEditorProps) {
             output: outputs[node.id] || node.data.output,
             isRunning: runningNodeId === node.id,
             executionStatus: nodeExecutionStates[node.id]?.status || null,
-            onRun: () => runNode(node.id),
+            onRun: isReadOnly
+                ? () => requireLogin("Sign in to run nodes and generate media.")
+                : () => runNode(node.id),
+            isPublicView: isReadOnly,
         },
     }));
 
     const onNodesChange = useCallback(
         (changes: NodeChange[]) => {
-            // Take snapshot BEFORE delete actions (so undo can restore)
+            if (isReadOnly) {
+                // In public view, only allow selection changes (for viewing node details)
+                const selectionOnly = changes.filter(c => c.type === "select");
+                if (selectionOnly.length > 0) {
+                    const newNodes = applyNodeChanges(selectionOnly, nodes);
+                    setNodes(newNodes);
+                }
+                return;
+            }
+
             const hasRemove = changes.some(c => c.type === "remove");
             if (hasRemove) {
                 takeSnapshot(nodes, edges);
@@ -131,20 +154,22 @@ function FlowEditorInner({ workflowId }: FlowEditorProps) {
             const newNodes = applyNodeChanges(changes, nodes);
             setNodes(newNodes);
         },
-        [nodes, edges, setNodes, takeSnapshot]
+        [nodes, edges, setNodes, takeSnapshot, isReadOnly]
     );
 
     const onEdgesChange = useCallback(
         (changes: EdgeChange[]) => {
+            if (isReadOnly) return;
+
             const hasRemove = changes.some(c => c.type === "remove");
             if (hasRemove) {
                 takeSnapshot(nodes, edges);
             }
 
-            const hasRemove2 = changes.some(c => c.type === "remove"); if (hasRemove2) console.log("[FlowEditor] Removed edges due to changes:", changes); const newEdges = applyEdgeChanges(changes, edges);
+            const newEdges = applyEdgeChanges(changes, edges);
             setEdges(newEdges);
         },
-        [nodes, edges, setEdges, takeSnapshot]
+        [nodes, edges, setEdges, takeSnapshot, isReadOnly]
     );
 
     // Snapshot before node drag starts
@@ -185,11 +210,12 @@ function FlowEditorInner({ workflowId }: FlowEditorProps) {
 
     const onConnect = useCallback(
         (params: Connection) => {
+            if (isReadOnly) return;
             takeSnapshot(nodes, edges);
             const newEdges = addEdge(params, edges);
             setEdges(newEdges);
         },
-        [nodes, edges, setEdges, takeSnapshot]
+        [nodes, edges, setEdges, takeSnapshot, isReadOnly]
     );
 
     const onEdgeClick = useCallback((_event: MouseEvent | React.MouseEvent, edge: Edge) => {
@@ -315,7 +341,7 @@ function FlowEditorInner({ workflowId }: FlowEditorProps) {
 
     return (
         <div className="w-full h-full relative" ref={flowWrapperRef}>
-            {activeTool === "cut" && (
+            {activeTool === "cut" && !isReadOnly && (
                 <style dangerouslySetInnerHTML={{
                     __html: `
                         .react-flow__edge .react-flow__edge-interaction {
@@ -328,15 +354,17 @@ function FlowEditorInner({ workflowId }: FlowEditorProps) {
                     `
                 }} />
             )}
-            <WorkflowToolbar
-                onAddNode={handleAddNode}
-                activeTool={activeTool}
-                onToolChange={setActiveTool}
-                onUndo={handleUndo}
-                onRedo={handleRedo}
-                canUndo={canUndo}
-                canRedo={canRedo}
-            />
+            {!isReadOnly && (
+                <WorkflowToolbar
+                    onAddNode={handleAddNode}
+                    activeTool={activeTool}
+                    onToolChange={setActiveTool}
+                    onUndo={handleUndo}
+                    onRedo={handleRedo}
+                    canUndo={canUndo}
+                    canRedo={canRedo}
+                />
+            )}
 
             <ReactFlow
                 nodes={nodesWithOutputs}
@@ -357,13 +385,13 @@ function FlowEditorInner({ workflowId }: FlowEditorProps) {
                 )}
                 minZoom={0.01}
                 maxZoom={10}
-                panOnDrag={activeTool === "hand"}
+                panOnDrag={isReadOnly || activeTool === "hand"}
                 selectionOnDrag={false}
                 selectionMode={"partial" as never}
                 panOnScroll={true}
-                nodesDraggable={activeTool !== "cut" && activeTool !== "comment"}
-                nodesConnectable={activeTool !== "cut" && activeTool !== "comment"}
-                elementsSelectable={activeTool !== "cut" && activeTool !== "comment"}
+                nodesDraggable={!isReadOnly && activeTool !== "cut" && activeTool !== "comment"}
+                nodesConnectable={!isReadOnly && activeTool !== "cut" && activeTool !== "comment"}
+                elementsSelectable={!isReadOnly && activeTool !== "cut" && activeTool !== "comment"}
                 onPaneClick={(event) => {
                     onPaneMouseDown(event as unknown as MouseEvent);
                 }}

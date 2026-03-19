@@ -168,7 +168,6 @@ class RunwareService:
 
     async def image_to_image(self, prompt: str, image_url: str, width: int = 1024, height: int = 1024, model: str = "bfl:flux-2@dev", strength: float = 0.8) -> dict:
         """Generate an image based on an input image and prompt."""
-
         seed_image = await self._url_to_data_uri(image_url)
 
         # Base task structure
@@ -229,19 +228,38 @@ class RunwareService:
             "cost": data.get("cost", 0.0),
         }
 
-    # Per-model dimension overrides: some models only accept specific resolutions.
-    # Keys are model ID prefixes (matched via str.startswith); each value maps
-    # aspect_ratio -> (width, height).  Falls back to _DEFAULT_DIMENSIONS if no
-    # model-specific entry is found.
-    _DEFAULT_DIMENSIONS = {
+    # ── Dimension tables ────────────────────────────────────────────────────
+    #
+    # VIDEO default: standard broadcast resolutions (720p, 1080p …).
+    # IMAGE default: every value is a multiple of 64 so FLUX / SD / Runware
+    #   native models never reject the payload.
+    # Per-model overrides live in _MODEL_DIMENSIONS and are returned AS-IS
+    #   (they contain the exact values each provider's API accepts).
+
+    _VIDEO_DEFAULT_DIMENSIONS = {
         "16:9": (1280, 720),
         "9:16": (720, 1280),
         "1:1":  (960, 960),
         "4:3":  (960, 720),
         "3:4":  (720, 960),
     }
+
+    _IMAGE_DEFAULT_DIMENSIONS = {
+        "16:9": (1024, 576),
+        "9:16": (576, 1024),
+        "1:1":  (1024, 1024),
+        "4:3":  (1024, 768),
+        "3:4":  (768, 1024),
+        "3:2":  (1152, 768),
+        "2:3":  (768, 1152),
+        "21:9": (1344, 576),
+    }
+
+    # Keys are model-ID prefixes (matched via str.startswith).
+    # Values map aspect_ratio → (width, height).
+    # These are the EXACT dimensions each provider accepts — never modify them.
     _MODEL_DIMENSIONS: Dict[str, Dict[str, tuple]] = {
-        # Kling 3 Pro only accepts 1920x1080, 1080x1920, or 1440x1440
+        # ── Video models ──────────────────────────────────────────
         "klingai:kling-video@3-pro": {
             "16:9": (1920, 1080),
             "9:16": (1080, 1920),
@@ -249,13 +267,24 @@ class RunwareService:
             "4:3":  (1440, 1080),
             "3:4":  (1080, 1440),
         },
-        # Minimax Video requires specific resolutions
         "minimax:4@1": {
             "16:9": (1366, 768),
             "9:16": (768, 1366),
-            "1:1":  (1024, 1024), 
+            "1:1":  (1024, 1024),
         },
-        # ByteDance Seedream requires high resolution (min ~3.6M pixels)
+        # Google video (Veo) — conservative dimensions verified to work.
+        "google:": {
+            "16:9": (1280, 720),
+            "9:16": (720, 1280),
+            "1:1":  (1024, 1024),
+            "4:3":  (960, 720),
+            "3:4":  (720, 960),
+            "3:2":  (1152, 768),
+            "2:3":  (768, 1152),
+            "21:9": (1344, 576),
+        },
+
+        # ── Image models ─────────────────────────────────────────
         "bytedance:seedream": {
             "16:9": (2560, 1440),
             "9:16": (1440, 2560),
@@ -263,26 +292,13 @@ class RunwareService:
             "4:3":  (2048, 1536),
             "3:4":  (1536, 2048),
         },
-        # Recraft V4 supports standard multiples of 64 or 1024x1024
         "recraft:v4": {
-            "16:9": (1280, 720),
-            "9:16": (720, 1280),
+            "16:9": (1024, 576),
+            "9:16": (576, 1024),
             "1:1":  (1024, 1024),
             "4:3":  (1024, 768),
             "3:4":  (768, 1024),
         },
-        # Google models (Gemini/Imagen)
-        "google:": {
-            "16:9": (1376, 768),
-            "9:16": (768, 1376),
-            "1:1":  (1024, 1024),
-            "4:3":  (1200, 896),
-            "3:4":  (896, 1200),
-            "3:2":  (1264, 848),
-            "2:3":  (848, 1264),
-            "21:9": (1548, 672)
-        },
-        # Kling Image
         "klingai:kling-image": {
             "16:9": (1360, 768),
             "9:16": (768, 1360),
@@ -291,15 +307,13 @@ class RunwareService:
             "3:4":  (880, 1168),
             "3:2":  (1248, 832),
             "2:3":  (832, 1248),
-            "21:9": (1552, 656)
+            "21:9": (1552, 656),
         },
-        # OpenAI GPT Image 1 (openai:1@1) - supports max 1536
         "openai:1": {
             "16:9": (1536, 1024),
             "9:16": (1024, 1536),
             "1:1":  (1024, 1024),
         },
-        # OpenAI DALL-E 3 (openai:2@3) - supports max 1792
         "openai:2": {
             "16:9": (1792, 1024),
             "9:16": (1024, 1792),
@@ -308,11 +322,24 @@ class RunwareService:
     }
 
     def _resolve_dimensions(self, model: str, aspect_ratio: str) -> tuple:
-        """Return (width, height) for the given model and aspect ratio."""
+        """Return (width, height) for a VIDEO model and aspect ratio."""
         for prefix, dim_map in self._MODEL_DIMENSIONS.items():
             if model.startswith(prefix):
-                return dim_map.get(aspect_ratio, dim_map.get("16:9", (1920, 1080)))
-        return self._DEFAULT_DIMENSIONS.get(aspect_ratio, (1280, 720))
+                return dim_map.get(aspect_ratio, dim_map.get("16:9", (1280, 720)))
+        return self._VIDEO_DEFAULT_DIMENSIONS.get(aspect_ratio, (1280, 720))
+
+    def _resolve_image_dimensions(self, model: str, aspect_ratio: str) -> tuple:
+        """Return (width, height) for an IMAGE model and aspect ratio.
+
+        Model-specific entries are returned as-is (providers dictate exact
+        pixel values).  The fallback is _IMAGE_DEFAULT_DIMENSIONS where
+        every value is a multiple of 64 — safe for FLUX, SD, and Runware
+        native models.
+        """
+        for prefix, dim_map in self._MODEL_DIMENSIONS.items():
+            if model.startswith(prefix):
+                return dim_map.get(aspect_ratio, dim_map.get("16:9", (1024, 576)))
+        return self._IMAGE_DEFAULT_DIMENSIONS.get(aspect_ratio, (1024, 576))
 
     def _resolve_duration(self, model: str, duration: int) -> int | float:
         """Return valid duration for the model constraints."""
@@ -323,7 +350,25 @@ class RunwareService:
             else: return 8
         return duration
 
-    async def generate_video(self, prompt: str, model: str = "klingai:kling-video@3-standard", duration: int = 5, aspect_ratio: str = "16:9") -> dict:
+    def _audio_provider_settings(self, model: str, generate_audio: bool) -> Optional[Dict[str, Any]]:
+        """Build providerSettings for native audio generation if supported."""
+        if not generate_audio:
+            return None
+        provider = model.split(":")[0].lower() if ":" in model else ""
+        # Verified payload shape on Runware for Veo:
+        # providerSettings.google.generateAudio = true
+        if provider == "google":
+            return {"google": {"generateAudio": True}}
+        return None
+
+    async def generate_video(
+        self,
+        prompt: str,
+        model: str = "klingai:kling-video@3-standard",
+        duration: int = 5,
+        aspect_ratio: str = "16:9",
+        generate_audio: bool = False,
+    ) -> dict:
         """Generate a video from text."""
         width, height = self._resolve_dimensions(model, aspect_ratio)
         resolved_duration = self._resolve_duration(model, duration)
@@ -340,13 +385,17 @@ class RunwareService:
             "width": width,
             "height": height
         }
-        
-        # Add Google Veo-specific provider settings (native audio generation)
-        if model.startswith("google:"):
-            task["providerSettings"] = {
-                "google": {
-                    "generateAudio": True,
-                }
+
+        provider_settings = self._audio_provider_settings(model, generate_audio)
+        if provider_settings:
+            task["providerSettings"] = provider_settings
+        elif generate_audio:
+            return {
+                "success": False,
+                "error": (
+                    f"Native audio was requested but model '{model}' does not support it. "
+                    "Please either disable 'Generate Audio' or switch to an audio-capable model (e.g. Google Veo 3.1 / Veo 3.1 Fast)."
+                ),
             }
         
         resp = await self._post([task])
@@ -443,6 +492,7 @@ class RunwareService:
         duration: int = 5,
         aspect_ratio: str = "16:9",
         end_image_url: Optional[str] = None,
+        generate_audio: bool = False,
     ) -> dict:
         """Generate a video from a starting image (and optional end image).
         
@@ -453,20 +503,12 @@ class RunwareService:
         4. Optionally upload end_image_url and add a second entry with frame="last"
         
         Provider payload structure:
-        - klingai / runway:   task["inputs"]["frameImages"] = [{"image": uuid, "frame": "first"}, {"image": uuid2, "frame": "last"}]
+        - klingai / runway / google: task["inputs"]["frameImages"] = [{"image": uuid, "frame": "first"}, {"image": uuid2, "frame": "last"}]
         - bytedance / minimax / pixverse:  task["frameImages"] = [{"inputImage": uuid, "frame": "first"}, {"inputImage": uuid2, "frame": "last"}]
         - alibaba (wan):      task["inputs"]["frameImages"] = [uuid]  ← end-frame NOT supported
-        - google (veo):       NOT supported — returns clear error
         """
         # Convert aspect ratio to width/height (respects per-model overrides)
         width, height = self._resolve_dimensions(model, aspect_ratio)
-
-        # Google Veo does not support image-to-video via Runware
-        if model.startswith("google:"):
-            return {
-                "success": False,
-                "error": f"Google Veo models ({model}) do not support image-to-video. Please use a text-to-video workflow or switch to a Kling / Runway / Seedance model.",
-            }
 
         print(f"[RunwareService] image_to_video: model={model}, aspect_ratio={aspect_ratio}, has_end_image={bool(end_image_url)}")
 
@@ -516,13 +558,33 @@ class RunwareService:
             "duration": duration,
         }
 
+        provider_settings = self._audio_provider_settings(model, generate_audio)
+        if provider_settings:
+            task["providerSettings"] = provider_settings
+        elif generate_audio:
+            return {
+                "success": False,
+                "error": (
+                    f"Native audio was requested but model '{model}' does not support it. "
+                    "Please either disable 'Generate Audio' or switch to an audio-capable model (e.g. Google Veo 3.1 / Veo 3.1 Fast)."
+                ),
+            }
+
         provider = model.split(":")[0].lower() if ":" in model else ""
 
-        if provider in ("klingai", "runway"):
-            # KlingAI & Runway: nested under inputs, key is "image"
-            if provider == "runway":
-                task["width"] = width
-                task["height"] = height
+        if provider == "google":
+            # Google Veo: top-level frameImages with "inputImage" key
+            # Ref: https://runware.ai/docs/en/providers/google
+            task["width"] = width
+            task["height"] = height
+            frame_images = [{"inputImage": image_ref, "frame": "first"}]
+            if end_image_ref:
+                frame_images.append({"inputImage": end_image_ref, "frame": "last"})
+                print(f"[RunwareService] Added end-frame to google payload")
+            task["frameImages"] = frame_images
+
+        elif provider in ("klingai", "runway"):
+            # KlingAI / Runway: nested under inputs (legacy format, works in production)
             frame_images = [{"image": image_ref, "frame": "first"}]
             if end_image_ref:
                 frame_images.append({"image": end_image_ref, "frame": "last"})
@@ -575,7 +637,9 @@ class RunwareService:
         Requires inputs.video and inputs.audio fields.
         """
         safe_video_url = await self._url_to_data_uri(video_url)
-        safe_audio_url = await self._url_to_data_uri(audio_url) if audio_url else audio_url
+        # Keep audio URLs as-is. _url_to_data_uri is image-oriented and can
+        # incorrectly coerce non-image MIME types.
+        safe_audio_url = audio_url
         
         task = {
             "taskType": "videoInference",

@@ -137,11 +137,13 @@ class AudioGenerator:
             print(f"[AudioGenerator] Error fetching audio {url}: {e}")
         return url # fallback to runware url
 
-    def _get_model(self, model_name: Optional[str]) -> str:
-        if not model_name: return self.default_model
-        
+    def _resolve_audio_model(self, model_name: Optional[str], fallback_air_id: str) -> str:
+        """Resolve audio model ID/name/AIR to a valid Runware AIR ID."""
+        if not model_name:
+            return fallback_air_id
+
         from app.core.model_registry import resolve_air_id
-        return resolve_air_id(model_name, self.default_model, model_type="audio")
+        return resolve_air_id(model_name, fallback_air_id, model_type="audio")
 
     async def generate_speech(
         self,
@@ -158,7 +160,7 @@ class AudioGenerator:
         
         try:
             voice_id = self.voice_ids.get(voice, self.default_voice)
-            target_model = self._get_model(model_id)
+            target_model = self._resolve_audio_model(model_id, fallback_air_id="minimax:speech@2.8")
             print(f"[AudioGenerator] Generating speech: {text[:100]}..., voice: {voice_id}")
             
             result = await self.runware.text_to_speech(
@@ -181,6 +183,7 @@ class AudioGenerator:
         self,
         prompt: str,
         duration: int = 15,
+        model_id: Optional[str] = None,
     ) -> dict:
         """Generate music from a text prompt describing genre, style, mood, etc."""
         if self.use_mock:
@@ -190,11 +193,13 @@ class AudioGenerator:
             return {"success": False, "error": "No prompt provided for music generation"}
         
         try:
-            print(f"[AudioGenerator] Generating music: {prompt[:100]}..., duration: {duration}s")
+            target_model = self._resolve_audio_model(model_id, fallback_air_id="elevenlabs:1@1")
+            print(f"[AudioGenerator] Generating music: {prompt[:100]}..., duration: {duration}s, model: {target_model}")
             
             result = await self.runware.generate_music(
                 prompt=prompt,
                 duration=duration,
+                model=target_model,
             )
             
             if result.get("success"):
@@ -211,6 +216,7 @@ class AudioGenerator:
         self,
         prompt: str,
         duration: int = 10,
+        model_id: Optional[str] = None,
     ) -> dict:
         """Generate sound effects from a text prompt describing the sound."""
         if self.use_mock:
@@ -220,11 +226,13 @@ class AudioGenerator:
             return {"success": False, "error": "No prompt provided for sound effects generation"}
         
         try:
-            print(f"[AudioGenerator] Generating SFX: {prompt[:100]}..., duration: {duration}s")
+            target_model = self._resolve_audio_model(model_id, fallback_air_id="elevenlabs:1@1")
+            print(f"[AudioGenerator] Generating SFX: {prompt[:100]}..., duration: {duration}s, model: {target_model}")
             
             result = await self.runware.generate_sound_effects(
                 prompt=prompt,
                 duration=duration,
+                model=target_model,
             )
             
             if result.get("success"):

@@ -52,6 +52,13 @@ export const AudioGenNode = memo(({ id, selected, data }: NodeProps) => {
     const currentModelEntry = audioModels.find(m => m.id === currentModelId) || audioModels.find(m => m.name === currentModelId);
     const currentModelDisplayName = currentModelEntry?.name || currentModelId;
 
+    // Keep selected model aligned with current audio type/category.
+    React.useEffect(() => {
+        if (audioModels.length > 0 && !currentModelEntry) {
+            updateNodeData(id, { model: audioModels[0].id });
+        }
+    }, [audioModels, currentModelEntry, id, updateNodeData]);
+
 
     const isRunning = runningNodeId === id;
     const rawOutput = (outputs[id] as string | undefined) || (data.output as string | undefined);
@@ -303,7 +310,14 @@ export const AudioGenNode = memo(({ id, selected, data }: NodeProps) => {
                                                     key={opt.value}
                                                     onClick={(e) => {
                                                         e.stopPropagation();
-                                                        updateNodeData(id, { audioType: opt.value });
+                                                        const nextCategory = AUDIO_TYPE_TO_CATEGORY[opt.value];
+                                                        const nextModels = models.filter(
+                                                            (m) => m.type === "audio" && m.category === nextCategory && !m.coming_soon
+                                                        );
+                                                        updateNodeData(id, {
+                                                            audioType: opt.value,
+                                                            model: nextModels.length > 0 ? nextModels[0].id : undefined,
+                                                        });
                                                         setShowTypeMenu(false);
                                                     }}
                                                     className={cn(

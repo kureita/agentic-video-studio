@@ -6,6 +6,13 @@ from app.services.image_generator import ImageGenerator
 from app.services.video_generator import VideoGenerator
 from app.services.audio_generator import AudioGenerator
 from app.services.editor_agent import EditorAgent
+from app.core.model_registry import (
+    VIDEO_MODELS,
+    get_model_by_air_id,
+    get_model_by_id,
+    get_model_by_name,
+    resolve_air_id,
+)
 
 
 class NodeRunner:
@@ -16,6 +23,8 @@ class NodeRunner:
         self.video_generator = VideoGenerator()
         self.audio_generator = AudioGenerator()
         self.editor_agent = EditorAgent()
+        self._default_video_model_id = "kling-video-3-standard"
+        self._default_video_air_id = "klingai:kling-video@3-standard"
 
     async def run_node(
         self,
@@ -24,6 +33,7 @@ class NodeRunner:
         edges: List[Dict[str, Any]],
         outputs: Dict[str, Any],
         input_overrides: Optional[Dict[str, Any]] = None,
+        strict_model_selection: bool = False,
     ) -> Dict[str, Any]:
         """
         Run a single node and return the result.
@@ -34,6 +44,7 @@ class NodeRunner:
             edges: All edges in the workflow  
             outputs: Existing outputs from previous nodes
             input_overrides: Optional overrides for node inputs
+            strict_model_selection: If True, do not auto-fallback to other models
             
         Returns:
             Dict with success, output, and optional error
@@ -79,7 +90,12 @@ class NodeRunner:
                 return await self._run_audio_gen_node(node_data, inputs, nodes)
             
             elif node_type == "videoGen":
-                return await self._run_video_gen_node(node_data, inputs, nodes)
+                return await self._run_video_gen_node(
+                    node_data,
+                    inputs,
+                    nodes,
+                    strict_model_selection=strict_model_selection,
+                )
             
             elif node_type == "vision" or node_type == "assistant":
                 return await self._run_vision_node(node_data, inputs, nodes)
@@ -458,6 +474,7 @@ class NodeRunner:
         print(f"[NodeRunner] Generating audio: type='{audio_type}', text='{text[:50]}...'")
         
         try:
+            selected_model = data.get("model")
             if audio_type == "music":
                 # Get duration from node data (default 15s for music)
                 duration = data.get("duration", 15)
@@ -467,6 +484,7 @@ class NodeRunner:
                 result = await self.audio_generator.generate_music(
                     prompt=text,
                     duration=duration,
+                    model_id=selected_model if isinstance(selected_model, str) else None,
                 )
             elif audio_type == "sfx":
                 # Get duration from node data (default 5s for SFX)
@@ -477,15 +495,15 @@ class NodeRunner:
                 result = await self.audio_generator.generate_sfx(
                     prompt=text,
                     duration=duration,
+                    model_id=selected_model if isinstance(selected_model, str) else None,
                 )
             else:
                 # Default: speech (TTS)
                 voice = data.get("voice", "Rachel")
-                model = data.get("model")  # From UI model selector
                 result = await self.audio_generator.generate_speech(
                     text=text,
                     voice=voice,
-                    model_id=model if model else "minimax-speech-2-8",
+                    model_id=selected_model if selected_model else "minimax-speech-2-8",
                 )
             
             if result.get("success"):
@@ -512,6 +530,7 @@ class NodeRunner:
         data: Dict[str, Any],
         inputs: Dict[str, Any],
         nodes: List[Dict[str, Any]],
+        strict_model_selection: bool = False,
     ) -> Dict[str, Any]:
         """Generate video using the VideoGenerator service."""
         # Get prompt from text input
@@ -556,13 +575,39 @@ class NodeRunner:
         ratio = data.get("ratio", "16:9")
         resolution = data.get("resolution", "720p")
         # Determine model
-        model_str = data.get("model", "kling-video-3-standard")
+        model_str = data.get("model", self._default_video_model_id)
         use_fast_model = "fast" in model_str.lower()
+        generate_audio_val = data.get("generateAudio", False)
+        if isinstance(generate_audio_val, str):
+            generate_audio = generate_audio_val.strip().lower() in ("1", "true", "yes", "on")
+        else:
+            generate_audio = bool(generate_audio_val)
+
+        has_start_image = bool(start_image)
+        selected_model_str, generate_audio, model_warning, was_swapped = self._select_video_model_for_inputs(
+            requested_model=model_str,
+            has_start_image=has_start_image,
+            wants_native_audio=generate_audio,
+        )
+        if was_swapped:
+            print(f"[NodeRunner] Adjusted video model for capabilities: '{model_str}' -> '{selected_model_str}'")
+        if model_warning:
+            print(f"[NodeRunner] {model_warning}")
+        if strict_model_selection and was_swapped:
+            return {
+                "success": False,
+                "error": (
+                    f"{model_warning or 'Model does not support the required capabilities.'} "
+                    "Please switch to a model that supports this setup "
+                    "(e.g. pick an I2V model when Start Image is connected, and an audio-capable model when Native Audio is enabled)."
+                ),
+            }
+        model_str = selected_model_str
 
         if resolution not in ("720p", "1080p"):
             resolution = "720p"
         
-        print(f"[NodeRunner] Generating video: prompt='{prompt[:50]}...', model='{model_str}', duration={duration}s, ratio={ratio}, resolution={resolution}, fast={use_fast_model}")
+        print(f"[NodeRunner] Generating video: prompt='{prompt[:50]}...', model='{model_str}', duration={duration}s, ratio={ratio}, resolution={resolution}, fast={use_fast_model}, generate_audio={generate_audio}")
         print(f"[NodeRunner] Inputs: start_image={bool(start_image)}, end_image={bool(end_image)}, ref_images={bool(reference_images)}, ref_video={bool(reference_video)}")
         
         try:
@@ -580,6 +625,7 @@ class NodeRunner:
                     duration=duration,
                     aspect_ratio=ratio,
                     model_name=model_str,
+                    generate_audio=generate_audio,
                 )
             
             # Case 2: Start image only (image-to-video)
@@ -593,6 +639,7 @@ class NodeRunner:
                     aspect_ratio=ratio,
                     model_name=model_str,
                     audio_url=audio_input,
+                    generate_audio=generate_audio,
                 )
             
             # Case 3: Reference images (style/asset reference)
@@ -606,6 +653,7 @@ class NodeRunner:
                     duration=duration,
                     aspect_ratio=ratio,
                     model_name=model_str,
+                    generate_audio=generate_audio,
                 )
             
             # Case 4: Reference video (extend or use as reference)
@@ -629,6 +677,7 @@ class NodeRunner:
                     aspect_ratio=ratio,
                     model_name=model_str,
                     audio_url=audio_input,
+                    generate_audio=generate_audio,
                 )
             
             if result.get("success"):
@@ -649,7 +698,7 @@ class NodeRunner:
                 else:
                     print(f"[NodeRunner] ⚠️ End frame extraction failed (ffmpeg may not be installed)")
                 
-                return {
+                response: Dict[str, Any] = {
                     "success": True,
                     "output": video_url,
                     "start_frame": start_frame,
@@ -658,6 +707,9 @@ class NodeRunner:
                     "model": result.get("model", model_str),
                     "provider": result.get("provider", "Runware"),
                 }
+                if model_warning:
+                    response["warning"] = model_warning
+                return response
             else:
                 return {
                     "success": False,
@@ -670,6 +722,90 @@ class NodeRunner:
                 "success": False,
                 "error": f"Video generation error: {str(e)}",
             }
+
+    def _resolve_video_model_entry(self, model_input: str) -> Optional[Dict[str, Any]]:
+        """Resolve a video model entry from id, display name, or AIR id."""
+        if not model_input:
+            return get_model_by_id(self._default_video_model_id)
+
+        by_id = get_model_by_id(model_input)
+        if by_id and by_id.get("type") == "video":
+            return by_id
+
+        by_name = get_model_by_name(model_input)
+        if by_name and by_name.get("type") == "video":
+            return by_name
+
+        air_id = resolve_air_id(
+            model_input=model_input,
+            fallback_air_id=self._default_video_air_id,
+            model_type="video",
+        )
+        by_air = get_model_by_air_id(air_id)
+        if by_air and by_air.get("type") == "video":
+            return by_air
+
+        return get_model_by_air_id(self._default_video_air_id)
+
+    def _pick_best_video_model(self, need_i2v: bool, need_audio: bool) -> Dict[str, Any]:
+        """Pick a fallback video model that satisfies capability constraints."""
+        def has_caps(entry: Dict[str, Any]) -> bool:
+            caps = {c.lower() for c in entry.get("capabilities", [])}
+            return (not need_i2v or "i2v" in caps) and (not need_audio or "audio" in caps)
+
+        candidates = [m for m in VIDEO_MODELS if has_caps(m)]
+        if not candidates:
+            return get_model_by_id(self._default_video_model_id) or VIDEO_MODELS[0]
+
+        def rank(entry: Dict[str, Any]) -> int:
+            tier = str(entry.get("tier", "budget")).lower()
+            tier_rank = {"premium": 0, "mid": 1, "budget": 2}.get(tier, 3)
+            return tier_rank
+
+        candidates.sort(key=rank)
+        return candidates[0]
+
+    def _select_video_model_for_inputs(
+        self,
+        requested_model: str,
+        has_start_image: bool,
+        wants_native_audio: bool,
+    ) -> tuple[str, bool, Optional[str], bool]:
+        """Ensure selected model supports requested i2v/audio combo.
+
+        Returns:
+            (model_name, generate_audio, warning_or_none, was_swapped)
+        """
+        entry = self._resolve_video_model_entry(requested_model)
+        if not entry:
+            entry = get_model_by_id(self._default_video_model_id)
+        if not entry:
+            return requested_model, wants_native_audio, None, False
+
+        caps = {c.lower() for c in entry.get("capabilities", [])}
+        need_i2v = has_start_image
+        need_audio = wants_native_audio
+
+        supports_i2v = "i2v" in caps
+        supports_audio = "audio" in caps
+
+        if (need_i2v and not supports_i2v) or (need_audio and not supports_audio):
+            reason_bits: List[str] = []
+            if need_i2v and not supports_i2v:
+                reason_bits.append("image-to-video")
+            if need_audio and not supports_audio:
+                reason_bits.append("native audio")
+            reason = " + ".join(reason_bits) if reason_bits else "requested capabilities"
+
+            replacement = self._pick_best_video_model(need_i2v=need_i2v, need_audio=need_audio)
+            replacement_name = str(replacement.get("name") or replacement.get("id") or self._default_video_model_id)
+            warning = (
+                f"Requested model '{entry.get('name', requested_model)}' does not support {reason}; "
+                f"switched to '{replacement_name}'."
+            )
+            return replacement_name, wants_native_audio, warning, True
+
+        return str(entry.get("name") or requested_model), wants_native_audio, None, False
 
     async def _run_vision_node(
         self,

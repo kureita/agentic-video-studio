@@ -1,18 +1,41 @@
 "use client";
 
-import { ArrowLeft, Loader2, CheckCircle2, Cloud, MessageSquare, Play, Square } from "lucide-react";
+import { ArrowLeft, Loader2, CheckCircle2, Cloud, MessageSquare, Play, Square, Share2, Link2, Check, Globe, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useWorkflowStore } from "@/lib/workflow-store";
 import { useRouter } from "next/navigation";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useMobileTab } from "@/app/dashboard/layout";
+import { toast } from "sonner";
 
 export function WorkflowHeader() {
     const router = useRouter();
-    const { name, setName, isSaving, isDirty, saveWorkflow, isRunning, runWorkflow, cancelJob, activeJobId, executionProgress } = useWorkflowStore();
+    const { id, name, setName, isSaving, isDirty, saveWorkflow, isRunning, runWorkflow, cancelJob, activeJobId, executionProgress, isPublic, togglePublic } = useWorkflowStore();
     const [editingName, setEditingName] = useState(name);
     const { setActiveTab } = useMobileTab();
+    const [showShareMenu, setShowShareMenu] = useState(false);
+    const [copied, setCopied] = useState(false);
+
+    const shareUrl = typeof window !== "undefined" && id ? `${window.location.origin}/w/?id=${id}` : "";
+
+    const handleCopyLink = useCallback(() => {
+        if (!shareUrl) return;
+        navigator.clipboard.writeText(shareUrl);
+        setCopied(true);
+        toast.success("Link copied to clipboard");
+        setTimeout(() => setCopied(false), 2000);
+    }, [shareUrl]);
+
+    const handleTogglePublic = useCallback(async () => {
+        const newValue = !isPublic;
+        await togglePublic(newValue);
+        if (newValue) {
+            toast.success("Workflow is now public. Anyone with the link can view it.");
+        } else {
+            toast.info("Workflow is now private.");
+        }
+    }, [isPublic, togglePublic]);
 
     // Sync local state with store
     useEffect(() => {
@@ -74,6 +97,67 @@ export function WorkflowHeader() {
             </div>
 
             <div className="flex items-center gap-2">
+                {/* Share Button */}
+                <div className="relative">
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 gap-2 hidden sm:flex"
+                        onClick={() => setShowShareMenu(!showShareMenu)}
+                    >
+                        {isPublic ? <Globe className="w-3.5 h-3.5 text-green-500" /> : <Lock className="w-3.5 h-3.5" />}
+                        <span>Share</span>
+                    </Button>
+                    <Button
+                        variant="outline"
+                        size="icon"
+                        className="h-8 w-8 sm:hidden"
+                        onClick={() => setShowShareMenu(!showShareMenu)}
+                    >
+                        <Share2 className="w-4 h-4" />
+                    </Button>
+
+                    {showShareMenu && (
+                        <>
+                            <div className="fixed inset-0 z-40" onClick={() => setShowShareMenu(false)} />
+                            <div className="absolute right-0 top-10 z-50 w-72 bg-popover border border-border rounded-xl shadow-2xl p-4 space-y-3 animate-in fade-in zoom-in-95 duration-150">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-sm font-medium">Public access</span>
+                                    <button
+                                        onClick={handleTogglePublic}
+                                        className={`relative w-10 h-5 rounded-full transition-colors ${isPublic ? 'bg-green-500' : 'bg-muted-foreground/30'} cursor-pointer`}
+                                    >
+                                        <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${isPublic ? 'translate-x-5' : ''}`} />
+                                    </button>
+                                </div>
+                                <p className="text-xs text-muted-foreground">
+                                    {isPublic
+                                        ? "Anyone with the link can view this workflow (read-only)."
+                                        : "Only you can access this workflow."}
+                                </p>
+                                {isPublic && (
+                                    <div className="flex gap-2">
+                                        <input
+                                            readOnly
+                                            value={shareUrl}
+                                            className="flex-1 h-8 text-xs bg-muted/50 border border-border rounded-lg px-2 truncate"
+                                        />
+                                        <Button
+                                            size="sm"
+                                            variant="outline"
+                                            className="h-8 gap-1.5 shrink-0"
+                                            onClick={handleCopyLink}
+                                        >
+                                            {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Link2 className="w-3.5 h-3.5" />}
+                                            {copied ? "Copied" : "Copy"}
+                                        </Button>
+                                    </div>
+                                )}
+                            </div>
+                        </>
+                    )}
+                </div>
+
                 {/* Run All / Cancel Button */}
                 {isRunning && activeJobId ? (
                     <div className="flex items-center gap-2">

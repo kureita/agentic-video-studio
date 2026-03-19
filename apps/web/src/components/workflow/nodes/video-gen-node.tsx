@@ -15,7 +15,8 @@ import { cn } from "@/lib/utils";
 const DEFAULT_INPUTS: { id: string, label: string, type: "text" | "image" | "video" | "audio" }[] = [
     { id: "text", label: "Text/Prompt", type: "text" },
     { id: "start_image", label: "Start Image", type: "image" },
-    { id: "end_image", label: "End Image", type: "image" }
+    { id: "end_image", label: "End Image", type: "image" },
+    { id: "audio", label: "Audio", type: "audio" }
 ];
 
 const getCapabilitiesLabel = (capabilities: string[] = []) => {
@@ -146,14 +147,14 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
 
 
     // Sync node data to workflow store
-    const updateData = (updates: Record<string, unknown>) => {
+    const updateData = useCallback((updates: Record<string, unknown>) => {
         updateNodeData(id, updates);
         setNodes(
             nodes.map((n) =>
                 n.id === id ? { ...n, data: { ...n.data, ...updates } } : n
             )
         );
-    };
+    }, [id, updateNodeData, setNodes, nodes]);
 
     const currentModelId = (typeof data.model === 'string' ? data.model : (videoModels.length > 0 ? videoModels[0].id : "kling-video-3-standard"));
     const currentModelEntry = videoModels.find(m => m.id === currentModelId) || videoModels.find(m => m.name === currentModelId);
@@ -161,6 +162,18 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
     const configInputs = DEFAULT_INPUTS;
 
     const selectedModelData = currentModelEntry;
+    const hasNativeAudioCapability = !!selectedModelData?.capabilities?.some(
+        (c) => c.toLowerCase() === "audio"
+    );
+    const rawGenerateAudio = typeof data.generateAudio === "boolean" ? data.generateAudio : false;
+    const generateAudio = hasNativeAudioCapability ? rawGenerateAudio : false;
+
+    // Keep node data capability-consistent when assistant-selected model/audio combos drift.
+    useEffect(() => {
+        if (!hasNativeAudioCapability && rawGenerateAudio) {
+            updateData({ generateAudio: false });
+        }
+    }, [hasNativeAudioCapability, rawGenerateAudio, updateData]);
     let validDurations = ["5s", "8s", "10s"];
     let validResolutions = ["720p", "1080p"];
     if (selectedModelData && selectedModelData.configs) {
@@ -204,7 +217,13 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
             newResolution = newValidResolutions[0];
         }
 
-        updateData({ model: newModelId, duration: newDuration, resolution: newResolution });
+        const newModelHasAudio = !!newModelData?.capabilities?.some((c) => c.toLowerCase() === "audio");
+        updateData({
+            model: newModelId,
+            duration: newDuration,
+            resolution: newResolution,
+            generateAudio: newModelHasAudio ? (typeof data.generateAudio === "boolean" ? data.generateAudio : false) : false,
+        });
     };
 
     const handleDownload = () => {
@@ -642,6 +661,34 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
                                                 </button>
                                             ))}
                                         </div>
+                                    </div>
+
+                                    {/* Native Audio Toggle */}
+                                    <div className="flex flex-col gap-1.5 nodrag nowheel">
+                                        <label className="text-[10px] text-white/70 px-1">Native Audio</label>
+                                        <button
+                                            type="button"
+                                            disabled={!hasNativeAudioCapability}
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                if (!hasNativeAudioCapability) return;
+                                                updateData({ generateAudio: !generateAudio });
+                                            }}
+                                            className={cn(
+                                                "w-full px-2 py-1 text-[10px] rounded border transition-colors cursor-pointer text-center",
+                                                generateAudio
+                                                    ? "bg-white/20 border-white/30 text-white"
+                                                    : "bg-black/40 border-white/10 text-white/70 hover:bg-white/10",
+                                                !hasNativeAudioCapability && "opacity-50 cursor-not-allowed hover:bg-black/40"
+                                            )}
+                                        >
+                                            {generateAudio ? "Enabled" : "Disabled"}
+                                        </button>
+                                        <p className="text-[9px] text-white/40 px-1">
+                                            {hasNativeAudioCapability
+                                                ? "Creates model-native audio in the generated clip."
+                                                : "Selected model has no native audio capability."}
+                                        </p>
                                     </div>
                                 </motion.div>
                             )}
