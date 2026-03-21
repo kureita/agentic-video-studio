@@ -4,6 +4,43 @@ Model Registry — Single source of truth for all featured image, video, and aud
 Used by both the API (for billing, model selection) and exposed to the UI via /billing/models.
 Pricing here is for reference/estimation only — actual cost comes from Runware's `includeCost`
 response and is what gets billed to the user.
+
+══════════════════════════════════════════════════════════════════════════════
+IMAGE MODEL DIMENSION & REFERENCE-IMAGE SUPPORT CHEAT SHEET  (March 2026)
+══════════════════════════════════════════════════════════════════════════════
+
+This table documents the EXACT constraints each image model has on Runware.
+If you add/update a model, UPDATE BOTH this table AND the _MODEL_DIMENSIONS
+dict in runware_service.py.  Mismatched dimensions cause "unsupportedDimensions"
+400 errors that are reported by customers.
+
+Model ID            Final AIR (after override)   Dims source           Supports i2i?  Ref mechanism
+──────────────────  ───────────────────────────  ────────────────────  ─────────────  ──────────────
+gpt-image-1         openai:1@1                   _MODEL_DIMENSIONS     ✅ yes          referenceImages
+dalle-3             openai:2@3                   _MODEL_DIMENSIONS     ❌ no           —
+flux-2-max          runware:101@1  (override)    _IMAGE_DEFAULT_DIMS   ✅ yes          seedImage
+nano-banana-2       google:4@3     (override)    _MODEL_DIMENSIONS     ✅ yes          referenceImages
+kling-image-o3      klingai:kling-image@o3       _MODEL_DIMENSIONS     ✅ yes          inputs.referenceImages
+seedream-5-lite     bytedance:seedream@5.0-lite  _MODEL_DIMENSIONS     ❌ no           —
+recraft-v4          recraft:v4@0                 _MODEL_DIMENSIONS     ✅ yes          referenceImages
+recraft-v4-pro      recraft:v4-pro@0             _MODEL_DIMENSIONS     ✅ yes          referenceImages
+grok-imagine-image  xai:grok-imagine@image       _MODEL_DIMENSIONS     ❌ no           —
+imagen-4-ultra      google:2@2                   _MODEL_DIMENSIONS     ❌ no           —
+imagen-4-preview    google:2@1                   _MODEL_DIMENSIONS     ❌ no           —
+flux-2-dev          runware:101@1  (override)    _IMAGE_DEFAULT_DIMS   ✅ yes          seedImage
+flux-2-flex         runware:100@1  (override)    _IMAGE_DEFAULT_DIMS   ✅ yes          seedImage
+flux-2-klein-9b     runware:100@1  (override)    _IMAGE_DEFAULT_DIMS   ❌ no           —
+
+Key:
+  "Final AIR"     = the Runware model ID after _VALID_RUNWARE_OVERRIDES
+  "Dims source"   = which dimension table in runware_service.py resolves the (w,h)
+  "Ref mechanism"  = which JSON field in the Runware payload carries the ref image
+
+⚠️  When the "Final AIR" column says "(override)", the dimension lookup uses
+    the OVERRIDDEN model ID, not the original air_id.  If you change an
+    override mapping, verify that the new target has a matching dimension
+    entry or falls to safe defaults.
+══════════════════════════════════════════════════════════════════════════════
 """
 
 from typing import Dict, List, Any
@@ -21,6 +58,7 @@ IMAGE_MODELS: List[Dict[str, Any]] = [
         "type": "image",
         "tier": "premium",
         "air_id": "openai:1@1",
+        # i2i: uses referenceImages array.  Only 3 ratios supported (1:1, 16:9, 9:16).
         "capabilities": ["t2i", "i2i"],
         "configs": [
             {"id": "default", "label": "Standard", "width": 1024, "height": 1024, "est_price_usd": 0.05},
@@ -34,6 +72,7 @@ IMAGE_MODELS: List[Dict[str, Any]] = [
         "type": "image",
         "tier": "premium",
         "air_id": "openai:2@3",
+        # NO i2i support — text-to-image only.  Only 3 ratios (1:1, 16:9, 9:16).
         "capabilities": ["t2i"],
         "configs": [
             {"id": "1024x1024", "label": "Square (1024x1024)", "width": 1024, "height": 1024, "est_price_usd": 0.08},
@@ -49,6 +88,8 @@ IMAGE_MODELS: List[Dict[str, Any]] = [
         "type": "image",
         "tier": "premium",
         "air_id": "bfl:flux-2@max",
+        # Overridden to runware:101@1 (FLUX Schnell).  Uses seedImage for i2i.
+        # Accepts any dims that are multiples of 64 → uses _IMAGE_DEFAULT_DIMENSIONS.
         "capabilities": ["t2i", "i2i", "reference"],
         "configs": [
             {"id": "1mp",   "label": "1 MP (1024×1024)", "width": 1024, "height": 1024, "est_price_usd": 0.07},
@@ -67,6 +108,10 @@ IMAGE_MODELS: List[Dict[str, Any]] = [
         "type": "image",
         "tier": "premium",
         "air_id": "banana:nano@2",
+        # Overridden to google:4@3 (Gemini Flash 3.1 Image).
+        # ⚠️ Uses NON-STANDARD dimensions — see _MODEL_DIMENSIONS["google:4@3"]
+        # in runware_service.py.  Common dims like 1024x576 are NOT supported.
+        # i2i: uses referenceImages array (Google provider path).
         "capabilities": ["t2i", "i2i"],
         "configs": [
             {"id": "1mp-sq",   "label": "1 MP (1024×1024)",     "width": 1024, "height": 1024, "est_price_usd": 0.047},
@@ -85,6 +130,8 @@ IMAGE_MODELS: List[Dict[str, Any]] = [
         "type": "image",
         "tier": "mid",
         "air_id": "klingai:kling-image@o3",
+        # i2i: uses inputs.referenceImages (nested).
+        # Dimensions are non-standard — see _MODEL_DIMENSIONS["klingai:kling-image"].
         "capabilities": ["t2i", "i2i"],
         "configs": [
             {"id": "1024x1024", "label": "1024×1024", "width": 1024, "height": 1024, "est_price_usd": 0.028},
@@ -101,6 +148,7 @@ IMAGE_MODELS: List[Dict[str, Any]] = [
         "type": "image",
         "tier": "mid",
         "air_id": "bytedance:seedream@5.0-lite",
+        # NO i2i support — text-to-image only.
         "capabilities": ["t2i"],
         "configs": [
             {"id": "default", "label": "Up to 3K res", "width": 1024, "height": 1024, "est_price_usd": 0.035},
@@ -114,6 +162,8 @@ IMAGE_MODELS: List[Dict[str, Any]] = [
         "type": "image",
         "tier": "mid",
         "air_id": "recraft:v4@0",
+        # i2i: uses referenceImages array.  Noted as INCONSISTENT on Runware REST
+        # (may return 400 for some image formats).
         "capabilities": ["t2i", "i2i", "vector", "svg"],
         "configs": [
             {"id": "default", "label": "Standard", "width": 1024, "height": 1024, "est_price_usd": 0.04},
@@ -127,6 +177,7 @@ IMAGE_MODELS: List[Dict[str, Any]] = [
         "type": "image",
         "tier": "premium",
         "air_id": "recraft:v4-pro@0",
+        # Same i2i behavior as Recraft V4.
         "capabilities": ["t2i", "i2i", "vector", "svg"],
         "configs": [
             {"id": "default", "label": "Standard", "width": 1024, "height": 1024, "est_price_usd": 0.25},
@@ -140,6 +191,10 @@ IMAGE_MODELS: List[Dict[str, Any]] = [
         "type": "image",
         "tier": "mid",
         "air_id": "xai:grok-imagine@image",
+        # NO i2i support in our flow.  Runware docs say the model CAN accept
+        # seedImage, but our testing showed inconsistent results.  Keeping t2i-only
+        # until we can validate i2i reliability.
+        # Dimensions are non-standard — see _MODEL_DIMENSIONS["xai:grok-imagine"].
         "capabilities": ["t2i"],
         "configs": [
             {"id": "1024x1024", "label": "1024×1024", "width": 1024, "height": 1024, "est_price_usd": 0.02},
@@ -154,6 +209,9 @@ IMAGE_MODELS: List[Dict[str, Any]] = [
         "type": "image",
         "tier": "mid",
         "air_id": "google:2@2",
+        # NO i2i support — text-to-image only.
+        # ⚠️ Uses NON-STANDARD dimensions — see _MODEL_DIMENSIONS["google:2@"].
+        # A previous bug used the "google:" video prefix for Imagen, causing 400s.
         "capabilities": ["t2i"],
         "configs": [
             {"id": "default", "label": "Standard", "width": 1024, "height": 1024, "est_price_usd": 0.06},
@@ -167,6 +225,7 @@ IMAGE_MODELS: List[Dict[str, Any]] = [
         "type": "image",
         "tier": "mid",
         "air_id": "google:2@1",
+        # Same constraints as Imagen 4 Ultra above.
         "capabilities": ["t2i"],
         "configs": [
             {"id": "default", "label": "Standard", "width": 1024, "height": 1024, "est_price_usd": 0.04},
@@ -182,6 +241,8 @@ IMAGE_MODELS: List[Dict[str, Any]] = [
         "type": "image",
         "tier": "budget",
         "air_id": "bfl:flux-2@dev",
+        # Overridden to runware:101@1.  Uses seedImage for i2i.
+        # Accepts multiples of 64 → _IMAGE_DEFAULT_DIMENSIONS.
         "capabilities": ["t2i", "i2i"],
         "configs": [
             {"id": "1mp",   "label": "1 MP (1024×1024)",   "width": 1024, "height": 1024, "est_price_usd": 0.005},
@@ -196,6 +257,7 @@ IMAGE_MODELS: List[Dict[str, Any]] = [
         "type": "image",
         "tier": "mid",
         "air_id": "bfl:flux-2@flex",
+        # Overridden to runware:100@1.  Uses seedImage for i2i.
         "capabilities": ["t2i", "i2i", "reference", "fill"],
         "configs": [
             {"id": "default", "label": "Standard", "width": 1024, "height": 1024, "est_price_usd": 0.06},
@@ -209,6 +271,8 @@ IMAGE_MODELS: List[Dict[str, Any]] = [
         "type": "image",
         "tier": "budget",
         "air_id": "bfl:flux-2@klein-9b",
+        # NO i2i support — text-to-image only.
+        # Overridden to runware:100@1.  Uses _IMAGE_DEFAULT_DIMENSIONS.
         "capabilities": ["t2i"],
         "configs": [
             {"id": "default", "label": "Standard", "width": 1024, "height": 1024, "est_price_usd": 0.00078},

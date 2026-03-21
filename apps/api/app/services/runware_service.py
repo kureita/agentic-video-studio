@@ -167,10 +167,34 @@ class RunwareService:
         }
 
     async def image_to_image(self, prompt: str, image_url: str, width: int = 1024, height: int = 1024, model: str = "bfl:flux-2@dev", strength: float = 0.8) -> dict:
-        """Generate an image based on an input image and prompt."""
+        """Generate an image based on an input image (reference / seed image).
+
+        ┌─────────────────────────────────────────────────────────────────────┐
+        │  PROVIDER-SPECIFIC REFERENCE IMAGE PAYLOAD FORMATS                  │
+        │                                                                     │
+        │  Each Runware provider expects the reference image in a DIFFERENT   │
+        │  payload field.  Getting this wrong → silent 400 or garbled output. │
+        │                                                                     │
+        │  Provider        Payload field              Strength?  Multi-img?   │
+        │  ─────────────   ────────────────────────   ─────────  ──────────   │
+        │  google          referenceImages: [uri]     No         Yes (array)  │
+        │  openai          referenceImages: [uri]     No         Yes (array)  │
+        │  klingai         inputs.referenceImages     No         Yes (array)  │
+        │  bytedance       referenceImages: [uri]     No         Yes (array)  │
+        │  recraft         referenceImages: [uri]     No         Inconsistent │
+        │  xai             seedImage: uri             Yes        No (single)  │
+        │  default (flux)  seedImage: uri             Yes        No (single)  │
+        │                                                                     │
+        │  "uri" = data URI (base64) or Runware imageUUID.                    │
+        │  "strength" = 0.0-1.0, how much to deviate from the seed image.    │
+        │                                                                     │
+        │  ⚠️ Before calling this method, the CALLER must verify the model   │
+        │  supports i2i (check "i2i" in model capabilities).  Models without │
+        │  i2i will return Runware errors that are hard to diagnose.          │
+        └─────────────────────────────────────────────────────────────────────┘
+        """
         seed_image = await self._url_to_data_uri(image_url)
 
-        # Base task structure
         task: Dict[str, Any] = {
             "taskType": "imageInference",
             "positivePrompt": prompt,
@@ -181,27 +205,18 @@ class RunwareService:
 
         provider = model.split(":")[0].lower() if ":" in model else ""
 
-        # Construct payload based on provider-specific requirements
         if provider in ("google", "openai"):
-            # Google (Gemini/Imagen) & OpenAI (GPT Image):
-            # Uses top-level referenceImages array, no strength
             task["referenceImages"] = [seed_image]
         elif provider == "klingai":
-            # Kling AI: Uses nested inputs.referenceImages, no strength
             task["inputs"] = {"referenceImages": [seed_image]}
         elif provider == "bytedance":
-            # ByteDance (SeedEdit/Seedream): Uses top-level referenceImages array
             task["referenceImages"] = [seed_image]
         elif provider == "recraft":
-            # Recraft V4 currently has inconsistent I2I support on Runware REST.
-            # We'll try referenceImages (top-level) but it may still return 400.
             task["referenceImages"] = [seed_image]
         elif provider == "xai":
-            # Grok / xAI: Uses seedImage + strength
             task["seedImage"] = seed_image
             task["strength"] = strength
         else:
-            # Default (Flux/SD/Runware): Uses seedImage (string) and strength (float)
             task["seedImage"] = seed_image
             task["strength"] = strength
         
@@ -228,13 +243,40 @@ class RunwareService:
             "cost": data.get("cost", 0.0),
         }
 
-    # ── Dimension tables ────────────────────────────────────────────────────
+    # ══════════════════════════════════════════════════════════════════════
+    # DIMENSION TABLES — CRITICAL: READ BEFORE EDITING
+    # ══════════════════════════════════════════════════════════════════════
     #
-    # VIDEO default: standard broadcast resolutions (720p, 1080p …).
-    # IMAGE default: every value is a multiple of 64 so FLUX / SD / Runware
-    #   native models never reject the payload.
-    # Per-model overrides live in _MODEL_DIMENSIONS and are returned AS-IS
-    #   (they contain the exact values each provider's API accepts).
+    # WHY THIS SECTION EXISTS:
+    #   Every image/video provider on Runware accepts ONLY a specific set of
+    #   (width, height) pairs.  Sending an unsupported size gives a 400 error
+    #   with code "unsupportedDimensions".  These tables are the source of
+    #   truth that maps (model, aspect_ratio) → (width, height).
+    #
+    # HOW IT WORKS:
+    #   _resolve_image_dimensions() and _resolve_dimensions() iterate
+    #   _MODEL_DIMENSIONS using str.startswith(prefix).  The FIRST matching
+    #   prefix wins, so ORDER MATTERS.  Put more-specific prefixes BEFORE
+    #   shorter/broader ones (e.g. "google:4@3" before "google:3@").
+    #
+    # ADDING A NEW MODEL — CHECKLIST:
+    #   1. Find the model's Runware AIR ID  (e.g. "google:4@3").
+    #   2. Look up allowed dimensions at https://runware.ai/docs/providers/<provider>
+    #      or trigger a test call and read the "allowedValues" in the error.
+    #   3. Add an entry below with the EXACT (width, height) from the docs.
+    #      Use the "1K" tier values (≈1024px longest side) for image models.
+    #   4. Cover AT LEAST: 1:1, 16:9, 9:16, 4:3, 3:4  (the 5 ratios our UI
+    #      exposes).  Add 3:2, 2:3, 21:9 if the provider supports them.
+    #   5. If the model is accessed via _VALID_RUNWARE_OVERRIDES (model_registry.py),
+    #      the entry here must use the FINAL Runware model ID (after override),
+    #      NOT the fake/display AIR ID.
+    #
+    # COMMON MISTAKE (caused production outage — fixed 2026-03):
+    #   A broad prefix like "google:" matched BOTH video models (Veo 3.x)
+    #   and image models (Imagen 4, Gemini Flash 3.1 Image), giving image
+    #   models the wrong (video) dimensions → 400 errors for every Google
+    #   image generation.  ALWAYS use narrow prefixes.
+    # ══════════════════════════════════════════════════════════════════════
 
     _VIDEO_DEFAULT_DIMENSIONS = {
         "16:9": (1280, 720),
@@ -244,6 +286,10 @@ class RunwareService:
         "3:4":  (720, 960),
     }
 
+    # Default IMAGE dimensions — every value is a multiple of 64.
+    # Safe for FLUX, Stable Diffusion, and Runware-native models (runware:100@1,
+    # runware:101@1, etc.).  Models with stricter requirements MUST have their
+    # own entry in _MODEL_DIMENSIONS below.
     _IMAGE_DEFAULT_DIMENSIONS = {
         "16:9": (1024, 576),
         "9:16": (576, 1024),
@@ -255,11 +301,19 @@ class RunwareService:
         "21:9": (1344, 576),
     }
 
-    # Keys are model-ID prefixes (matched via str.startswith).
-    # Values map aspect_ratio → (width, height).
-    # These are the EXACT dimensions each provider accepts — never modify them.
+    # Keys = model-ID prefixes matched via str.startswith().
+    # Values = { aspect_ratio: (width, height) }.
+    # The EXACT pixel values come from each provider's Runware docs / error
+    # responses.  Do NOT round, pad, or "fix" them — they must match exactly.
+    #
+    # ⚠️  ORDER MATTERS: more-specific prefixes must come BEFORE broader ones.
+    #     e.g. "google:4@3" (image) before "google:3@" (video).
     _MODEL_DIMENSIONS: Dict[str, Dict[str, tuple]] = {
-        # ── Video models ──────────────────────────────────────────
+
+        # ┌──────────────────────────────────────────────────────────────┐
+        # │  VIDEO MODELS                                                │
+        # └──────────────────────────────────────────────────────────────┘
+
         "klingai:kling-video@3-pro": {
             "16:9": (1920, 1080),
             "9:16": (1080, 1920),
@@ -272,8 +326,10 @@ class RunwareService:
             "9:16": (768, 1366),
             "1:1":  (1024, 1024),
         },
-        # Google video (Veo) — conservative dimensions verified to work.
-        "google:": {
+        # Google Veo 3.x video models ONLY.
+        # Prefix "google:3@" matches google:3@2 (Veo 3.1) and google:3@3 (Veo 3.1 Fast)
+        # but does NOT match google:2@* (Imagen) or google:4@* (Gemini Flash Image).
+        "google:3@": {
             "16:9": (1280, 720),
             "9:16": (720, 1280),
             "1:1":  (1024, 1024),
@@ -284,7 +340,44 @@ class RunwareService:
             "21:9": (1344, 576),
         },
 
-        # ── Image models ─────────────────────────────────────────
+        # ┌──────────────────────────────────────────────────────────────┐
+        # │  IMAGE MODELS                                                │
+        # │  Each entry uses the 1K-tier values from Runware docs.       │
+        # │  Source links are in comments so we can re-verify later.     │
+        # └──────────────────────────────────────────────────────────────┘
+
+        # Google Gemini Flash 3.1 Image  (AIR: google:4@3)
+        # This is the REAL model behind "Nano Banana 2" (banana:nano@2 → google:4@3
+        # via _VALID_RUNWARE_OVERRIDES in model_registry.py).
+        # Source: Runware error response "allowedValues" — March 2026.
+        # Dimensions are NON-standard (not multiples of 64); using the 1K tier.
+        "google:4@3": {
+            "1:1":  (1024, 1024),
+            "16:9": (1376, 768),
+            "9:16": (768, 1376),
+            "4:3":  (1200, 896),
+            "3:4":  (896, 1200),
+            "3:2":  (1264, 848),
+            "2:3":  (848, 1264),
+            "4:5":  (928, 1152),
+            "5:4":  (1152, 928),
+            "21:9": (1584, 672),
+        },
+
+        # Google Imagen 4  (AIR: google:2@2 = Ultra, google:2@1 = Preview)
+        # Source: Google Cloud Vertex AI docs + Runware model pages — March 2026.
+        # https://runware.ai/models/google-imagen-4-ultra
+        # https://docs.cloud.google.com/vertex-ai/generative-ai/docs/models/imagen/4-0-generate
+        "google:2@": {
+            "1:1":  (1024, 1024),
+            "16:9": (1408, 768),
+            "9:16": (768, 1408),
+            "4:3":  (1280, 896),
+            "3:4":  (896, 1280),
+        },
+
+        # ByteDance Seedream  (AIR: bytedance:seedream@5.0-lite, etc.)
+        # Source: Runware provider docs for ByteDance.
         "bytedance:seedream": {
             "16:9": (2560, 1440),
             "9:16": (1440, 2560),
@@ -292,13 +385,37 @@ class RunwareService:
             "4:3":  (2048, 1536),
             "3:4":  (1536, 2048),
         },
-        "recraft:v4": {
+
+        # Recraft V4  (AIR: recraft:v4@0)
+        # Source: Runware provider docs for Recraft — March 2026.
+        # V4 (non-pro) accepts standard multiples-of-64 dimensions.
+        "recraft:v4@0": {
+            "1:1":  (1024, 1024),
             "16:9": (1024, 576),
             "9:16": (576, 1024),
-            "1:1":  (1024, 1024),
             "4:3":  (1024, 768),
             "3:4":  (768, 1024),
         },
+
+        # Recraft V4 Pro  (AIR: recraft:v4-pro@0)
+        # ⚠️ DIFFERENT dimensions from V4 — all values are 2K-tier and
+        # NON-standard.  The old "recraft:v4" prefix caught both v4@0 and
+        # v4-pro@0 and gave V4 Pro the V4 dimensions, which Runware rejects.
+        # Source: Runware error response "allowedValues" — March 2026.
+        "recraft:v4-pro": {
+            "1:1":  (2048, 2048),
+            "16:9": (2688, 1536),
+            "9:16": (1536, 2688),
+            "4:3":  (2432, 1792),
+            "3:4":  (1792, 2432),
+            "3:2":  (2560, 1664),
+            "2:3":  (1664, 2560),
+            "4:5":  (1792, 2304),
+            "5:4":  (2304, 1792),
+        },
+
+        # KlingAI Image  (AIR: klingai:kling-image@o3, etc.)
+        # Source: Runware provider docs for KlingAI.
         "klingai:kling-image": {
             "16:9": (1360, 768),
             "9:16": (768, 1360),
@@ -309,37 +426,87 @@ class RunwareService:
             "2:3":  (832, 1248),
             "21:9": (1552, 656),
         },
+
+        # OpenAI GPT Image 1  (AIR: openai:1@1)
+        # Only 3 aspect ratios supported by OpenAI.
+        # Source: https://runware.ai/docs/providers/openai
         "openai:1": {
             "16:9": (1536, 1024),
             "9:16": (1024, 1536),
             "1:1":  (1024, 1024),
         },
+
+        # OpenAI DALL-E 3  (AIR: openai:2@3)
+        # Only 3 aspect ratios supported by OpenAI.
+        # Source: https://runware.ai/docs/providers/openai
         "openai:2": {
             "16:9": (1792, 1024),
             "9:16": (1024, 1792),
             "1:1":  (1024, 1024),
         },
+
+        # xAI Grok Imagine Image  (AIR: xai:grok-imagine@image)
+        # Source: https://runware.ai/docs/providers/xai — March 2026.
+        # Dimensions are NON-standard; these are the exact values from Runware.
+        "xai:grok-imagine": {
+            "1:1":  (1024, 1024),
+            "16:9": (1408, 768),
+            "9:16": (768, 1408),
+            "4:3":  (1280, 896),
+            "3:4":  (896, 1280),
+            "3:2":  (1296, 864),
+            "2:3":  (864, 1296),
+        },
     }
 
     def _resolve_dimensions(self, model: str, aspect_ratio: str) -> tuple:
-        """Return (width, height) for a VIDEO model and aspect ratio."""
+        """Return (width, height) for a VIDEO model and aspect ratio.
+
+        Checks _MODEL_DIMENSIONS first (prefix match), then falls back to
+        _VIDEO_DEFAULT_DIMENSIONS.
+        """
         for prefix, dim_map in self._MODEL_DIMENSIONS.items():
             if model.startswith(prefix):
-                return dim_map.get(aspect_ratio, dim_map.get("16:9", (1280, 720)))
-        return self._VIDEO_DEFAULT_DIMENSIONS.get(aspect_ratio, (1280, 720))
+                dims = dim_map.get(aspect_ratio, dim_map.get("16:9", (1280, 720)))
+                print(f"[Runware] _resolve_dimensions: {model} ({aspect_ratio}) → {dims[0]}x{dims[1]} (matched prefix '{prefix}')")
+                return dims
+        dims = self._VIDEO_DEFAULT_DIMENSIONS.get(aspect_ratio, (1280, 720))
+        print(f"[Runware] _resolve_dimensions: {model} ({aspect_ratio}) → {dims[0]}x{dims[1]} (VIDEO defaults)")
+        return dims
 
     def _resolve_image_dimensions(self, model: str, aspect_ratio: str) -> tuple:
         """Return (width, height) for an IMAGE model and aspect ratio.
 
-        Model-specific entries are returned as-is (providers dictate exact
-        pixel values).  The fallback is _IMAGE_DEFAULT_DIMENSIONS where
-        every value is a multiple of 64 — safe for FLUX, SD, and Runware
-        native models.
+        Resolution order:
+          1. _MODEL_DIMENSIONS — first prefix match wins (provider-specific
+             exact pixel values that Runware accepts).
+          2. _IMAGE_DEFAULT_DIMENSIONS — every value is a multiple of 64,
+             safe for FLUX / SD / Runware-native models.
+
+        If the matched model entry doesn't contain the requested aspect_ratio,
+        we fall back to "1:1" within that model's map, then to (1024, 1024).
+        Using 1:1 as the in-model fallback because ALL image models support
+        square output (safest default).
+
+        ⚠️ If you're getting "unsupportedDimensions" errors for a model,
+        check _MODEL_DIMENSIONS above — the model probably needs an entry
+        with the exact dimensions from Runware's error response.
         """
         for prefix, dim_map in self._MODEL_DIMENSIONS.items():
             if model.startswith(prefix):
-                return dim_map.get(aspect_ratio, dim_map.get("16:9", (1024, 576)))
-        return self._IMAGE_DEFAULT_DIMENSIONS.get(aspect_ratio, (1024, 576))
+                if aspect_ratio in dim_map:
+                    dims = dim_map[aspect_ratio]
+                else:
+                    # Requested ratio not available for this model — fall back
+                    # to 1:1 (universally supported) rather than 16:9 which
+                    # some models might not have.
+                    dims = dim_map.get("1:1", (1024, 1024))
+                    print(f"[Runware] ⚠️ _resolve_image_dimensions: ratio '{aspect_ratio}' not in model table for prefix '{prefix}', falling back to 1:1 → {dims[0]}x{dims[1]}")
+                print(f"[Runware] _resolve_image_dimensions: {model} ({aspect_ratio}) → {dims[0]}x{dims[1]} (matched prefix '{prefix}')")
+                return dims
+        dims = self._IMAGE_DEFAULT_DIMENSIONS.get(aspect_ratio, (1024, 1024))
+        print(f"[Runware] _resolve_image_dimensions: {model} ({aspect_ratio}) → {dims[0]}x{dims[1]} (IMAGE defaults — ensure this model accepts multiples of 64)")
+        return dims
 
     def _resolve_duration(self, model: str, duration: int) -> int | float:
         """Return valid duration for the model constraints."""

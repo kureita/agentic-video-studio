@@ -329,7 +329,7 @@ export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
                             <video
                                 src={output as string}
                                 controls
-                                className="w-full h-full object-contain"
+                                className="w-full h-full object-contain nodrag nopan nowheel"
                             />
                         ) : mediaType === 'audio' ? (
                             <div className="w-full p-6 flex flex-col items-center gap-4">
@@ -339,7 +339,7 @@ export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
                                 <audio
                                     src={output as string}
                                     controls
-                                    className="w-full"
+                                    className="w-full nodrag nopan nowheel"
                                 />
                             </div>
                         ) : (

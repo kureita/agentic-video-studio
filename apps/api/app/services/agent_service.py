@@ -234,7 +234,24 @@ class AgentService:
         mapped_model = MODEL_MAPPING.get(model, "google/gemini-3.1-flash-lite-preview")
 
         # Build capability-accurate model guidance from registry (single source of truth).
-        image_model_names = ", ".join(f'"{m.get("name", m.get("id", "Unknown"))}"' for m in IMAGE_MODELS)
+        # Image models: include ID, name, and ref image (i2i) support for the LLM.
+        image_model_parts = []
+        i2i_image_models = []
+        t2i_only_image_models = []
+        for m in IMAGE_MODELS:
+            mid = m.get("id", "unknown")
+            mname = m.get("name", mid)
+            caps = {c.lower() for c in m.get("capabilities", [])}
+            has_i2i = "i2i" in caps
+            tag = " [REF]" if has_i2i else ""
+            image_model_parts.append(f'"{mname}" (id: "{mid}"){tag}')
+            if has_i2i:
+                i2i_image_models.append(f'"{mname}" (id: "{mid}")')
+            else:
+                t2i_only_image_models.append(f'"{mname}" (id: "{mid}")')
+        image_model_names = ", ".join(image_model_parts)
+        i2i_image_model_names = ", ".join(i2i_image_models) or "none"
+        t2i_only_image_model_names = ", ".join(t2i_only_image_models) or "none"
         video_model_names = ", ".join(f'"{m.get("name", m.get("id", "Unknown"))}"' for m in VIDEO_MODELS)
         tts_model_names = ", ".join(
             f'"{m.get("name", m.get("id", "Unknown"))}"'
@@ -293,11 +310,16 @@ Your #1 priority is VISUAL CONSISTENCY — every character, background, and styl
    - Data: {{ "label": "Scene X Prompt", "text": "The actual prompt text here" }}
 
 2. **imageGen** - Image Generator (Multiple models via Runware)
-   - Inputs: "text|prompt" (type: text), "image|image" (type: image, optional reference)
+   - Inputs: "text|prompt" (type: text), "image|image" (type: image, optional reference image)
    - Outputs: "image|image" (type: image)
-   - Data: {{ "label": "Start Frame Scene X", "prompt": "Description", "width": 1024, "height": 576, "ratio": "16:9", "model": "FLUX.2 [dev]" }}
+   - Data: {{ "label": "Start Frame Scene X", "prompt": "Description", "ratio": "16:9", "model": "flux-2-dev" }}
+   - **IMPORTANT**: Only set `"ratio"` (e.g. "16:9", "9:16", "1:1", "4:3", "3:4"). Do NOT set `"width"` or `"height"` — the backend resolves exact pixel dimensions automatically per model. Each model has its own supported dimensions.
+   - **IMPORTANT**: Use the model **id** (e.g. `"flux-2-dev"`, `"nano-banana-2"`), NOT the display name.
    - **Available Models**: {image_model_names}
-   - **Model Notes**: FLUX.2 [dev] cheapest ($0.005). GPT Image 1.5 best for editing. Kling IMAGE O3 for character consistency. FLUX.2 [max] highest quality.
+   - **[REF] = supports reference image** input (image-to-image). Only connect `"image|image"` to these models.
+   - **Models that support ref images (i2i)**: {i2i_image_model_names}
+   - **Models that do NOT support ref images (text-only)**: {t2i_only_image_model_names}. Do NOT connect a reference image to these — it will fail.
+   - **Model Notes**: "flux-2-dev" cheapest ($0.005). "gpt-image-1" best for editing. "kling-image-o3" for character consistency. "flux-2-max" highest quality. "nano-banana-2" great quality + fast.
 
 3. **videoGen** - Video Generator (Multiple models via Runware)
    - Inputs: "text|text" (type: text), "image|start_image" (type: image), "image|end_image" (type: image, optional), "audio|audio" (type: audio, optional)
@@ -420,6 +442,7 @@ Scene 2 videoGen (output: "image|end_frame") → Scene 3 videoGen (input: "image
   - Label: "Location: [Name]" (e.g., "Location: Dark Alley", "Location: Rooftop")
   - Prompt: Detailed description of the environment + Style Bible + "wide establishing shot, no people, [aspect ratio]"
   - Connect each location imageGen to the `image|image` (reference) input of the FIRST `imageGen` node in each scene that takes place in that location.
+  - **The receiving imageGen node MUST use a model that supports ref images (i2i)** — e.g. "flux-2-dev", "gpt-image-1", "nano-banana-2", "kling-image-o3". Do NOT connect ref images to text-only models.
   - This anchors the AI to generate the same environment every time.
 
 ## 6. TRANSITION CONTEXT (Narrative Continuity)
@@ -468,20 +491,16 @@ Every `text` node prompt for a scene MUST follow this exact structure:
 - **Social (TikTok/Shorts)**: 9:16
 - **Square**: 1:1
 
-**ALL** nodes in the workflow MUST follow this ratio.
-- **IF 16:9**:
-  - ALL `videoGen` and `editorAgent` nodes: `"ratio": "16:9"`
-  - ALL `imageGen` nodes: `"width": 1024, "height": 576`, `"ratio": "16:9"` (NEVER 1024x1024!)
-- **IF 9:16**:
-  - ALL `videoGen` and `editorAgent` nodes: `"ratio": "9:16"`
-  - ALL `imageGen` nodes: `"width": 576, "height": 1024`, `"ratio": "9:16"`
-- **IF 1:1**:
-  - ALL `videoGen` and `editorAgent` nodes: `"ratio": "1:1"`
-  - ALL `imageGen` nodes: `"width": 1024, "height": 1024`, `"ratio": "1:1"`
+**ALL** nodes in the workflow MUST use the same ratio.
+- **IF 16:9**: ALL `videoGen`, `editorAgent`, and `imageGen` nodes: `"ratio": "16:9"`
+- **IF 9:16**: ALL nodes: `"ratio": "9:16"`
+- **IF 1:1**: ALL nodes: `"ratio": "1:1"`
+
+**For imageGen nodes**: ONLY set `"ratio"` — do NOT set `"width"` or `"height"`. The backend auto-resolves the exact pixel dimensions per model (each model has different supported sizes — e.g. Recraft V4 Pro uses 2688x1536 for 16:9, Gemini Flash uses 1376x768, FLUX uses 1024x576). Setting wrong dimensions causes errors.
 
 **STRICT FORBIDDEN ACTION**:
 - Do **NOT** create 1:1 (Square) images for a 16:9 or 9:16 video.
-- All Character References, Backgrounds, and Start/End frames MUST match the video dimensions exactly.
+- All Character References, Backgrounds, and Start/End frames MUST match the video ratio exactly.
 
 ## 10. TEXT NODE REFERENCING (CRITICAL)
 When a **text** node is connected to a generator node (imageGen, videoGen, editorAgent, vision, audioGen),

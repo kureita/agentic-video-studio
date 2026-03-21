@@ -1,6 +1,6 @@
 import React, { memo, useState, useRef, useEffect } from "react";
 import { NodeProps, useReactFlow } from "@xyflow/react";
-import { Image as ImageIcon, ChevronDown, Square, Loader2, Download } from "lucide-react";
+import { Image as ImageIcon, ChevronDown, Square, Loader2, Download, AlertTriangle } from "lucide-react";
 import { NodeWrapper } from "@/components/workflow/node-wrapper";
 import { HighlightedTextarea } from "@/components/workflow/nodes/highlighted-textarea";
 import { S3Image } from "@/components/ui/s3-image";
@@ -10,17 +10,25 @@ import { cn } from "@/lib/utils";
 import { useWorkflowStore } from "@/lib/workflow-store";
 import { useModels } from "@/lib/use-models";
 
-const DEFAULT_INPUTS: { id: string, label: string, type: "text" | "image" | "video" | "audio", style?: React.CSSProperties }[] = [
+const INPUTS_WITH_REF: { id: string, label: string, type: "text" | "image" | "video" | "audio", style?: React.CSSProperties }[] = [
     { id: "prompt", label: "Prompt", type: "text", style: { bottom: '108px' } },
     { id: "image", label: "Ref Image", type: "image", style: { bottom: '20px' } }
 ];
 
+const INPUTS_NO_REF: { id: string, label: string, type: "text" | "image" | "video" | "audio", style?: React.CSSProperties }[] = [
+    { id: "prompt", label: "Prompt", type: "text", style: { bottom: '108px' } },
+    { id: "image", label: "Ref (N/A)", type: "image", style: { bottom: '20px' } }
+];
+
+const modelSupportsI2I = (capabilities: string[] = []): boolean =>
+    capabilities.some(c => c.toLowerCase() === "i2i");
+
 const getCapabilitiesLabel = (capabilities: string[] = []) => {
-    const hasT2I = !!capabilities.find(c => c.toLowerCase() === "t2i");
-    const hasI2I = !!capabilities.find(c => c.toLowerCase() === "i2i");
-    if (hasT2I && hasI2I) return "Text to Image & Image to Image";
-    if (hasI2I) return "Image to Image";
-    if (hasT2I) return "Text to Image";
+    const hasT2I = capabilities.some(c => c.toLowerCase() === "t2i");
+    const hasI2I = modelSupportsI2I(capabilities);
+    if (hasT2I && hasI2I) return "Text & Ref Image";
+    if (hasI2I) return "Ref Image only";
+    if (hasT2I) return "Text to Image only";
     return "";
 };
 
@@ -37,7 +45,8 @@ export const ImageGenNode = memo(({ id, selected, data }: NodeProps) => {
     const currentModelId = (typeof data.model === 'string' ? data.model : (imageModels.length > 0 ? imageModels[0].id : "flux-2-dev"));
     const currentModelEntry = imageModels.find(m => m.id === currentModelId) || imageModels.find(m => m.name === currentModelId);
     const currentModelDisplayName = currentModelEntry?.name || currentModelId;
-    const configInputs = DEFAULT_INPUTS;
+    const supportsRefImage = modelSupportsI2I(currentModelEntry?.capabilities);
+    const configInputs = supportsRefImage ? INPUTS_WITH_REF : INPUTS_NO_REF;
 
     const handleDownload = () => {
         if (output) {
@@ -112,6 +121,10 @@ export const ImageGenNode = memo(({ id, selected, data }: NodeProps) => {
     const connectedTextNodeIds = React.useMemo(() => new Set(
         edges.filter(e => e.target === id).map(e => e.source)
     ), [edges, id]);
+    const hasRefImageConnected = React.useMemo(() =>
+        edges.some(e => e.target === id && (e.targetHandle === "image|image")),
+        [edges, id]
+    );
     const allTextNodes = React.useMemo(() =>
         nodes.filter(n => n.type === 'text').map((n, i) => ({ id: n.id, label: `Text #${i + 1}`, content: (n.data.text as string) || "" })),
         [nodes]
@@ -299,10 +312,18 @@ export const ImageGenNode = memo(({ id, selected, data }: NodeProps) => {
                     />
                 </div>
 
+                {/* Ref image warning: visible when model doesn't support i2i but a ref image edge is connected */}
+                {!supportsRefImage && hasRefImageConnected && (
+                    <div className="absolute top-2 left-2 right-2 z-30 flex items-center gap-1.5 bg-amber-500/20 backdrop-blur-sm border border-amber-400/30 rounded-lg px-2.5 py-1.5">
+                        <AlertTriangle className="w-3 h-3 text-amber-400 flex-shrink-0" />
+                        <span className="text-[9px] text-amber-200 leading-tight">
+                            {currentModelDisplayName} doesn&apos;t support ref images — disconnect or pick a model with <span className="font-semibold text-purple-200">REF</span> badge
+                        </span>
+                    </div>
+                )}
+
                 {/* Controls Bar - Bottom Left (One Line) */}
                 <div className="absolute bottom-3 left-3 right-3 flex items-center gap-1 opacity-0 group-hover/image:opacity-100 transition-all duration-300 translate-y-2 group-hover/image:translate-y-0 z-20">
-
-
 
                     {/* Model Pill */}
                     <div className="relative flex-grow min-w-0 max-w-[140px]" ref={modelMenuRef}>
@@ -327,40 +348,56 @@ export const ImageGenNode = memo(({ id, selected, data }: NodeProps) => {
                                     animate={{ opacity: 1, y: 0, scale: 1 }}
                                     exit={{ opacity: 0, y: 4, scale: 0.96 }}
                                     transition={{ duration: 0.12 }}
-                                    className="absolute bottom-full left-0 mb-2 w-48 bg-black/90 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50 pointer-events-auto flex flex-col"
+                                    className="absolute bottom-full left-0 mb-2 w-52 bg-black/90 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50 pointer-events-auto flex flex-col"
                                 >
                                     <div className="px-3 py-2 text-[10px] font-semibold text-white/50 uppercase tracking-wider border-b border-white/10 bg-black/40">
                                         Model
                                     </div>
-                                    <div className="max-h-[160px] overflow-y-auto flex flex-col p-1 nodrag nowheel">
-                                        {imageModels.map(m => (
-                                            <button
-                                                key={m.id}
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    updateNodeData(id, { model: m.id });
-                                                    setShowModelMenu(false);
-                                                }}
-                                                className={cn(
-                                                    "w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-white/10 cursor-pointer flex items-center justify-between transition-colors",
-                                                    currentModelId === m.id && "bg-white/15 text-white"
-                                                )}
-                                            >
-                                                <div className="flex flex-col gap-0.5">
-                                                    <span className={cn("text-[11px] font-medium", currentModelId !== m.id && "text-white/80")}>
-                                                        {m.name}
-                                                    </span>
-                                                    {getCapabilitiesLabel(m.capabilities) && (
-                                                        <span className="text-white/40 text-[9px] leading-tight">
-                                                            {getCapabilitiesLabel(m.capabilities)}
-                                                        </span>
+                                    <div className="max-h-[200px] overflow-y-auto flex flex-col p-1 nodrag nowheel">
+                                        {imageModels.map(m => {
+                                            const hasI2I = modelSupportsI2I(m.capabilities);
+                                            return (
+                                                <button
+                                                    key={m.id}
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        updateNodeData(id, { model: m.id });
+                                                        setShowModelMenu(false);
+                                                    }}
+                                                    className={cn(
+                                                        "w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-white/10 cursor-pointer flex items-center justify-between transition-colors",
+                                                        currentModelId === m.id && "bg-white/15 text-white"
                                                     )}
-                                                </div>
-                                            </button>
-                                        ))}
+                                                >
+                                                    <div className="flex flex-col gap-0.5 min-w-0">
+                                                        <div className="flex items-center gap-1.5">
+                                                            <span className={cn("text-[11px] font-medium truncate", currentModelId !== m.id && "text-white/80")}>
+                                                                {m.name}
+                                                            </span>
+                                                            {hasI2I && (
+                                                                <span className="text-[8px] px-1 py-0.5 rounded bg-purple-500/30 text-purple-200 font-medium flex-shrink-0">
+                                                                    REF
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        {getCapabilitiesLabel(m.capabilities) && (
+                                                            <span className="text-white/40 text-[9px] leading-tight">
+                                                                {getCapabilitiesLabel(m.capabilities)}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </button>
+                                            );
+                                        })}
                                         {imageModels.length === 0 && (
                                             <div className="px-3 py-2 text-[11px] text-white/50 italic">No models available</div>
                                         )}
+                                    </div>
+                                    <div className="px-3 py-1.5 border-t border-white/10 bg-black/40">
+                                        <span className="text-[8px] text-white/30 flex items-center gap-1">
+                                            <span className="px-1 py-0.5 rounded bg-purple-500/30 text-purple-200 font-medium">REF</span>
+                                            = supports reference image input
+                                        </span>
                                     </div>
                                 </motion.div>
                             )}

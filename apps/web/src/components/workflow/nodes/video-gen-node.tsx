@@ -365,8 +365,8 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
                     <>
                         <video
                             src={output}
-                            className="absolute inset-0 w-full h-full object-cover z-0"
-                            controls={!showSuggestions} // Disable controls when typing? Or keep enabled.
+                            className="absolute inset-0 w-full h-full object-cover z-0 nodrag nopan nowheel"
+                            controls={!showSuggestions}
                             playsInline
                             onLoadedMetadata={(e) => {
                                 const video = e.currentTarget;

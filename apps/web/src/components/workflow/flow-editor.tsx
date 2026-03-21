@@ -391,7 +391,7 @@ function FlowEditorInner({ workflowId }: FlowEditorProps) {
                 panOnScroll={true}
                 nodesDraggable={!isReadOnly && activeTool !== "cut" && activeTool !== "comment"}
                 nodesConnectable={!isReadOnly && activeTool !== "cut" && activeTool !== "comment"}
-                elementsSelectable={!isReadOnly && activeTool !== "cut" && activeTool !== "comment"}
+                elementsSelectable={activeTool !== "cut" && activeTool !== "comment"}
                 onPaneClick={(event) => {
                     onPaneMouseDown(event as unknown as MouseEvent);
                 }}

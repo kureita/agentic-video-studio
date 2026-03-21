@@ -12,7 +12,7 @@ from app.core.config import settings
 from app.core.dependencies import get_storage_service
 from app.services.runware_service import RunwareService
 
-from app.core.model_registry import resolve_air_id
+from app.core.model_registry import resolve_air_id, get_model_by_id, get_model_by_name
 class ImageGenerator:
     """Generates images using Runware API (Flux, Recraft, Kling, etc) for consistent scene visuals."""
 
@@ -92,6 +92,47 @@ class ImageGenerator:
             print(f"[ImageGenerator] Error fetching image {url[:100]}...: {e}")
         return None
 
+    def _check_model_i2i_support(self, model_name: Optional[str]) -> tuple:
+        """Check if a model supports image-to-image (reference images).
+
+        Returns (supports_i2i: bool, model_display_name: str).
+
+        ┌──────────────────────────────────────────────────────────────────┐
+        │  REFERENCE IMAGE SUPPORT BY MODEL (as of March 2026)            │
+        │                                                                  │
+        │  Model                  i2i?   Mechanism      Max refs           │
+        │  ─────────────────────  ─────  ─────────────  ────────           │
+        │  GPT Image 1            ✅     referenceImages  1+               │
+        │  DALL-E 3               ❌     —               —                 │
+        │  FLUX.2 [max]           ✅     seedImage        1                │
+        │  Nano Banana 2          ✅     referenceImages  1+               │
+        │  Kling IMAGE O3         ✅     referenceImages  1+               │
+        │  Seedream 5.0 Lite      ❌     —               —                 │
+        │  Recraft V4             ✅     referenceImages  1 (inconsistent) │
+        │  Recraft V4 Pro         ✅     referenceImages  1 (inconsistent) │
+        │  Grok Imagine Image     ❌     —               —                 │
+        │  Imagen 4 Ultra         ❌     —               —                 │
+        │  Imagen 4 Preview       ❌     —               —                 │
+        │  FLUX.2 [dev]           ✅     seedImage        1                │
+        │  FLUX.2 [flex]          ✅     seedImage        1                │
+        │  FLUX.2 [klein] 9B      ❌     —               —                 │
+        │                                                                  │
+        │  ⚠️ If a model says ❌ and the user connected a ref image,      │
+        │  we must REJECT the request with a clear error — not silently    │
+        │  send a payload that Runware will 400 on.                        │
+        └──────────────────────────────────────────────────────────────────┘
+        """
+        if not model_name:
+            return True, "Unknown"
+
+        entry = get_model_by_id(model_name) or get_model_by_name(model_name)
+        if not entry:
+            return True, model_name
+
+        capabilities = [c.lower() for c in entry.get("capabilities", [])]
+        display_name = entry.get("name", model_name)
+        return "i2i" in capabilities, display_name
+
     async def generate_image(
         self,
         prompt: str,
@@ -108,11 +149,25 @@ class ImageGenerator:
         
         # Determine the target model — always resolve to a valid AIR ID
         target_model = resolve_air_id(model_name, self.default_model, model_type="image")
+
+        # ── Validate ref image support BEFORE calling Runware ──
+        # This prevents cryptic Runware 400 errors when the user connects
+        # a reference image to a model that doesn't support i2i.
+        if reference_image:
+            supports_i2i, display_name = self._check_model_i2i_support(model_name)
+            if not supports_i2i:
+                return {
+                    "success": False,
+                    "error": (
+                        f"'{display_name}' does not support reference images (image-to-image). "
+                        f"Either disconnect the reference image, or switch to a model that supports it "
+                        f"(look for 'Text to Image & Image to Image' in the model selector)."
+                    ),
+                }
                 
         try:
             width, height = self.runware._resolve_image_dimensions(target_model, aspect_ratio)
             
-            # Enhance prompt with style
             style_prompts = {
                 "realistic": "photorealistic, high detail, professional photography",
                 "cinematic": "cinematic lighting, movie still, dramatic composition",
@@ -125,9 +180,8 @@ class ImageGenerator:
             style_suffix = style_prompts.get(style, style_prompts["realistic"])
             enhanced_prompt = f"{prompt}. {style_suffix}"
             
-            print(f"[ImageGenerator] Generating image with {target_model}: {enhanced_prompt[:100]}...")
+            print(f"[ImageGenerator] Generating image with {target_model} ({width}x{height}): {enhanced_prompt[:100]}...")
             
-            # Use image-to-image or text-to-image
             if reference_image:
                 print(f"[ImageGenerator] Processing reference image: {reference_image[:80]}...")
                 enhanced_prompt = f"Based on the provided reference image: {enhanced_prompt}"
