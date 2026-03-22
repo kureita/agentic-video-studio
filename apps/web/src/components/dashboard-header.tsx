@@ -17,12 +17,11 @@ const SUPPORT_MAILTO = (() => {
         "",
         "Thanks,",
     ].join("\n");
-    const params = new URLSearchParams({
-        cc: "rishav@kureita.com,abhishek@kureita.com",
-        subject: "Kureita support request",
-        body,
-    });
-    return `mailto:help@kureita.com?${params.toString()}`;
+    // encodeURIComponent uses %20 for spaces; URLSearchParams uses + which many mail apps show literally.
+    const cc = encodeURIComponent("rishav@kureita.com,abhishek@kureita.com");
+    const subject = encodeURIComponent("Kureita support request");
+    const bodyQ = encodeURIComponent(body);
+    return `mailto:help@kureita.com?cc=${cc}&subject=${subject}&body=${bodyQ}`;
 })();
 
 export function DashboardHeader() {
