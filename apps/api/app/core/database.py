@@ -12,6 +12,8 @@ async def connect_to_mongo():
             db_client = AsyncIOMotorClient(settings.mongodb_url)
             # Verify connection
             await db_client.admin.command('ping')
+            db = db_client[settings.mongodb_database]
+            await db.dodo_payment_ledger.create_index("payment_id", unique=True)
             print("✓ Connected to MongoDB")
         else:
             print("⚠ MongoDB URL not found in settings")

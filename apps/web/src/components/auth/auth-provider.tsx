@@ -51,6 +51,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             authorizationParams={{
                 redirect_uri: redirectUri,
                 audience,
+                // Include email in scopes so access tokens may carry email; profile is used for checkout fallback in the SPA.
+                scope: "openid profile email",
             }}
             cacheLocation="localstorage"
             useRefreshTokens={true}

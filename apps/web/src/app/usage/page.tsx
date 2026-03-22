@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { format } from "date-fns";
 import { DollarSign, Loader2, Fingerprint, Clock, Activity, Video, Image as ImageIcon, MessageSquare, Music, CheckCircle2, Plus } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -40,6 +42,8 @@ import { useAuth0 } from "@auth0/auth0-react";
 
 export default function UsageDashboard() {
     const { getAccessTokenSilently, user } = useAuth0();
+    const searchParams = useSearchParams();
+    const router = useRouter();
     const [logs, setLogs] = useState<UsageLog[]>([]);
     const [balance, setBalance] = useState<number | null>(null);
     const [isLoading, setIsLoading] = useState(true);
@@ -73,6 +77,28 @@ export default function UsageDashboard() {
 
         fetchData();
     }, [getAccessTokenSilently, user?.sub]);
+
+    useEffect(() => {
+        if (searchParams.get("payment") !== "success") return;
+        toast.success("Payment complete — refreshing your balance.");
+        if (user?.sub) {
+            (async () => {
+                try {
+                    const token = await getAccessTokenSilently();
+                    const config = { headers: { Authorization: `Bearer ${token}` } };
+                    const [balanceRes, usageRes] = await Promise.all([
+                        api.get("/api/billing/balance", config),
+                        api.get("/api/billing/usage", { ...config, params: { limit: 100 } }),
+                    ]);
+                    setBalance(balanceRes.data.balance);
+                    setLogs(usageRes.data.logs);
+                } catch (e) {
+                    console.error("Failed to refresh after payment:", e);
+                }
+            })();
+        }
+        router.replace("/usage", { scroll: false });
+    }, [searchParams, user?.sub, getAccessTokenSilently, router]);
 
     // Calculate total spent (only debits! exclude credits)
     const CREDIT_TYPES = ["deposit", "voucher_redeem", "referral_bonus"];

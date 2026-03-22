@@ -36,6 +36,8 @@ dependencies = [
     "aiofiles>=24.1.0",
     "pyjwt>=2.11.0",
     "ulid-py>=1.1.0",
+    "dodopayments>=1.87.1",
+    "standardwebhooks>=1.0.1",
 ]
 
 [project.optional-dependencies]

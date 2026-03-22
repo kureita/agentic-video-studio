@@ -1,5 +1,6 @@
 import os
 from functools import lru_cache
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -21,8 +22,10 @@ class Settings(BaseSettings):
 
     # Application
     app_name: str = "Kureita API"
+    app_env: str = "local"  # APP_ENV: "local" uses Dodo test_mode; "prod" uses live_mode
     debug: bool = False
-    api_base_url: str = "http://localhost:8000"  # Public URL of the API
+    api_base_url: str = "http://localhost:8000"  # Public URL of the API (also used for webhook URL in dashboard)
+    web_app_url: str = "http://localhost:3000"  # Browser app origin for Dodo return_url
 
     # CORS (comma-separated string, use cors_origins_list property for list)
     cors_origins: str = "http://localhost:3000,https://app.kureita.com"
@@ -31,6 +34,11 @@ class Settings(BaseSettings):
     def cors_origins_list(self) -> list[str]:
         """Get CORS origins as a list."""
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
+    @property
+    def dodo_payments_environment(self) -> Literal["test_mode", "live_mode"]:
+        """Local/dev uses Dodo test Mode; production uses live (real money)."""
+        return "live_mode" if (self.app_env or "").strip().lower() == "prod" else "test_mode"
 
     # MongoDB
     mongodb_url: str = "mongodb://localhost:27017"
@@ -76,6 +84,16 @@ class Settings(BaseSettings):
 
     # Billing
     commission_multiplier: float = 0.3  # 30% markup on API costs
+
+    # Dodo Payments (https://docs.dodopayments.com/) — API key from Developer → API
+    dodo_payments_api_key: str = ""
+    # Webhook signing secret from Developer → Webhooks (whsec_...)
+    dodo_webhook_secret: str = ""
+    # One one-time product with "Pay what you want" enabled (dashboard → Products)
+    dodo_topup_product_id: str = ""
+    # Allowed custom top-up range (USD); enforced in API and should match product limits in Dodo
+    dodo_min_topup_usd: float = 5.0
+    dodo_max_topup_usd: float = 500.0
 
     # Optional
     redis_url: str = "redis://localhost:6379"

@@ -2,10 +2,28 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useAuth0 } from "@auth0/auth0-react";
-import { LogOut, User, ChevronDown } from "lucide-react";
+import { LifeBuoy, LogOut, User, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import Image from "next/image";
 import Link from "next/link";
+
+const SUPPORT_MAILTO = (() => {
+    const body = [
+        "Hi Kureita support,",
+        "",
+        "I need help with:",
+        "",
+        "[Please describe your issue here]",
+        "",
+        "Thanks,",
+    ].join("\n");
+    const params = new URLSearchParams({
+        cc: "rishav@kureita.com,abhishek@kureita.com",
+        subject: "Kureita support request",
+        body,
+    });
+    return `mailto:help@kureita.com?${params.toString()}`;
+})();
 
 export function DashboardHeader() {
     const { user, logout } = useAuth0();
@@ -81,6 +99,14 @@ export function DashboardHeader() {
                             >
                                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-credit-card"><rect width="20" height="14" x="2" y="5" rx="2" /><line x1="2" x2="22" y1="10" y2="10" /></svg>
                                 Billing & Usage
+                            </a>
+                            <a
+                                href={SUPPORT_MAILTO}
+                                onClick={() => setIsDropdownOpen(false)}
+                                className="flex items-center gap-2 w-full px-3 py-1.5 text-[13px] font-medium text-muted-foreground hover:bg-accent/80 hover:text-accent-foreground transition-colors"
+                            >
+                                <LifeBuoy className="h-3.5 w-3.5 shrink-0" />
+                                Support
                             </a>
                         </div>
 

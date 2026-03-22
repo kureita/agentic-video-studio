@@ -170,7 +170,42 @@ class BillingService:
         await self.db.usage_logs.insert_one(usage_log.model_dump(by_alias=True, exclude_none=True))
 
         return new_balance
-        
+
+    async def apply_deposit(
+        self,
+        user_id: str,
+        amount_usd: float,
+        metadata: Optional[dict] = None,
+    ) -> float:
+        """
+        Add USD to balance and log a deposit (e.g. Dodo Payments webhook).
+        user_id: Auth0 subject or internal id (same resolution as other billing methods).
+        """
+        if amount_usd <= 0:
+            raise HTTPException(status_code=400, detail="Deposit amount must be positive")
+
+        user_doc = await self._resolve_user(user_id)
+        if not user_doc:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        user_oid = user_doc["_id"]
+        new_balance = round(user_doc.get("usd_balance", 0.0) + amount_usd, 6)
+        await self.db.users.update_one(
+            {"_id": user_oid},
+            {"$set": {"usd_balance": new_balance, "updated_at": datetime.now(timezone.utc)}},
+        )
+
+        usage_log = UsageLog(
+            user_id=str(user_oid),
+            action_type=ActionType.DEPOSIT,
+            cost_usd=0.0,
+            commission_usd=0.0,
+            total_usd=amount_usd,
+            metadata=metadata or {},
+        )
+        await self.db.usage_logs.insert_one(usage_log.model_dump(by_alias=True, exclude_none=True))
+        return new_balance
+
     async def process_referral(self, new_user_id: str, referral_code: str):
         """
         Processes a referral code, granting $5.00 USD to both parties.
