@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, createContext, useContext } from "react";
+import { useState } from "react";
 import { usePathname } from "next/navigation";
 import { DashboardHeader } from "@/components/dashboard-header";
 import { AgentSidebar } from "@/components/workflow/agent-sidebar";
 import { AuthGuard } from "@/components/auth/auth-guard";
 
-import { MobileTabContext, MobileTabContextType } from "@/components/workflow/mobile-tab-context";
+import { MobileTabContext } from "@/components/workflow/mobile-tab-context";
 
 const MOBILE_STYLES = `
 @media (max-width: 767px) {

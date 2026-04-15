@@ -33,7 +33,7 @@ interface AssetItem {
     asset_category: string;
     url: string;
     presigned_url: string;
-    node_data?: Record<string, any> | null;
+    node_data?: Record<string, unknown> | null;
 }
 
 interface WorkflowAssets {
@@ -169,7 +169,7 @@ function AssetPreviewModal({ asset, onClose, onDeleteSuccess }: { asset: AssetIt
             toast.success("Asset deleted permanently");
             onDeleteSuccess?.();
             onClose();
-        } catch (err) {
+        } catch {
             toast.error("Failed to delete asset");
         } finally {
             setIsDeleting(false);

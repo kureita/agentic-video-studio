@@ -4,7 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useCallback, useRef } from "react";
-import { Plus, MoreHorizontal, Clock, Trash2, Pencil, Loader2, ArrowUp, Sparkles, Film, AlertCircle, ChevronDown, Paperclip, X } from "lucide-react";
+import { Plus, MoreHorizontal, Trash2, Pencil, Loader2, ArrowUp, AlertCircle, ChevronDown, Paperclip, X } from "lucide-react";
 import { WorkflowPreview } from "@/components/workflow/workflow-preview";
 import { Button } from "@/components/ui/button";
 import { S3Image } from "@/components/ui/s3-image";

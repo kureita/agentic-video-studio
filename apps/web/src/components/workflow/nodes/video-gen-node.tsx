@@ -116,7 +116,7 @@ const sortInputModes = (modes: InputMode[]) => {
     return unique.sort((a, b) => INPUT_MODE_PRIORITY.indexOf(a) - INPUT_MODE_PRIORITY.indexOf(b));
 };
 
-const getInputModeLabel = (mode: InputMode, frameImagesMax: number) => {
+const getInputModeLabel = (mode: InputMode) => {
     switch (mode) {
         case "i2v":
             return "Start/End Frame";
@@ -940,7 +940,7 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
                             )}
                         >
                             <span className="text-[10px] font-medium truncate flex-grow text-left">
-                                {getInputModeLabel(inputMode, frameImagesMax)}
+                                {getInputModeLabel(inputMode)}
                             </span>
                             <ChevronDown className="w-2.5 h-2.5 text-white/50 flex-shrink-0" />
                         </button>
@@ -959,7 +959,7 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
                                     </div>
                                     <div className="max-h-[180px] overflow-y-auto flex flex-col p-1 nodrag nowheel">
                                         {selectableInputModes.map((mode) => {
-                                            const label = getInputModeLabel(mode, frameImagesMax);
+                                            const label = getInputModeLabel(mode);
 
                                             return (
                                             <button
