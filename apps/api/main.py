@@ -5,19 +5,23 @@ import os
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import Response
+from pymongo.errors import PyMongoError
 
 from app.api.routes import router as api_router
 from app.core.config import settings
-from app.core.database import connect_to_mongo, close_mongo_connection
+from app.core.database import connect_to_mongo, close_mongo_connection, is_database_healthy
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application lifecycle - startup and shutdown."""
     # Startup
-    await connect_to_mongo()
+    connected = await connect_to_mongo()
+    if not connected:
+        print("⚠ Continuing startup without MongoDB. API routes that need DB may return 503.")
     
     # Ensure static directories exist
     Path("static/videos").mkdir(parents=True, exist_ok=True)
@@ -42,6 +46,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
+    allow_origin_regex=settings.cors_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -90,7 +95,22 @@ app.mount("/tmp_uploads", StaticFiles(directory=tmp_uploads_path), name="tmp_upl
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "version": "0.1.0"}
+    db_ok = await is_database_healthy()
+    return {
+        "status": "healthy" if db_ok else "degraded",
+        "version": "0.1.0",
+        "dependencies": {
+            "mongodb": "up" if db_ok else "down",
+        },
+    }
+
+
+@app.exception_handler(PyMongoError)
+async def mongo_error_handler(_: Request, __: PyMongoError):
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "Database temporarily unavailable"},
+    )
 
 
 # Include API routes (order matters: public & internal before authenticated)

@@ -29,6 +29,7 @@ class Settings(BaseSettings):
 
     # CORS (comma-separated string, use cors_origins_list property for list)
     cors_origins: str = "http://localhost:3000,https://app.kureita.com"
+    cors_origin_regex: str = r"https://([a-z0-9-]+\.)?kureita\.com"
 
     @property
     def cors_origins_list(self) -> list[str]:
