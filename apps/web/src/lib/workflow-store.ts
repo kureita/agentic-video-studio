@@ -135,6 +135,9 @@ function inferMissingHandles(edge: RawEdge, nodes: Node[]) {
             case 'imageGen': sourceHandle = 'image|image'; break;
             case 'videoGen': sourceHandle = 'video|video'; break;
             case 'audioGen': sourceHandle = 'audio|audio'; break;
+            case 'assistant':
+            case 'vision': sourceHandle = 'text|output'; break;
+            case 'editorAgent': sourceHandle = 'video|output'; break;
             case 'mediaUpload': sourceHandle = 'image|output'; break;
             default: sourceHandle = 'any|output';
         }
@@ -155,6 +158,18 @@ function inferMissingHandles(edge: RawEdge, nodes: Node[]) {
                 else if (sourceNode.type === 'imageGen') targetHandle = 'image|ref_images';
                 else if (sourceNode.type === 'audioGen') targetHandle = 'audio|audio';
                 else targetHandle = 'text|text';
+                break;
+            case 'assistant':
+            case 'vision':
+                if (sourceNode.type === 'text') targetHandle = 'text|text';
+                else if (sourceNode.type === 'audioGen') targetHandle = 'audio|audio';
+                else if (sourceNode.type === 'editorAgent' || sourceNode.type === 'videoGen') targetHandle = 'video|ref_videos';
+                else if (sourceNode.type === 'mediaUpload') {
+                    const mediaType = String(sourceNode.data?.mediaType || "").toLowerCase();
+                    if (mediaType === 'audio') targetHandle = 'audio|audio';
+                    else if (mediaType === 'video') targetHandle = 'video|ref_videos';
+                    else targetHandle = 'image|ref_images';
+                } else targetHandle = 'image|ref_images';
                 break;
             default:
                 targetHandle = 'any|input';
@@ -245,7 +260,33 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     setRawOutput: (key: string, value: string) => {
         // Write directly to the outputs map without touching node.data.output.
         // Used for auxiliary keys like `{nodeId}__start_frame`.
-        set((state) => ({ outputs: { ...state.outputs, [key]: value } }));
+        set((state) => {
+            const newOutputs = { ...state.outputs, [key]: value };
+            const newNodes = [...state.nodes];
+
+            const frameMatch = key.match(/^(.*)__(start_frame|end_frame)$/);
+            if (frameMatch) {
+                const [, sourceNodeId, frameHandle] = frameMatch;
+                state.edges.forEach((edge) => {
+                    if (edge.source !== sourceNodeId) return;
+                    const sourceHandle = edge.sourceHandle || "";
+                    if (!sourceHandle.endsWith(frameHandle)) return;
+                    const targetNode = newNodes.find((node) => node.id === edge.target);
+                    if (targetNode?.type !== "imageGen") return;
+
+                    newOutputs[edge.target] = value;
+                    const nodeIndex = newNodes.findIndex((node) => node.id === edge.target);
+                    if (nodeIndex !== -1) {
+                        newNodes[nodeIndex] = {
+                            ...newNodes[nodeIndex],
+                            data: { ...newNodes[nodeIndex].data, output: value },
+                        };
+                    }
+                });
+            }
+
+            return { outputs: newOutputs, nodes: newNodes };
+        });
     },
 
     clearNodeOutput: (nodeId: string) => {
@@ -779,6 +820,8 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
                                 const srcHandle = edge.sourceHandle || '';
                                 const isStartFrame = srcHandle.endsWith('start_frame');
                                 const isEndFrame = srcHandle.endsWith('end_frame');
+                                const downstreamNode = state.nodes.find((node) => node.id === edge.target);
+                                if (downstreamNode?.type !== 'imageGen') return;
 
                                 if (isStartFrame && startFrameData) {
                                     console.log(`[WorkflowStore] Auto-filling node ${edge.target} with start_frame`);
@@ -899,6 +942,9 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
             const data = res.data;
 
             if (data.url) {
+                set((state) => ({
+                    outputs: { ...state.outputs, [nodeId]: data.presigned_url || data.url }
+                }));
                 // Do NOT call setNodeOutput here — that would overwrite the TSX code
                 // with a video URL, causing a re-compile attempt on the URL.
                 // The video URL is persisted server-side; the local store keeps the TSX

@@ -29,6 +29,7 @@ class GenerateFlowRequest(BaseModel):
     current_nodes: Optional[List[Dict[str, Any]]] = []
     current_edges: Optional[List[Dict[str, Any]]] = []
     chat_history: Optional[List[Dict[str, Any]]] = []
+    attachments: Optional[List[Dict[str, Any]]] = []
 
 async def process_agent_flow(job_id: str, user_id: str, db: AsyncIOMotorDatabase, billing_service: BillingService, agent_svc: AgentService):
     # Mark as processing
@@ -47,7 +48,8 @@ async def process_agent_flow(job_id: str, user_id: str, db: AsyncIOMotorDatabase
             model=job_data["model"],
             current_nodes=job_data.get("current_nodes", []),
             current_edges=job_data.get("current_edges", []),
-            chat_history=job_data.get("chat_history", [])
+            chat_history=job_data.get("chat_history", []),
+            attachments=job_data.get("attachments", []),
         )
         
         # Billing — use actual cost from OpenRouter
@@ -76,6 +78,9 @@ async def process_agent_flow(job_id: str, user_id: str, db: AsyncIOMotorDatabase
                 "message": result.get("message"),
                 "thinking": result.get("thinking"),
                 "thinking_duration_ms": result.get("thinking_duration_ms"),
+                "action": result.get("action"),
+                "apply_workflow": result.get("apply_workflow"),
+                "suggested_name": result.get("suggested_name"),
                 "tool_calls": result.get("tool_calls"),
                 "nodes": result.get("nodes"),
                 "edges": result.get("edges"),
@@ -122,7 +127,8 @@ async def generate_flow(
         model=request.model,
         current_nodes=request.current_nodes,
         current_edges=request.current_edges,
-        chat_history=request.chat_history
+        chat_history=request.chat_history,
+        attachments=request.attachments,
     ).model_dump()
     
     await db["agent_jobs"].insert_one(job_doc)
@@ -188,6 +194,8 @@ async def get_flow_status(
     status = job_data["status"]
     
     if status in [AgentJobStatus.COMPLETED, AgentJobStatus.FAILED]:
+        nodes = job_data.get("nodes")
+        edges = job_data.get("edges")
         return AgentJobStatusResponse(
             job_id=job_id,
             status=status,
@@ -196,11 +204,22 @@ async def get_flow_status(
                 "message": job_data.get("message") or job_data.get("error"),
                 "thinking": job_data.get("thinking"),
                 "thinking_duration_ms": job_data.get("thinking_duration_ms"),
+                "action": job_data.get("action"),
+                "apply_workflow": job_data.get("apply_workflow", True),
+                "suggested_name": job_data.get("suggested_name"),
                 "tool_calls": job_data.get("tool_calls", []),
-                "nodes": job_data.get("nodes", []),
-                "edges": job_data.get("edges", []),
+                "nodes": nodes if isinstance(nodes, list) else [],
+                "edges": edges if isinstance(edges, list) else [],
             },
             error=job_data.get("error")
         )
     
     return AgentJobStatusResponse(job_id=job_id, status=status)
+
+
+@router.get("/models")
+async def get_agent_models(
+    current_user: dict = Depends(get_current_user),
+):
+    """Return chat agent models with multimodal capability metadata."""
+    return {"models": await agent_service.get_chat_models()}

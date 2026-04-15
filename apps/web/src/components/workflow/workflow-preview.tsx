@@ -9,6 +9,8 @@ const NODE_COLORS: Record<string, { fill: string; stroke: string; accent: string
     imageGen: { fill: "#1e2337", stroke: "#4f6199", accent: "#818cf8" },  // indigo
     videoGen: { fill: "#271e2a", stroke: "#7c5388", accent: "#c084fc" },  // purple
     audioGen: { fill: "#27211e", stroke: "#8a6d45", accent: "#fbbf24" },  // amber
+    assistant: { fill: "#202024", stroke: "#52525b", accent: "#a1a1aa" },  // zinc
+    vision: { fill: "#202024", stroke: "#52525b", accent: "#a1a1aa" },  // zinc
     editorAgent: { fill: "#1e2725", stroke: "#47756b", accent: "#5eead4" },  // teal
     mediaUpload: { fill: "#1e2530", stroke: "#4b7399", accent: "#7dd3fc" },  // sky
     upload: { fill: "#1e2530", stroke: "#4b7399", accent: "#7dd3fc" },  // sky
@@ -26,6 +28,8 @@ const TYPE_LABELS: Record<string, string> = {
     imageGen: "Image",
     videoGen: "Video",
     audioGen: "Audio",
+    assistant: "Media Assistant",
+    vision: "Media Assistant",
     editorAgent: "Editor",
     mediaUpload: "Media",
     text: "Text",

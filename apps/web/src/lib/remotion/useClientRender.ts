@@ -13,7 +13,7 @@ import { useCallback, useRef, useState } from "react";
 import { renderMediaOnWeb } from "@remotion/web-renderer";
 import type { RenderMediaOnWebProgressCallback } from "@remotion/web-renderer";
 import { compileComposition } from "./compile-composition";
-import { getPresignedUrls } from "../presigned-url-cache";
+import { getPresignedUrls, invalidateUrl } from "../presigned-url-cache";
 
 export interface ClientRenderState {
     isRendering: boolean;
@@ -75,6 +75,13 @@ export function useClientRender(): UseClientRender {
                 const s3UrlPattern = /https:\/\/[^"\s'>\)\\]*kureita[^"\s'>\)\\]*amazonaws\.com[^"\s'>\)\\]+/g;
                 const rawUrls = [...new Set(tsxCode.match(s3UrlPattern) || [])];
                 if (rawUrls.length > 0) {
+                    // Force cache invalidation to get a fresh presigned URL for each render.
+                    // This creates a new URL string (new X-Amz-Date), bypassing browser cache
+                    // which often caches the opaque (no-CORS) response from <video> tags, 
+                    // causing Remotion's crossOrigin="anonymous" render to fail.
+                    for (const url of rawUrls) {
+                        invalidateUrl(url);
+                    }
                     const presigned = await getPresignedUrls(rawUrls);
                     for (const raw of rawUrls) {
                         const signed = presigned[raw];

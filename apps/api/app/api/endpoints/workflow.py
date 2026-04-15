@@ -16,6 +16,7 @@ from app.core.auth import get_current_user
 from app.services.node_runner import NodeRunner
 from app.services.billing import BillingService
 from app.models.usage import ActionType
+from app.api.endpoints.user_assets import _is_media_url
 from app.models.workflow_job import (
     JobTask, CreateJobResponse, JobTaskStatus, JobStatusResponse, JobProcessorRequest
 )
@@ -58,10 +59,17 @@ class ToolCallData(BaseModel):
     result: Optional[str] = None
 
 
+class ChatAttachment(BaseModel):
+    filename: str
+    type: str
+    url: str
+
+
 class ChatMessage(BaseModel):
     role: str  # "user" or "assistant"
     content: str
     timestamp: Optional[str] = None
+    attachments: Optional[List[ChatAttachment]] = None
     # Rich assistant message metadata
     thinking: Optional[str] = None
     thinking_duration_ms: Optional[int] = None
@@ -154,6 +162,14 @@ def get_workflows_collection():
     return db["workflows"]
 
 
+def ensure_utc_isoformat(dt):
+    """Ensure datetime has UTC timezone before converting to ISO format."""
+    if not isinstance(dt, datetime):
+        return datetime.now(timezone.utc).isoformat()
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.isoformat()
+
 def serialize_workflow(workflow: dict) -> dict:
     """Convert MongoDB document to response format."""
     # Ensure nodes and edges are always lists
@@ -183,8 +199,8 @@ def serialize_workflow(workflow: dict) -> dict:
         "outputs": workflow.get("outputs", {}),
         "chat_history": chat_history,
         "is_public": workflow.get("is_public", False),
-        "created_at": workflow.get("created_at", datetime.now(timezone.utc)).isoformat(),
-        "updated_at": workflow.get("updated_at", datetime.now(timezone.utc)).isoformat(),
+        "created_at": ensure_utc_isoformat(workflow.get("created_at", datetime.now(timezone.utc))),
+        "updated_at": ensure_utc_isoformat(workflow.get("updated_at", datetime.now(timezone.utc))),
     }
     
 import re
@@ -252,9 +268,17 @@ async def create_workflow(request: CreateWorkflowRequest, current_user: dict = D
     """Create a new workflow."""
     collection = get_workflows_collection()
     
+    name = request.name
+    if not name or name == "Untitled Workflow":
+        doc_count = await collection.count_documents({
+            "user_id": current_user.get("_id"),
+            "name": {"$regex": "^Untitled Workflow(-\\d+)?$"}
+        })
+        name = f"Untitled Workflow-{doc_count + 1}"
+
     now = datetime.now(timezone.utc)
     workflow_data = {
-        "name": request.name or "Untitled Workflow",
+        "name": name,
         "user_id": current_user.get("_id"),
         "nodes": [],
         "edges": [],
@@ -332,7 +356,7 @@ async def list_workflows(current_user: dict = Depends(get_current_user)):
             WorkflowListItem(
                 id=str(w["_id"]),
                 name=w.get("name", "Untitled Workflow"),
-                updated_at=w.get("updated_at", datetime.now(timezone.utc)).isoformat(),
+                updated_at=ensure_utc_isoformat(w.get("updated_at", datetime.now(timezone.utc))),
                 node_count=len(nodes_list),
                 nodes=[
                     {"id": n.get("id"), "type": n.get("type"), "position": n.get("position", {})}
@@ -560,6 +584,24 @@ async def run_node(
             {"$set": {"outputs": current_outputs, "updated_at": datetime.now(timezone.utc)}}
         )
         
+        # Register asset in persistent user_assets collection
+        new_output = result.get("output")
+        if new_output and isinstance(new_output, str) and _is_media_url(new_output):
+            try:
+                from app.api.endpoints.user_assets import register_asset
+                wf_name = workflow.get("name", "Untitled Workflow")
+                await register_asset(
+                    user_id=user_id,
+                    workflow_id=workflow_id,
+                    workflow_name=wf_name,
+                    node_id=node_id,
+                    node_type=node_type,
+                    asset_url=new_output,
+                    node_data=target_node.get("data"),
+                )
+            except Exception as reg_err:
+                print(f"[Workflow] ⚠️ Asset registration failed: {reg_err}")
+        
         print(f"[Workflow] Node {node_id} completed successfully")
     else:
         print(f"[Workflow] Node {node_id} failed: {result.get('error')}")
@@ -757,6 +799,28 @@ async def run_workflow(workflow_id: str, current_user: dict = Depends(get_curren
         {"_id": oid},
         {"$set": {"outputs": outputs, "updated_at": datetime.now(timezone.utc)}}
     )
+    
+    # Register all generated assets in persistent user_assets collection
+    wf_name = workflow.get("name", "Untitled Workflow")
+    node_type_map = {n.get("id"): n.get("type") for n in nodes}
+    node_data_map = {n.get("id"): n.get("data") for n in nodes}
+    for nid, output_val in outputs.items():
+        if "__" in nid:
+            continue
+        if isinstance(output_val, str) and _is_media_url(output_val):
+            try:
+                from app.api.endpoints.user_assets import register_asset
+                await register_asset(
+                    user_id=user_id,
+                    workflow_id=workflow_id,
+                    workflow_name=wf_name,
+                    node_id=nid,
+                    node_type=node_type_map.get(nid, "mediaUpload"),
+                    asset_url=output_val,
+                    node_data=node_data_map.get(nid),
+                )
+            except Exception as reg_err:
+                print(f"[Workflow] ⚠️ Asset registration failed for {nid}: {reg_err}")
     
     print(f"[Workflow] Workflow completed. Outputs: {len(outputs)}, Errors: {len(errors)}")
     
@@ -1025,6 +1089,24 @@ async def _execute_node_async(workflow_id: str, node_id: str, run_id: str, input
                 {"_id": oid},
                 {"$set": set_fields}
             )
+            
+            # Register asset in persistent user_assets collection
+            if new_output and isinstance(new_output, str) and _is_media_url(new_output):
+                try:
+                    from app.api.endpoints.user_assets import register_asset
+                    wf_name = workflow.get("name", "Untitled Workflow")
+                    await register_asset(
+                        user_id=user_id,
+                        workflow_id=workflow_id,
+                        workflow_name=wf_name,
+                        node_id=node_id,
+                        node_type=node_type,
+                        asset_url=new_output,
+                        node_data=target_node.get("data"),
+                    )
+                except Exception as reg_err:
+                    print(f"[NodeAsync] ⚠️ Asset registration failed: {reg_err}")
+            
             print(f"[NodeAsync] Node {node_id} completed successfully")
         else:
             error_msg = result.get("error", "Unknown error")
@@ -1662,6 +1744,25 @@ class ConfirmUploadRequest(BaseModel):
     file_url: str
 
 
+def _extract_render_frames(file_url: str) -> tuple[Optional[str], Optional[str]]:
+    """Extract start/end frames from a rendered editor video when possible."""
+    try:
+        from app.services.storage_service import S3StorageService
+
+        runner = NodeRunner()
+        source_url = file_url
+
+        if S3StorageService().is_s3_url(file_url):
+            source_url = S3StorageService().get_presigned_url(file_url)
+
+        start_frame = runner._extract_video_frame(source_url, "start_frame")
+        end_frame = runner._extract_video_frame(source_url, "end_frame")
+        return start_frame, end_frame
+    except Exception as err:
+        print(f"[Workflow] Editor render frame extraction failed: {err}")
+        return None, None
+
+
 @router.post("/{workflow_id}/nodes/{node_id}/upload-render/confirm")
 async def confirm_upload_render(
     workflow_id: str,
@@ -1691,14 +1792,23 @@ async def confirm_upload_render(
 
     from app.services.storage_service import S3StorageService
     file_url = S3StorageService.strip_presigned_params(request.file_url)
+    start_frame, end_frame = _extract_render_frames(file_url)
 
-    await collection.update_one(
-        {"_id": oid},
-        {"$set": {
+    set_fields: Dict[str, Any] = {
             f"outputs.{node_id}": file_url,
             f"execution.outputs.{node_id}": file_url,
             "updated_at": datetime.now(timezone.utc)
-        }}
+    }
+    if start_frame:
+        set_fields[f"outputs.{node_id}__start_frame"] = start_frame
+        set_fields[f"execution.outputs.{node_id}__start_frame"] = start_frame
+    if end_frame:
+        set_fields[f"outputs.{node_id}__end_frame"] = end_frame
+        set_fields[f"execution.outputs.{node_id}__end_frame"] = end_frame
+
+    await collection.update_one(
+        {"_id": oid},
+        {"$set": set_fields}
     )
 
     storage = S3StorageService()
@@ -1745,14 +1855,23 @@ async def upload_rendered_video(
         
         from app.services.storage_service import S3StorageService
         file_url = S3StorageService.strip_presigned_params(file_url)
+        start_frame, end_frame = _extract_render_frames(file_url)
 
-        await collection.update_one(
-            {"_id": oid},
-            {"$set": {
+        set_fields: Dict[str, Any] = {
                 f"outputs.{node_id}": file_url,
                 f"execution.outputs.{node_id}": file_url,
                 "updated_at": datetime.now(timezone.utc)
-            }}
+        }
+        if start_frame:
+            set_fields[f"outputs.{node_id}__start_frame"] = start_frame
+            set_fields[f"execution.outputs.{node_id}__start_frame"] = start_frame
+        if end_frame:
+            set_fields[f"outputs.{node_id}__end_frame"] = end_frame
+            set_fields[f"execution.outputs.{node_id}__end_frame"] = end_frame
+
+        await collection.update_one(
+            {"_id": oid},
+            {"$set": set_fields}
         )
 
         return {"url": file_url, "presigned_url": storage.get_presigned_url(file_url)}
@@ -2183,6 +2302,23 @@ async def _process_job(job_id: str):
                 wf_set[f"outputs.{node_id}__end_frame"] = end_frame
             await wf_collection.update_one({"_id": wf_oid}, {"$set": wf_set})
 
+            # Register asset in persistent user_assets collection
+            if new_output and isinstance(new_output, str) and _is_media_url(new_output):
+                try:
+                    from app.api.endpoints.user_assets import register_asset
+                    wf_name = workflow.get("name", "Untitled Workflow")
+                    await register_asset(
+                        user_id=user_id,
+                        workflow_id=workflow_id,
+                        workflow_name=wf_name,
+                        node_id=node_id,
+                        node_type=node_type,
+                        asset_url=new_output,
+                        node_data=target_node.get("data"),
+                    )
+                except Exception as reg_err:
+                    print(f"[RunAll] ⚠️ Asset registration failed: {reg_err}")
+
             print(f"[RunAll] Task {node_id} completed")
 
         else:
@@ -2302,5 +2438,3 @@ async def job_processor_background(request: JobProcessorRequest):
     await _process_job(request.job_id)
     print(f"[RunAll] job-processor done for job {request.job_id}")
     return {"ok": True}
-
-

@@ -4,6 +4,7 @@ import {
     Type,
     Image as ImageIcon,
     Video,
+    Eye,
     Clapperboard,
     Upload,
     Music
@@ -20,6 +21,7 @@ export function NodeSelector({ onSelect }: NodeSelectorProps) {
         { id: "imageGen", label: "Image Generator", icon: <ImageIcon className="w-4 h-4 text-blue-500" /> },
         { id: "audioGen", label: "Audio Generator", icon: <Music className="w-4 h-4 text-orange-500" /> },
         { id: "videoGen", label: "Video Generator", icon: <Video className="w-4 h-4 text-purple-500" /> },
+        { id: "assistant", label: "Media Assistant", icon: <Eye className="w-4 h-4 text-blue-500" /> },
         { id: "editorAgent", label: "Editor Agent", icon: <Clapperboard className="w-4 h-4 text-purple-600" /> },
         { id: "mediaUpload", label: "Asset", icon: <Upload className="w-4 h-4 text-blue-600" /> },
     ];

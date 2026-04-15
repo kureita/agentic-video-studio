@@ -5,6 +5,8 @@ import { NodeWrapper } from "@/components/workflow/node-wrapper";
 import { HighlightedTextarea } from "@/components/workflow/nodes/highlighted-textarea";
 import { useWorkflowStore } from "@/lib/workflow-store";
 import { useClientRender } from "@/lib/remotion/useClientRender";
+import { workflowApi } from "@/lib/workflow-api";
+import { extractFrameFromVideo } from "@/lib/video-utils";
 
 /** Check if a string is a video/media URL rather than TSX code */
 function isVideoUrl(s: string): boolean {
@@ -21,12 +23,16 @@ function isVideoUrl(s: string): boolean {
 
 export const EditorAgentNode = memo(({ id, selected, data }: NodeProps) => {
     const { deleteElements, updateNodeData } = useReactFlow();
-    const { runNode, clearNodeOutput, outputs, runningNodeId, uploadRenderedVideo } = useWorkflowStore();
+    const { runNode, clearNodeOutput, outputs, runningNodeId, uploadRenderedVideo, setRawOutput } = useWorkflowStore();
 
     const isRunning = runningNodeId === id;
+    const workflowId = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("id") || "" : "";
+    const [extractingHandle, setExtractingHandle] = useState<string | null>(null);
+    const [extractionError, setExtractionError] = useState<string | null>(null);
 
     // The output from the backend — could be raw TSX, JSON-wrapped scene/compositor, or a video URL
     const storeOutput = (outputs[id] as string | undefined) || (data.output as string | undefined) || null;
+    const storedVideoUrl = (storeOutput && isVideoUrl(storeOutput)) ? storeOutput : null;
 
     // If the output got overwritten with a video URL (from upload-render), ignore it
     // and use the preserved TSX code instead.
@@ -85,7 +91,10 @@ export const EditorAgentNode = memo(({ id, selected, data }: NodeProps) => {
                     const file = new File([blob], `render_${id}.mp4`, { type: 'video/mp4' });
 
                     // Upload to S3 and save to MongoDB outputs
-                    await uploadRenderedVideo(id, file);
+                    const uploadedUrl = await uploadRenderedVideo(id, file);
+                    if (uploadedUrl) {
+                        setRawOutput(id, uploadedUrl);
+                    }
                 } catch (err) {
                     console.error("Failed to auto-upload rendered video:", err);
                     hasUploadedRef.current = false; // allow retry if needed
@@ -93,7 +102,67 @@ export const EditorAgentNode = memo(({ id, selected, data }: NodeProps) => {
             };
             upload();
         }
-    }, [renderState.blobUrl, renderState.isRendering, isScene, id, uploadRenderedVideo]);
+    }, [renderState.blobUrl, renderState.isRendering, isScene, id, uploadRenderedVideo, setRawOutput]);
+
+    const handleExtractFrames = useCallback(async (handleId: string) => {
+        const sourceVideo = renderState.blobUrl || storedVideoUrl || null;
+        if (!sourceVideo || extractingHandle) return;
+
+        setExtractingHandle(handleId);
+        setExtractionError(null);
+
+        try {
+            const timeRatio = handleId === "end_frame" ? 1 : 0;
+            const frame = await extractFrameFromVideo(sourceVideo, timeRatio);
+            const startFramePayload = handleId === "start_frame" ? frame : undefined;
+            const endFramePayload = handleId === "end_frame" ? frame : undefined;
+
+            if (workflowId) {
+                await workflowApi.extractFrames(workflowId, id, startFramePayload, endFramePayload);
+            }
+
+            setRawOutput(`${id}__${handleId}`, frame);
+        } catch (err) {
+            console.error("[EditorNode] Frame extraction failed:", err);
+            setExtractionError(err instanceof Error ? err.message : "Could not extract frame");
+        } finally {
+            setExtractingHandle(null);
+        }
+    }, [extractingHandle, id, renderState.blobUrl, setRawOutput, storedVideoUrl, workflowId]);
+
+    useEffect(() => {
+        const sourceVideo = renderState.blobUrl || storedVideoUrl || null;
+        if (!sourceVideo || !workflowId) return;
+
+        const hasStartFrame = outputs[`${id}__start_frame`];
+        const hasEndFrame = outputs[`${id}__end_frame`];
+        if (hasStartFrame && hasEndFrame) return;
+
+        const timer = setTimeout(async () => {
+            try {
+                let startFramePayload: string | undefined;
+                let endFramePayload: string | undefined;
+
+                if (!hasStartFrame) {
+                    startFramePayload = await extractFrameFromVideo(sourceVideo, 0);
+                    setRawOutput(`${id}__start_frame`, startFramePayload);
+                }
+
+                if (!hasEndFrame) {
+                    endFramePayload = await extractFrameFromVideo(sourceVideo, 1);
+                    setRawOutput(`${id}__end_frame`, endFramePayload);
+                }
+
+                if (startFramePayload || endFramePayload) {
+                    await workflowApi.extractFrames(workflowId, id, startFramePayload, endFramePayload);
+                }
+            } catch (err) {
+                console.error("[EditorNode] Auto frame extraction failed:", err);
+            }
+        }, 1000);
+
+        return () => clearTimeout(timer);
+    }, [workflowId, id, outputs, renderState.blobUrl, setRawOutput, storedVideoUrl]);
 
     // Manual re-render
     const handleReRender = useCallback(async () => {
@@ -166,13 +235,13 @@ export const EditorAgentNode = memo(({ id, selected, data }: NodeProps) => {
     };
 
     // Determine what to show in the video area
-    // If the store output is a video URL (e.g. page reload), show it directly
-    const storedVideoUrl = (storeOutput && isVideoUrl(storeOutput)) ? storeOutput : null;
     const videoSrc = renderState.blobUrl || storedVideoUrl || null;
     const hasVideo = !!videoSrc;
     const isCompiling = renderState.phase === "compiling";
     const isRendering = renderState.phase === "rendering";
     const hasError = renderState.phase === "error";
+    const startFramePreview = (outputs[`${id}__start_frame`] as string | undefined) || undefined;
+    const endFramePreview = (outputs[`${id}__end_frame`] as string | undefined) || undefined;
 
     const ratio = (data.ratio as string) || "16:9";
 
@@ -206,7 +275,25 @@ export const EditorAgentNode = memo(({ id, selected, data }: NodeProps) => {
                 { id: "ref_images", label: "Ref Images", type: "image", style: { bottom: '100px' } },
                 { id: "ref_videos", label: "Ref Videos", type: "video", style: { bottom: '140px' } }
             ]}
-            outputs={[{ id: "output", label: "Video", type: "video" }]}
+            outputs={[
+                { id: "output", label: "Video", type: "video" },
+                {
+                    id: "start_frame", label: "Start Frame", type: "image",
+                    framePreview: startFramePreview,
+                    hasVideoOutput: hasVideo,
+                    onExtractFrames: () => handleExtractFrames("start_frame"),
+                    isExtractingFrames: extractingHandle === "start_frame",
+                    extractionError: extractionError || undefined,
+                },
+                {
+                    id: "end_frame", label: "End Frame", type: "image",
+                    framePreview: endFramePreview,
+                    hasVideoOutput: hasVideo,
+                    onExtractFrames: () => handleExtractFrames("end_frame"),
+                    isExtractingFrames: extractingHandle === "end_frame",
+                    extractionError: extractionError || undefined,
+                },
+            ]}
             color="bg-purple-500"
             contentClassName="relative bg-black"
             onDelete={() => deleteElements({ nodes: [{ id }] })}
@@ -228,7 +315,7 @@ export const EditorAgentNode = memo(({ id, selected, data }: NodeProps) => {
 
                 {/* Top Section: Rendered Video */}
                 <div
-                    className="relative flex items-center justify-center bg-black"
+                    className="relative flex items-center justify-center bg-transparent"
                     style={{
                         height: layout.videoHeight
                     }}
@@ -346,7 +433,7 @@ export const EditorAgentNode = memo(({ id, selected, data }: NodeProps) => {
                         <div className="flex flex-col items-center justify-center text-center text-muted-foreground/50">
                             <Clapperboard className="w-12 h-12 mb-2" />
                             <p className="text-xs">Rendered video will appear here</p>
-                            <p className="text-[10px] mt-1 opacity-70">AI writes Remotion code → client-side render</p>
+                            <p className="text-[10px] mt-1 opacity-70">Client-Side Rendering. Keep the Browser Focused.</p>
                         </div>
                     )}
 
@@ -378,7 +465,7 @@ export const EditorAgentNode = memo(({ id, selected, data }: NodeProps) => {
                 <div className="h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
 
                 {/* Bottom Section: Text Input */}
-                <div className="relative bg-black/20">
+                <div className="relative bg-transparent">
                     {/* Suggestions Popup */}
                     {showSuggestions && textNodes.length > 0 && (
                         <div className="absolute bottom-full left-4 mb-2 z-50 w-48 bg-popover text-popover-foreground rounded-md border shadow-md overflow-hidden animate-in fade-in zoom-in-95 duration-100">

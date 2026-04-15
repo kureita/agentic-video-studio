@@ -26,10 +26,17 @@ export interface ToolCall {
     result?: string;
 }
 
+export interface ChatAttachment {
+    filename: string;
+    type: string;
+    url: string;
+}
+
 export interface ChatMessage {
     role: "user" | "assistant";
     content: string;
     timestamp?: string;
+    attachments?: ChatAttachment[];
     // Rich assistant message metadata
     thinking?: string;
     thinking_duration_ms?: number;

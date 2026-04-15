@@ -240,6 +240,40 @@ export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
         e.preventDefault();
         e.stopPropagation();
         setIsDragOver(false);
+
+        // Check for internal dragging of S3 assets
+        try {
+            const jsonData = e.dataTransfer.getData("application/json");
+            if (jsonData) {
+                const data = JSON.parse(jsonData);
+                if (data.type === "asset" && data.url) {
+                    const uploadedType = data.asset_category.includes("video") || data.url.match(/\.(mp4|mov|webm)$/i) ? 'video' 
+                                       : data.asset_category.includes("audio") || data.url.match(/\.(mp3|wav|ogg|flac)$/i) ? 'audio' 
+                                       : 'image';
+                    
+                    const { setNodes, nodes } = useWorkflowStore.getState();
+                    setNodes(nodes.map(n => n.id === id ? {
+                        ...n,
+                        data: { ...n.data, mediaType: uploadedType, output: data.url }
+                    } : n));
+                    setNodeOutput(id, data.url);
+
+                    const { nodeExecutionStates } = useWorkflowStore.getState();
+                    useWorkflowStore.setState({
+                        runningNodeId: null,
+                        nodeExecutionStates: {
+                            ...nodeExecutionStates,
+                            [id]: { status: "completed" }
+                        }
+                    });
+                    runNode(id);
+                    return;
+                }
+            }
+        } catch (err) {
+            console.error("Error parsing drop data", err);
+        }
+
         const file = e.dataTransfer.files?.[0];
         if (file) {
             await processFile(file);
@@ -314,7 +348,7 @@ export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
             icon={<Upload className="w-4 h-4" />}
             selected={selected}
             outputs={nodeHandles}
-            contentClassName="p-0 h-full"
+            contentClassName="p-0 h-full relative bg-black"
             onDelete={() => deleteElements({ nodes: [{ id }] })}
             onClear={output ? handleClear : undefined}
             isRunning={isRunning}
@@ -324,7 +358,7 @@ export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
             <div className="h-full flex flex-col">
                 {/* Preview Area */}
                 {output ? (
-                    <div className="relative flex-1 w-full bg-black/5 flex items-center justify-center overflow-hidden">
+                    <div className="relative flex-1 w-full bg-muted/30 flex items-center justify-center overflow-hidden">
                         {mediaType === 'video' ? (
                             <video
                                 src={output as string}
@@ -374,7 +408,7 @@ export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
                     </div>
                 ) : (
                     <div
-                        className={`flex-1 flex flex-col items-center justify-center p-4 transition-colors cursor-pointer group/upload relative overflow-hidden ${isDragOver ? "bg-primary/5 border-primary" : "bg-muted/20 hover:bg-muted/40"}`}
+                        className={`flex-1 flex flex-col items-center justify-center p-4 transition-colors cursor-pointer group/upload relative overflow-hidden ${isDragOver ? "bg-primary/5 border-primary" : "bg-muted/30 hover:bg-muted/40"}`}
                         onClick={handleUploadClick}
                         onDragEnter={handleDragEnter}
                         onDragOver={handleDragOver}
@@ -389,7 +423,7 @@ export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
                                     <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500/20 to-blue-500/5 flex items-center justify-center mb-3 shadow-inner">
                                         <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />
                                     </div>
-                                    <p className="text-xs font-medium text-foreground mb-1">
+                                    <p className="text-xs font-medium text-white/90 mb-1">
                                         Uploading... {uploadProgress > 0 && `${uploadProgress}%`}
                                     </p>
                                     <div className="w-24 h-1.5 bg-muted rounded-full mt-1 overflow-hidden">
@@ -404,24 +438,24 @@ export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
                                     <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500/20 to-blue-500/5 flex items-center justify-center mb-3 shadow-inner group-hover/upload:scale-110 transition-transform duration-300">
                                         <Upload className="w-5 h-5 text-blue-500" />
                                     </div>
-                                    <p className="text-xs font-medium text-foreground mb-1">Upload Image, Video or Audio</p>
+                                    <p className="text-xs font-medium text-white/90 mb-1">Upload Image, Video or Audio</p>
                                 </>
                             )}
                             {!isUploading && (
-                                <p className="text-[10px] text-muted-foreground text-center max-w-[160px]">
+                                <p className="text-[10px] text-white/50 text-center max-w-[160px]">
                                     Drag & drop or click to browse
                                 </p>
                             )}
                             <div className="flex items-center gap-2 mt-3">
-                                <div className="flex items-center gap-1 px-2 py-1 rounded bg-muted/50 text-[9px] text-muted-foreground">
+                                <div className="flex items-center gap-1 px-2 py-1 rounded bg-black/40 text-[9px] text-white/60">
                                     <ImageIcon className="w-2.5 h-2.5" />
                                     <span>JPG, PNG</span>
                                 </div>
-                                <div className="flex items-center gap-1 px-2 py-1 rounded bg-muted/50 text-[9px] text-muted-foreground">
+                                <div className="flex items-center gap-1 px-2 py-1 rounded bg-black/40 text-[9px] text-white/60">
                                     <Video className="w-2.5 h-2.5" />
                                     <span>MP4, MOV</span>
                                 </div>
-                                <div className="flex items-center gap-1 px-2 py-1 rounded bg-muted/50 text-[9px] text-muted-foreground">
+                                <div className="flex items-center gap-1 px-2 py-1 rounded bg-black/40 text-[9px] text-white/60">
                                     <Music className="w-2.5 h-2.5" />
                                     <span>MP3, WAV</span>
                                 </div>

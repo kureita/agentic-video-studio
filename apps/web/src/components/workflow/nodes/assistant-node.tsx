@@ -1,30 +1,43 @@
-import { memo, useState, useRef, useMemo, ChangeEvent } from "react";
-import { Node, NodeProps, useReactFlow } from "@xyflow/react";
-import { Eye, Sparkles } from "lucide-react";
+import { memo, useEffect, useMemo, useRef, useState, ChangeEvent } from "react";
+import { Node as FlowNode, NodeProps, useReactFlow } from "@xyflow/react";
+import { Eye } from "lucide-react";
 import { NodeWrapper } from "@/components/workflow/node-wrapper";
 import { useWorkflowStore } from "@/lib/workflow-store";
 
 type AssistantNodeData = {
     output?: string;
     instruction?: string;
+    model?: string;
+    executionStatus?: "queued" | "running" | "completed" | "failed" | null;
 };
 
-type AssistantNodeType = Node<AssistantNodeData>;
+type AssistantNodeType = FlowNode<AssistantNodeData>;
+const FIXED_MODEL = "Gemini 3.1 Pro Preview (High)";
 
 export const AssistantNode = memo(({ id, selected, data }: NodeProps<AssistantNodeType>) => {
     const { deleteElements, updateNodeData } = useReactFlow();
+    const { runNode, clearNodeOutput, outputs, runningNodeId } = useWorkflowStore();
+
     const [showSuggestions, setShowSuggestions] = useState(false);
     const [filterText, setFilterText] = useState("");
     const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-    // Get all text nodes for suggestions
+    const isRunning = runningNodeId === id;
+    const output = (outputs[id] as string | undefined) || data.output || "";
+
     const nodes = useWorkflowStore((state) => state.nodes);
     const textNodes = useMemo(() =>
         nodes
-            .filter(n => n.type === 'text')
-            .map((n, i) => ({ id: n.id, label: `Text #${i + 1}`, content: (n.data.text as string) || "" })),
+            .filter((node) => node.type === "text")
+            .map((node, index) => ({ id: node.id, label: `Text #${index + 1}`, content: (node.data.text as string) || "" })),
         [nodes]
     );
+
+    useEffect(() => {
+        if (data.model !== FIXED_MODEL) {
+            updateNodeData(id, { model: FIXED_MODEL });
+        }
+    }, [data.model, id, updateNodeData]);
 
     const handleTextChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
         const val = e.target.value;
@@ -32,13 +45,12 @@ export const AssistantNode = memo(({ id, selected, data }: NodeProps<AssistantNo
 
         updateNodeData(id, { instruction: val });
 
-        // Check for trigger character @
         const textBeforeCursor = val.slice(0, cursor);
-        const lastAt = textBeforeCursor.lastIndexOf('@');
+        const lastAt = textBeforeCursor.lastIndexOf("@");
 
         if (lastAt !== -1) {
             const textAfterAt = textBeforeCursor.slice(lastAt + 1);
-            if (!textAfterAt.includes('\n') && !textAfterAt.includes(' ') && textAfterAt.length < 20) {
+            if (!textAfterAt.includes("\n") && !textAfterAt.includes(" ") && textAfterAt.length < 20) {
                 setShowSuggestions(true);
                 setFilterText(textAfterAt.toLowerCase());
                 return;
@@ -48,11 +60,10 @@ export const AssistantNode = memo(({ id, selected, data }: NodeProps<AssistantNo
     };
 
     const insertSuggestion = (label: string) => {
-        const val = (typeof data.instruction === 'string' ? data.instruction : '');
+        const val = typeof data.instruction === "string" ? data.instruction : "";
         const cursor = textareaRef.current?.selectionStart || val.length;
-
         const textBeforeCursor = val.slice(0, cursor);
-        const lastAt = textBeforeCursor.lastIndexOf('@');
+        const lastAt = textBeforeCursor.lastIndexOf("@");
 
         if (lastAt !== -1) {
             const newVal = val.slice(0, lastAt) + `@${label} ` + val.slice(cursor);
@@ -71,77 +82,86 @@ export const AssistantNode = memo(({ id, selected, data }: NodeProps<AssistantNo
 
     return (
         <NodeWrapper
-            title={`Assistant #${useWorkflowStore((state) =>
+            title={`Media Assistant #${useWorkflowStore((state) =>
                 state.nodes
-                    .filter(n => n.type === 'assistant')
-                    .findIndex(n => n.id === id) + 1
+                    .filter((node) => node.type === "assistant" || node.type === "vision")
+                    .findIndex((node) => node.id === id) + 1
             )}`}
             icon={<Eye className="w-4 h-4" />}
             selected={selected}
             inputs={[
                 { id: "text", label: "Text", type: "text" },
-                { id: "ref_images", label: "Ref Images", type: "image" },
-                { id: "ref_videos", label: "Ref Videos", type: "video" }
+                { id: "ref_images", label: "Images", type: "image" },
+                { id: "ref_videos", label: "Videos", type: "video" },
+                { id: "audio", label: "Audio", type: "audio" },
             ]}
-            outputs={[{ id: "output", label: "Output", type: "text" }]}
-            color="bg-emerald-500"
+            outputs={[{ id: "output", label: "Analysis", type: "text" }]}
+            contentClassName="p-0 overflow-hidden rounded-[17px]"
             onDelete={() => deleteElements({ nodes: [{ id }] })}
+            onRun={() => runNode(id)}
+            onClear={output ? () => clearNodeOutput(id) : undefined}
+            isRunning={isRunning}
+            executionStatus={data.executionStatus || null}
         >
-            <div className="flex flex-col h-[280px]">
-                {/* Output Area - Read Only (Top 2/3) */}
-                <div className="flex-[2] p-3 bg-muted/20 overflow-y-auto">
-                    <div className="text-xs text-muted-foreground/70 leading-relaxed whitespace-pre-wrap">
-                        {data.output || "Output will appear here after running..."}
-                    </div>
+            <div className="flex w-[340px] flex-col">
+                {/* Output / Results Area */}
+                <div className="relative min-h-[200px] max-h-[260px] overflow-y-auto px-4 py-4 [scrollbar-width:thin] [scrollbar-color:rgba(255,255,255,0.08)_transparent]">
+                    {output ? (
+                        <div className="text-[12.5px] leading-[1.75] text-foreground/80 whitespace-pre-wrap font-[system-ui] selection:bg-foreground/10">
+                            {output}
+                        </div>
+                    ) : (
+                        <div className="flex items-center justify-center h-[180px]">
+                            <p className="text-[12px] text-muted-foreground/40">No analysis yet</p>
+                        </div>
+                    )}
                 </div>
 
                 {/* Divider */}
-                <div className="h-[2px] bg-border/50" />
+                <div className="h-[1px] mx-3 bg-border/40" />
 
-                {/* Instruction Area - Editable (Bottom 1/3) */}
-                <div className="relative flex-1 flex flex-col">
+                {/* Input Area — chat-style */}
+                <div className="relative px-3 pt-3 pb-2">
                     {/* Suggestions Popup */}
                     {showSuggestions && textNodes.length > 0 && (
-                        <div className="absolute bottom-12 left-2 z-50 w-48 bg-popover text-popover-foreground rounded-md border shadow-md overflow-hidden animate-in fade-in zoom-in-95 duration-100">
-                            <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground bg-muted/50 border-b">
+                        <div className="absolute bottom-full left-2 right-2 mb-1.5 z-50 overflow-hidden rounded-xl border border-border/60 bg-popover/95 backdrop-blur-xl shadow-2xl">
+                            <div className="px-2.5 py-1.5 text-[9px] font-semibold text-muted-foreground/60 uppercase tracking-wider border-b border-border/30">
                                 Suggested Inputs
                             </div>
                             <div className="max-h-[120px] overflow-y-auto p-1">
                                 {textNodes
-                                    .filter(n => n.label.toLowerCase().includes(filterText) || n.content.toLowerCase().includes(filterText))
+                                    .filter((node) => node.label.toLowerCase().includes(filterText) || node.content.toLowerCase().includes(filterText))
                                     .map((node) => (
                                         <button
                                             key={node.id}
-                                            className="w-full text-left px-2 py-1.5 text-xs rounded-sm hover:bg-accent hover:text-accent-foreground cursor-pointer flex items-center justify-between group/item"
+                                            className="flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-[11px] text-foreground/80 transition-colors hover:bg-muted/60 cursor-pointer"
                                             onClick={() => insertSuggestion(node.label)}
                                         >
-                                            <span className="font-medium text-primary">{node.label}</span>
-                                            <span className="text-[10px] text-muted-foreground truncate max-w-[80px] opacity-70 group-hover/item:opacity-100">
-                                                {node.content.slice(0, 15)}...
+                                            <span className="font-medium text-foreground/70">{node.label}</span>
+                                            <span className="max-w-[110px] truncate text-[10px] text-muted-foreground/40">
+                                                {node.content.slice(0, 28)}
                                             </span>
                                         </button>
                                     ))}
-                                {textNodes.length === 0 && (
-                                    <div className="px-2 py-1.5 text-xs text-muted-foreground italic">No text nodes found</div>
-                                )}
                             </div>
                         </div>
                     )}
 
                     <textarea
                         ref={textareaRef}
-                        className="flex-1 w-full rounded-none border-none bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground/50 focus-visible:outline-none resize-none leading-relaxed overflow-y-auto nowheel"
-                        placeholder="Enter your instruction..."
-                        value={typeof data.instruction === 'string' ? data.instruction : ''}
+                        rows={2}
+                        className="w-full resize-none bg-transparent px-1 py-1 text-[12px] leading-relaxed text-foreground/80 placeholder:text-muted-foreground/30 focus:outline-none transition-colors duration-150 nodrag nowheel"
+                        placeholder="Ask about connected media..."
+                        value={typeof data.instruction === "string" ? data.instruction : ""}
                         onChange={handleTextChange}
                         onKeyDown={(e) => e.stopPropagation()}
                     />
 
-                    <div className="flex items-center justify-between px-3 pb-2 pt-1">
-                        <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
-                            <Sparkles className="w-3 h-3" />
-                            <span>Gemini 2.0 Flash</span>
-                        </div>
+                    {/* Model tag — bottom right, subtle */}
+                    <div className="flex justify-end pb-0.5">
+                        <span className="text-[9.5px] text-muted-foreground/35 font-medium tracking-wide">
+                            {FIXED_MODEL}
+                        </span>
                     </div>
                 </div>
             </div>

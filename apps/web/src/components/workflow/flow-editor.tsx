@@ -27,6 +27,7 @@ import { UploadNode } from "./nodes/upload-node";
 import { ImageGenNode } from "./nodes/image-gen-node";
 import { AudioGenNode } from "./nodes/audio-gen-node";
 import { VideoGenNode } from "./nodes/video-gen-node";
+import { AssistantNode } from "./nodes/assistant-node";
 import { EditorAgentNode } from "./nodes/editor-agent-node";
 import { MediaUploadNode } from "./nodes/media-upload-node";
 import { CommentNode } from "./nodes/comment-node";
@@ -41,6 +42,8 @@ const nodeTypes = {
     imageGen: ImageGenNode,
     audioGen: AudioGenNode,
     videoGen: VideoGenNode,
+    assistant: AssistantNode,
+    vision: AssistantNode,
     editorAgent: EditorAgentNode,
     mediaUpload: MediaUploadNode,
     comment: CommentNode,
@@ -188,7 +191,7 @@ function FlowEditorInner({ workflowId }: FlowEditorProps) {
             return false;
         }
 
-        const singleConnectionHandles = ['ref_video', 'reference_video', 'start_image', 'end_image'];
+        const singleConnectionHandles = ['ref_video', 'reference_video', 'reference_image', 'start_image', 'end_image'];
 
         if (targetHandleId && singleConnectionHandles.includes(targetHandleId)) {
             const connectionId = 'id' in connection ? connection.id : null;
@@ -205,8 +208,35 @@ function FlowEditorInner({ workflowId }: FlowEditorProps) {
             }
         }
 
+        // Elements mode compatibility guard:
+        // - elements_video cannot coexist with elements_image/elements_audio
+        // - elements_image/elements_audio can coexist with each other
+        // - if elements_video exists, block new elements_image/elements_audio links
+        if (targetHandleId && connection.target) {
+            const targetNode = nodes.find((node) => node.id === connection.target);
+            if (targetNode?.type === "videoGen") {
+                const existingTargetHandles = edges
+                    .filter((edge) => edge.target === connection.target)
+                    .map((edge) => edge.targetHandle?.split('|')[1] || "");
+
+                const hasElementsVideo = existingTargetHandles.includes("elements_video");
+                const hasElementsImageOrAudio = existingTargetHandles.includes("elements_image")
+                    || existingTargetHandles.includes("elements_audio");
+
+                if (targetHandleId === "elements_video" && hasElementsImageOrAudio) {
+                    console.log("[FlowEditor] Connection rejected: elements_video cannot be combined with elements_image/elements_audio");
+                    return false;
+                }
+
+                if ((targetHandleId === "elements_image" || targetHandleId === "elements_audio") && hasElementsVideo) {
+                    console.log("[FlowEditor] Connection rejected: elements_image/elements_audio cannot be combined with elements_video");
+                    return false;
+                }
+            }
+        }
+
         return true;
-    }, [edges]);
+    }, [edges, nodes]);
 
     const onConnect = useCallback(
         (params: Connection) => {
@@ -291,6 +321,83 @@ function FlowEditorInner({ workflowId }: FlowEditorProps) {
     }, [nodes, edges, setNodes, takeSnapshot, reactFlowInstance]);
 
     // ============================================
+    // Drop asset from "Your Stuff" → create node
+    // ============================================
+
+    const onDragOver = useCallback((event: React.DragEvent) => {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "copy";
+        // console.log("onDragOver fired");
+    }, []);
+
+    const { setNodeOutput } = useWorkflowStore();
+
+    const onDropAsset = useCallback((event: React.DragEvent) => {
+        event.preventDefault();
+        if (isReadOnly) return;
+
+        const jsonStr = event.dataTransfer.getData("application/kureita-asset");
+        if (!jsonStr) return;
+
+        let payload: {
+            type?: string;
+            url?: string;
+            presigned_url?: string;
+            asset_category?: string;
+            node_type?: string;
+            node_data?: Record<string, unknown>;
+        };
+
+        try {
+            payload = JSON.parse(jsonStr);
+        } catch {
+            return;
+        }
+
+        if (payload.type !== "asset" || !payload.url) return;
+
+        // Determine which node type to create
+        const nodeType = payload.node_type || (() => {
+            const cat = payload.asset_category || "";
+            if (cat === "generated_image") return "imageGen";
+            if (cat === "generated_video") return "videoGen";
+            if (cat === "generated_audio") return "audioGen";
+            if (cat === "rendered_video") return "editorAgent";
+            return "mediaUpload";
+        })();
+
+        // Build node data from saved settings
+        const savedData = payload.node_data || {};
+        const nodeData: Record<string, unknown> = { ...savedData, output: payload.url };
+
+        // Generate unique ID & position at drop point
+        const id = `${nodeType}_${Math.random().toString(36).substring(2, 9)}`;
+        const position = reactFlowInstance.screenToFlowPosition({
+            x: event.clientX,
+            y: event.clientY,
+        });
+
+        takeSnapshot(nodes, edges);
+
+        const newNode: Node = {
+            id,
+            type: nodeType,
+            position,
+            data: nodeData,
+        };
+
+        setNodes([...nodes, newNode]);
+
+        // Pre-fill the output so the node immediately shows the asset preview
+        setNodeOutput(id, payload.url);
+
+        console.log(`[FlowEditor] Created ${nodeType} node from dropped asset`, {
+            id,
+            nodeData: Object.keys(savedData),
+        });
+    }, [nodes, edges, setNodes, takeSnapshot, reactFlowInstance, isReadOnly, setNodeOutput]);
+
+    // ============================================
     // Undo / Redo handlers
     // ============================================
 
@@ -329,6 +436,28 @@ function FlowEditorInner({ workflowId }: FlowEditorProps) {
         window.addEventListener("keydown", handler);
         return () => window.removeEventListener("keydown", handler);
     }, [handleUndo, handleRedo]);
+
+    // Allow external callers (agent sidebar) to request a fit-view after applying workflow updates.
+    useEffect(() => {
+        const handler = (event: Event) => {
+            const customEvent = event as CustomEvent<{ workflowId?: string }>;
+            const targetWorkflowId = customEvent.detail?.workflowId;
+            if (targetWorkflowId && workflowId && targetWorkflowId !== workflowId) return;
+
+            window.setTimeout(() => {
+                const currentNodes = reactFlowInstance.getNodes();
+                if (!currentNodes.length) return;
+                reactFlowInstance.fitView({
+                    padding: 0.2,
+                    duration: 380,
+                    includeHiddenNodes: true,
+                });
+            }, 60);
+        };
+
+        window.addEventListener("kureita:fit-workflow-view", handler as EventListener);
+        return () => window.removeEventListener("kureita:fit-workflow-view", handler as EventListener);
+    }, [reactFlowInstance, workflowId]);
 
     // Don't render ReactFlow until initialized to prevent race conditions
     if (!isInitialized) {
@@ -375,8 +504,25 @@ function FlowEditorInner({ workflowId }: FlowEditorProps) {
                 isValidConnection={isValidConnection}
                 onEdgeClick={onEdgeClick}
                 onNodeDragStart={onNodeDragStart}
+                onDragOver={onDragOver}
+                onDrop={onDropAsset}
                 nodeTypes={nodeTypes}
-                fitView
+                defaultViewport={(()=>{
+                    if (workflowId && workflowId !== "new" && typeof window !== 'undefined') {
+                        try {
+                            const saved = localStorage.getItem(`kureita_viewport_${workflowId}`);
+                            if (saved) return JSON.parse(saved);
+                        } catch (e) {
+                            console.error("Failed to load viewport", e);
+                        }
+                    }
+                    return { x: 0, y: 0, zoom: 1 };
+                })()}
+                onMoveEnd={(event, viewport) => {
+                    if (workflowId && workflowId !== "new" && typeof window !== 'undefined') {
+                        localStorage.setItem(`kureita_viewport_${workflowId}`, JSON.stringify(viewport));
+                    }
+                }}
                 className={cn(
                     "bg-background-secondary",
                     activeTool === "cut" && "[&_.react-flow__pane]:!cursor-crosshair [&_.react-flow__pane.selection]:!cursor-crosshair [&_.react-flow__node]:!cursor-crosshair [&_.react-flow__edge:hover_.react-flow__edge-path]:!stroke-[#ef4444] [&_.react-flow__edge:hover_.react-flow__edge-path]:!stroke-[4px]",

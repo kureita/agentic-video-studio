@@ -20,13 +20,31 @@ function WorkflowEditorContent() {
 
     // Auto-save
     useEffect(() => {
-        const interval = setInterval(() => {
-            const { isDirty, saveWorkflow, isPublicView } = useWorkflowStore.getState();
-            if (isDirty && !isPublicView) {
-                saveWorkflow();
+        const flushSave = () => {
+            const { isDirty, saveWorkflow, isPublicView, isSaving } = useWorkflowStore.getState();
+            if (isDirty && !isPublicView && !isSaving) {
+                void saveWorkflow();
             }
+        };
+
+        const interval = setInterval(() => {
+            flushSave();
         }, 3000);
-        return () => clearInterval(interval);
+
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === "hidden") {
+                flushSave();
+            }
+        };
+
+        window.addEventListener("pagehide", flushSave);
+        document.addEventListener("visibilitychange", handleVisibilityChange);
+
+        return () => {
+            clearInterval(interval);
+            window.removeEventListener("pagehide", flushSave);
+            document.removeEventListener("visibilitychange", handleVisibilityChange);
+        };
     }, []);
 
     useEffect(() => {

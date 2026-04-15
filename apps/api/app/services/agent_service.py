@@ -1,10 +1,15 @@
 import json
 import os
 import time
+import base64
+import mimetypes
+import subprocess
+import tempfile
 from typing import Dict, Any, List, Optional
 from copy import deepcopy
 from pydantic import BaseModel
 from openai import AsyncOpenAI
+import httpx
 
 from app.core.config import settings
 from app.core.model_registry import (
@@ -16,7 +21,9 @@ from app.core.model_registry import (
     get_model_by_name,
     resolve_air_id,
 )
+from app.services.chat_model_registry import CHAT_MODELS
 from app.services.firecrawl_service import FirecrawlService
+from app.services.storage_service import S3StorageService
 
 class AgentService:
     def __init__(self):
@@ -36,6 +43,264 @@ class AgentService:
         self.firecrawl_service = FirecrawlService()
         self._default_video_model_id = "kling-video-3-standard"
         self._default_video_air_id = "klingai:kling-video@3-standard"
+        self._chat_models_cache: Optional[List[Dict[str, Any]]] = None
+        self._chat_models_cache_ts: float = 0.0
+
+    async def _fetch_openrouter_modalities_map(self) -> Dict[str, List[str]]:
+        if self._chat_models_cache is not None and (time.time() - self._chat_models_cache_ts) < 3600:
+            return {
+                str(model.get("openrouter_model")): list(model.get("input_modalities", []))
+                for model in self._chat_models_cache
+            }
+
+        headers = {
+            "HTTP-Referer": settings.api_base_url,
+            "X-Title": "Kureita",
+        }
+        if self.openrouter_api_key:
+            headers["Authorization"] = f"Bearer {self.openrouter_api_key}"
+
+        modalities_by_model: Dict[str, List[str]] = {}
+        try:
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                response = await client.get("https://openrouter.ai/api/v1/models", headers=headers)
+                response.raise_for_status()
+                payload = response.json()
+
+            for model in payload.get("data", []):
+                model_id = str(model.get("id") or "")
+                architecture = model.get("architecture") or {}
+                input_modalities = architecture.get("input_modalities") or []
+                if model_id and isinstance(input_modalities, list):
+                    modalities_by_model[model_id] = [
+                        str(modality).lower()
+                        for modality in input_modalities
+                        if isinstance(modality, str)
+                    ]
+        except Exception as err:
+            print(f"[AgentService] Failed to fetch OpenRouter model metadata: {err}")
+
+        return modalities_by_model
+
+    async def get_chat_models(self) -> List[Dict[str, Any]]:
+        modalities_by_model = await self._fetch_openrouter_modalities_map()
+        models: List[Dict[str, Any]] = []
+
+        for config in CHAT_MODELS:
+            input_modalities = modalities_by_model.get(
+                str(config.get("openrouter_model")),
+                [str(modality).lower() for modality in config.get("fallback_input_modalities", ["text"])],
+            )
+            normalized_modalities = []
+            for modality in input_modalities:
+                lowered = str(modality).lower()
+                if lowered not in normalized_modalities:
+                    normalized_modalities.append(lowered)
+
+            models.append({
+                **config,
+                "input_modalities": normalized_modalities,
+                "is_multimodal": any(modality != "text" for modality in normalized_modalities),
+            })
+
+        self._chat_models_cache = models
+        self._chat_models_cache_ts = time.time()
+        return models
+
+    async def _resolve_chat_model_config(self, display_name: str) -> Dict[str, Any]:
+        models = await self.get_chat_models()
+        for model in models:
+            if model.get("display_name") == display_name:
+                return model
+        return models[0]
+
+    async def _pick_best_chat_model_for_modalities(self, required_modalities: List[str]) -> Dict[str, Any]:
+        models = await self.get_chat_models()
+        normalized_required = [m for m in required_modalities if m and m != "text"]
+        for model in models:
+            input_modalities = set(model.get("input_modalities", []))
+            if all(modality in input_modalities for modality in normalized_required):
+                return model
+        return models[0]
+
+    def _get_attachment_summary(self, attachments: List[Dict[str, Any]]) -> str:
+        if not attachments:
+            return "None"
+        summary_parts = []
+        for attachment in attachments:
+            filename = str(attachment.get("filename") or "file")
+            media_type = str(attachment.get("type") or "application/octet-stream")
+            summary_parts.append(f"{filename} ({media_type})")
+        return ", ".join(summary_parts)
+
+    def _infer_attachment_modalities(self, attachments: List[Dict[str, Any]]) -> List[str]:
+        modalities: List[str] = []
+        for attachment in attachments:
+            media_type = str(attachment.get("type") or "").lower()
+            if media_type.startswith("image/") and "image" not in modalities:
+                modalities.append("image")
+            elif media_type.startswith("audio/") and "audio" not in modalities:
+                modalities.append("audio")
+            elif media_type.startswith("video/") and "image" not in modalities:
+                # Chat-side video understanding degrades to extracted representative frames,
+                # so an image-capable model is sufficient even when native video input is absent.
+                modalities.append("image")
+        return modalities
+
+    async def _fetch_attachment_bytes(self, attachment: Dict[str, Any]) -> tuple[Optional[bytes], Optional[str], Optional[str]]:
+        file_url = str(attachment.get("url") or "").strip()
+        if not file_url:
+            return None, None, None
+
+        media_type = str(attachment.get("type") or "").strip().lower()
+        if not media_type:
+            guessed_type, _ = mimetypes.guess_type(file_url)
+            media_type = str(guessed_type or "application/octet-stream")
+
+        source_url = file_url
+        if S3StorageService.is_s3_url(file_url):
+            source_url = S3StorageService().get_presigned_url(file_url)
+
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.get(source_url)
+                response.raise_for_status()
+                return response.content, media_type, source_url
+        except Exception as err:
+            print(f"[AgentService] Failed to fetch attachment '{file_url}': {err}")
+            return None, media_type, source_url
+
+    def _extract_video_frame_data_urls(self, video_bytes: bytes) -> List[str]:
+        frame_urls: List[str] = []
+        tmp_video_path = ""
+        tmp_frame_path = ""
+
+        try:
+            os.makedirs("tmp", exist_ok=True)
+            with tempfile.NamedTemporaryFile(suffix=".mp4", dir="tmp", delete=False) as tmp_video:
+                tmp_video.write(video_bytes)
+                tmp_video_path = tmp_video.name
+
+            for frame_type in ("start_frame", "end_frame"):
+                tmp_frame_path = tmp_video_path.replace(".mp4", f"_{frame_type}.jpg")
+
+                if frame_type == "end_frame":
+                    duration_result = subprocess.run(
+                        [
+                            "ffprobe",
+                            "-v",
+                            "error",
+                            "-show_entries",
+                            "format=duration",
+                            "-of",
+                            "default=noprint_wrappers=1:nokey=1",
+                            tmp_video_path,
+                        ],
+                        capture_output=True,
+                        text=True,
+                        timeout=30,
+                    )
+                    duration = float(duration_result.stdout.strip()) if duration_result.stdout.strip() else 0.0
+                    seek_time = max(0.0, duration - 0.1)
+                    subprocess.run(
+                        [
+                            "ffmpeg",
+                            "-y",
+                            "-ss",
+                            str(seek_time),
+                            "-i",
+                            tmp_video_path,
+                            "-frames:v",
+                            "1",
+                            "-q:v",
+                            "2",
+                            tmp_frame_path,
+                        ],
+                        capture_output=True,
+                        timeout=30,
+                    )
+                else:
+                    subprocess.run(
+                        [
+                            "ffmpeg",
+                            "-y",
+                            "-i",
+                            tmp_video_path,
+                            "-frames:v",
+                            "1",
+                            "-q:v",
+                            "2",
+                            tmp_frame_path,
+                        ],
+                        capture_output=True,
+                        timeout=30,
+                    )
+
+                if os.path.exists(tmp_frame_path) and os.path.getsize(tmp_frame_path) > 0:
+                    with open(tmp_frame_path, "rb") as frame_file:
+                        encoded_frame = base64.b64encode(frame_file.read()).decode("utf-8")
+                    frame_urls.append(f"data:image/jpeg;base64,{encoded_frame}")
+
+                if os.path.exists(tmp_frame_path):
+                    os.unlink(tmp_frame_path)
+                tmp_frame_path = ""
+        except Exception as err:
+            print(f"[AgentService] Failed to extract video frames: {err}")
+        finally:
+            for path in (tmp_frame_path, tmp_video_path):
+                if path and os.path.exists(path):
+                    try:
+                        os.unlink(path)
+                    except Exception:
+                        pass
+
+        return frame_urls
+
+    async def _build_multimodal_content_parts(
+        self,
+        attachments: List[Dict[str, Any]],
+        supports_video: bool,
+    ) -> List[Dict[str, Any]]:
+        parts: List[Dict[str, Any]] = []
+
+        for attachment in attachments:
+            file_bytes, media_type, source_url = await self._fetch_attachment_bytes(attachment)
+            if not file_bytes or not media_type:
+                continue
+
+            if media_type.startswith("image/"):
+                encoded = base64.b64encode(file_bytes).decode("utf-8")
+                parts.append({
+                    "type": "image_url",
+                    "image_url": {"url": f"data:{media_type};base64,{encoded}"},
+                })
+            elif media_type.startswith("audio/"):
+                encoded = base64.b64encode(file_bytes).decode("utf-8")
+                audio_format = media_type.split("/")[-1].split(";")[0].strip().lower() or "wav"
+                parts.append({
+                    "type": "input_audio",
+                    "input_audio": {"data": encoded, "format": audio_format},
+                })
+            elif media_type.startswith("video/"):
+                note = (
+                    "A video attachment was provided. Representative start and end frames are attached next "
+                    "to help with direct chat analysis."
+                )
+                if supports_video and source_url:
+                    note = (
+                        "A video attachment was provided. Representative start and end frames are attached next "
+                        "to ground analysis reliably for this turn."
+                    )
+                parts.append({"type": "text", "text": note})
+
+                frame_urls = self._extract_video_frame_data_urls(file_bytes)
+                for frame_url in frame_urls:
+                    parts.append({
+                        "type": "image_url",
+                        "image_url": {"url": frame_url, "detail": "low"},
+                    })
+
+        return parts
 
     def _resolve_video_model_entry(self, model_input: str) -> Optional[Dict[str, Any]]:
         if not model_input:
@@ -60,10 +325,23 @@ class AgentService:
 
         return get_model_by_air_id(self._default_video_air_id)
 
-    def _pick_best_video_model(self, need_i2v: bool, need_audio: bool) -> Dict[str, Any]:
+    def _pick_best_video_model(
+        self,
+        need_i2v: bool,
+        need_audio: bool,
+        need_reference: bool = False,
+        need_elements: bool = False,
+        need_v2v: bool = False,
+    ) -> Dict[str, Any]:
         def has_caps(entry: Dict[str, Any]) -> bool:
             caps = {c.lower() for c in entry.get("capabilities", [])}
-            return (not need_i2v or "i2v" in caps) and (not need_audio or "audio" in caps)
+            return (
+                (not need_i2v or "i2v" in caps)
+                and (not need_audio or "audio" in caps)
+                and (not need_reference or "reference" in caps)
+                and (not need_elements or "elements" in caps)
+                and (not need_v2v or "v2v" in caps)
+            )
 
         candidates = [m for m in VIDEO_MODELS if has_caps(m)]
         if not candidates:
@@ -150,14 +428,25 @@ class AgentService:
         normalized_nodes = deepcopy(nodes)
         warnings: List[str] = []
 
-        has_start_image_by_target: Dict[str, bool] = {}
+        target_handles_by_target: Dict[str, set[str]] = {}
         for e in edges or []:
             target = e.get("target")
             if not target:
                 continue
             target_handle = e.get("targetHandle") or e.get("target_handle") or ""
-            if isinstance(target_handle, str) and target_handle.endswith("start_image"):
-                has_start_image_by_target[target] = True
+            if isinstance(target_handle, str) and target_handle:
+                target_handles_by_target.setdefault(str(target), set()).add(target_handle)
+
+        def infer_mode_from_handles(handles: set[str]) -> str:
+            if any(h.endswith("elements_image") or h.endswith("elements_video") or h.endswith("elements_audio") for h in handles):
+                return "elements"
+            if any(h.endswith("reference_video") for h in handles):
+                return "v2v"
+            if any(h.endswith("reference_image") or h.endswith("reference_images") for h in handles):
+                return "reference"
+            if any(h.endswith("start_image") or h.endswith("end_image") for h in handles):
+                return "i2v"
+            return "auto"
 
         for node in normalized_nodes:
             if node.get("type") != "videoGen":
@@ -167,20 +456,54 @@ class AgentService:
             if not isinstance(node_data, dict):
                 continue
 
+            node_id = str(node.get("id", ""))
+            handles = target_handles_by_target.get(node_id, set())
+            inferred_mode = infer_mode_from_handles(handles)
+            raw_mode = str(node_data.get("inputMode") or "auto").strip().lower()
+            if raw_mode == "t2v":
+                raw_mode = "auto"
+            if raw_mode not in {"auto", "i2v", "reference", "elements", "v2v"}:
+                raw_mode = "auto"
+
+            # Connected assets always take precedence over stale mode settings.
+            final_mode = inferred_mode if inferred_mode != "auto" else raw_mode
+            if final_mode == "t2v":
+                final_mode = "auto"
+            if node_data.get("inputMode") != final_mode:
+                node_data["inputMode"] = final_mode
+
             requested_model = str(node_data.get("model") or self._default_video_model_id)
             entry = self._resolve_video_model_entry(requested_model)
             if not entry:
                 continue
 
             caps = {c.lower() for c in entry.get("capabilities", [])}
-            need_i2v = bool(has_start_image_by_target.get(str(node.get("id"))))
+            need_i2v = final_mode == "i2v"
+            need_reference = final_mode == "reference"
+            need_elements = final_mode == "elements"
+            need_v2v = final_mode == "v2v"
             wants_audio = bool(node_data.get("generateAudio", False))
 
             supports_i2v = "i2v" in caps
+            supports_reference = "reference" in caps
+            supports_elements = "elements" in caps
+            supports_v2v = "v2v" in caps
             supports_audio = "audio" in caps
 
-            if (need_i2v and not supports_i2v) or (wants_audio and not supports_audio):
-                replacement = self._pick_best_video_model(need_i2v=need_i2v, need_audio=wants_audio)
+            if (
+                (need_i2v and not supports_i2v)
+                or (need_reference and not supports_reference)
+                or (need_elements and not supports_elements)
+                or (need_v2v and not supports_v2v)
+                or (wants_audio and not supports_audio)
+            ):
+                replacement = self._pick_best_video_model(
+                    need_i2v=need_i2v,
+                    need_audio=wants_audio,
+                    need_reference=need_reference,
+                    need_elements=need_elements,
+                    need_v2v=need_v2v,
+                )
                 replacement_name = str(replacement.get("name") or replacement.get("id") or self._default_video_model_id)
                 node_data["model"] = replacement_name
                 warnings.append(
@@ -200,7 +523,15 @@ class AgentService:
 
         return normalized_nodes, warnings
         
-    async def generate_workflow(self, prompt: str, model: str = "Gemini 3.1 Flash Lite Preview (Low)", current_nodes: List[Dict] = [], current_edges: List[Dict] = [], chat_history: List[Dict] = []) -> Dict[str, Any]:
+    async def generate_workflow(
+        self,
+        prompt: str,
+        model: str = "Gemini 3.1 Flash Lite Preview (Low)",
+        current_nodes: List[Dict] = [],
+        current_edges: List[Dict] = [],
+        chat_history: List[Dict] = [],
+        attachments: List[Dict[str, Any]] = [],
+    ) -> Dict[str, Any]:
         """
         Generate a workflow based on a user prompt using the selected model.
         """
@@ -215,23 +546,19 @@ class AgentService:
             "edges": []
         }
         
-        # Define OpenRouter mapping
-        MODEL_MAPPING = {
-            "Gemini 3.1 Pro Preview (High)": "google/gemini-3.1-pro-preview",
-            "Gemini 3.1 Flash Lite Preview (Low)": "google/gemini-3.1-flash-lite-preview",
-            "Claude 4.6 Opus (High)": "anthropic/claude-opus-4.6",
-            "Claude 4.6 Sonnet (Medium)": "anthropic/claude-sonnet-4.6",
-            "Claude 4.5 Haiku (Low)": "anthropic/claude-haiku-4.5",
-            "GPT-5.4 Pro (High)": "openai/gpt-5.4-pro",
-            "GPT-5 Mini (Medium)": "openai/gpt-5-mini",
-            "GPT-5 Nano (Low)": "openai/gpt-5-nano"
-        }
-        
         # Verify Key Availability
         if not self.openrouter_client:
              return failure_response
-             
-        mapped_model = MODEL_MAPPING.get(model, "google/gemini-3.1-flash-lite-preview")
+
+        requested_model = await self._resolve_chat_model_config(model)
+        effective_model = requested_model
+        required_modalities = self._infer_attachment_modalities(attachments)
+        selected_input_modalities = set(str(modality) for modality in requested_model.get("input_modalities", []))
+        if required_modalities and not all(modality in selected_input_modalities for modality in required_modalities):
+            effective_model = await self._pick_best_chat_model_for_modalities(required_modalities)
+
+        mapped_model = str(effective_model.get("openrouter_model") or requested_model.get("openrouter_model"))
+        attachment_summary = self._get_attachment_summary(attachments)
 
         # Build capability-accurate model guidance from registry (single source of truth).
         # Image models: include ID, name, and ref image (i2i) support for the LLM.
@@ -296,6 +623,17 @@ class AgentService:
             )
             if durations:
                 duration_parts.append(f"{name}: {'/'.join(f'{d}s' for d in durations)}")
+                continue
+
+            duration_min = m.get("duration_min")
+            duration_max = m.get("duration_max")
+            duration_step = m.get("duration_step", 1)
+            if isinstance(duration_min, int) and isinstance(duration_max, int):
+                if isinstance(duration_step, int) and duration_step > 1:
+                    values = [f"{d}s" for d in range(duration_min, duration_max + 1, duration_step)]
+                    duration_parts.append(f"{name}: {'/'.join(values)}")
+                else:
+                    duration_parts.append(f"{name}: {duration_min}s-{duration_max}s")
         duration_constraints_text = ". ".join(duration_parts) + "."
 
         start_prompt = f"""
@@ -324,16 +662,22 @@ Your #1 priority is VISUAL CONSISTENCY — every character, background, and styl
 3. **videoGen** - Video Generator (Multiple models via Runware)
    - Inputs: "text|text" (type: text), "image|start_image" (type: image), "image|end_image" (type: image, optional), "audio|audio" (type: audio, optional)
    - Outputs: "video|video" (type: video), "image|start_frame" (type: image, first frame), "image|end_frame" (type: image, last frame)
-   - Data: {{ "label": "Video Scene X", "prompt": "Motion description", "duration": "5s", "ratio": "16:9", "model": "Kling VIDEO 3.0 Standard", "generateAudio": false }}
+   - Data: {{ "label": "Video Scene X", "prompt": "Motion description", "duration": "6s", "ratio": "9:16", "model": "kling-video-3-standard", "generateAudio": true, "inputMode": "t2v" }}
    - **Available Models**: {video_model_names}
    - **Duration Constraints**: {duration_constraints_text}
    - **Model Selection Rules (CRITICAL)**:
      - If `start_image` is connected, prefer models with I2V support: {i2v_model_names}.
      - If native video audio is explicitly requested, prefer models with native-audio capability: {native_audio_model_names}.
      - If both image-to-video AND native audio are needed in the same video node, choose from: {i2v_audio_model_names}.
+   - **Input Mode Rules (CRITICAL)**:
+     - Use `inputMode: "t2v"` when no media handles are connected.
+     - Use `inputMode: "i2v"` only when `start_image` (or start/end frames) is connected.
+     - Use `inputMode: "reference"` only when reference image handles are connected.
+     - Use `inputMode: "elements"` only when elements handles are connected.
+     - Use `inputMode: "v2v"` only when a reference video is connected.
    - **Audio Rules**:
-     - Set `generateAudio: true` ONLY when the user explicitly wants model-native video audio (ambience/dialogue generated by the video model itself).
-     - Set `generateAudio: false` by default.
+     - If no external audio node is connected and the selected model supports native audio, default to `generateAudio: true` for ad/reel/talking-head workflows.
+     - If external `audioGen` is connected, prefer `generateAudio: false` to avoid double audio unless the user explicitly asks for both.
      - If the user wants custom voiceover/music/SFX from separate audio nodes, keep `generateAudio: false` and connect `audioGen` output (`audio|audio`) to `videoGen` input (`audio|audio`) or `editorAgent` input (`audio|audio`).
 
 4. **audioGen** - Audio Generator (Speech, Music, SFX)
@@ -355,25 +699,73 @@ Your #1 priority is VISUAL CONSISTENCY — every character, background, and styl
      - `videoGen` input `audio|audio` — to attach audio to a generated video clip
    - **Example**: For a video ad with voiceover + background music, create TWO audioGen nodes (one `speech`, one `music`) and connect both to the `editorAgent` node.
 
-5. **editorAgent** - AI Editor (Stitches videos)
-   - Inputs: "text|text", "video|ref_videos" (Multiple), "audio|audio" (Multiple — connect audioGen outputs here)
-   - Outputs: "video|output"
-   - Data: {{ "label": "Editor", "instruction": "Stitching instructions. NOTE: Use this ONLY for basic video stitching and simple motion graphics. NOT for creative generation.", "ratio": "16:9" }}
+5. **assistant** - Multimodal Media Processor
+   - Inputs: "text|text" (optional), "image|ref_images" (Multiple), "video|ref_videos" (Multiple), "audio|audio" (Multiple)
+   - Outputs: "text|output"
+   - Data: {{ "label": "Media Assistant", "instruction": "Analyze/process the connected media and return structured text output." }}
+   - Use this node when the workflow needs media understanding before generation/editing:
+     - analyze uploaded images/videos/audio and turn them into prompts
+     - extract product details / character details / scene descriptions from media
+     - summarize reference videos/audio, identify continuity cues, or produce editing instructions
+     - compare multiple references and output a consolidated brief for downstream nodes
+   - Connect its `text|output` to downstream `text|prompt` / `text|text` consumers when you want the analyzed result to drive generation.
 
-6. **mediaUpload** - Asset Upload (User Files)
+6. **editorAgent** - AI Editor (Stitches / trims / retimes videos)
+   - Inputs: "text|text", "video|ref_videos" (Multiple), "audio|audio" (Multiple — connect audioGen outputs here)
+   - Outputs: "video|output", "image|start_frame", "image|end_frame"
+   - Data: {{ "label": "Editor", "instruction": "Editing instructions. Use this for trimming, stitching, timing correction, pacing, captions, light motion graphics, and exact duration delivery. NOT for primary visual generation.", "ratio": "16:9" }}
+
+7. **mediaUpload** - Asset Upload (User Files)
    - Outputs: "image|output" OR "video|output"
    - Data: {{ "label": "Upload [Name]", "mediaType": "image" or "video", "output": "URL_IF_KNOWN" }}
 
 # CORE RULES (MUST FOLLOW STRICTLY):
 
+## 0. DIRECT MEDIA UNDERSTANDING IN CHAT
+If the user asks what an attached image/video/audio is about, asks for description/analysis/transcription/summary of attached media, or wants a direct answer about the attachment:
+- Answer directly in `message`.
+- Return `nodes: []` and `edges: []` unless they ALSO explicitly ask to build or modify a workflow.
+- Do NOT divert them into a workflow or tell them to use the media assistant unless they explicitly ask for a workflow step.
+
 ## 1. BRAINSTORM FIRST (Decision Gate)
 **Check**: Is the user's request a high-level concept (e.g., "Make a coffee ad", "Funny cat video")?
 - **IF YES**:
   - Return `nodes: []`, `edges: []`.
-  - **Message**: "I can help with that! Let's agree on a script first. How about [Brief Idea]? Or do you have a specific scene in mind?"
+  - **Message**: include a concrete draft script (hook + scenes + CTA) and ask for confirmation/edits.
   - **STOP HERE.** Do not generate nodes.
 - **IF NO** (Request is specific/confirmed, e.g., "Use that script", "Scene 1 is..."):
   - Proceed to generate workflow.
+
+## 1A. SCRIPT APPROVAL GATE (MANDATORY FOR ADS/REELS)
+For ad/reel/commercial requests (especially prompts like "make an Instagram ad for this"), you MUST get script approval before building nodes unless the user already gave a script/scene plan.
+- If script is missing/unclear:
+  - Return `nodes: []`, `edges: []`.
+  - Provide a draft script in `message` with scene-by-scene timings.
+  - Ask the user to confirm or edit the script.
+- Only generate workflow nodes after script confirmation.
+
+## 1B. SCRIPT IS THE SOURCE OF TRUTH (Duration beats model defaults)
+If the user provides a script, exact scene timing, line timing, or total runtime, treat that timing as authoritative.
+- Decide the workflow around the SCRIPT first, not around whichever durations a model happens to offer.
+- Your job is to preserve the requested/scripted runtime exactly at the delivery layer, even if the chosen generation model prefers a longer source clip.
+- Do NOT silently stretch the script to match a model's default duration.
+- Do NOT blindly reuse default durations like 5s for every scene; set each video node duration intentionally from the approved script.
+
+## 1C. EXACT-DURATION DELIVERY RULE (Conditional)
+If a scene/video must land at an exact scripted duration and the chosen `videoGen` model cannot natively deliver that duration cleanly:
+- Generate the best source clip first with `videoGen`.
+- Then place an `editorAgent` node immediately after that `videoGen` node to trim/retime/stitch the clip to the exact scripted duration.
+- Example: if the script/scene is 3 seconds and you are using a model with only 4s/6s/8s outputs, create the best source video, then add an `editorAgent` after it with an instruction to deliver exactly 3.0 seconds.
+- If the selected video model already supports the exact scripted duration directly (for example a 3s request on a model that supports 3-15s), do NOT add an `editorAgent` just for timing.
+- When an `editorAgent` is inserted after a scene's `videoGen`, the editor becomes the final scene output for continuity and downstream connections.
+- In that case, use the editor's `image|end_frame` for chaining into the next scene, NOT the raw upstream `videoGen` end frame.
+
+## 1D. TALKING-HEAD / AI UGC MODEL PREFERENCE
+If the user wants AI UGC, selfie-style ads, creator-style talking head videos, direct-to-camera dialogue, spokesperson videos, or native-feeling social talking-head content:
+- First choice: `kling-video-3-pro` with native audio enabled (`generateAudio: true`) when model-native sound/dialogue is desired.
+- Second choice: `veo-3-1`.
+- Favor these over generic fallback models unless the user explicitly asks otherwise.
+- Keep the performance/script stable across nodes; do not change wording, pacing, or intent just because another model has different defaults.
 
 ## 2. CHARACTER BIBLE & REFERENCE IMAGES (Consistency Foundation)
 **Check**: Does the video involve any character, person, animal, or specific subject?
@@ -434,6 +826,7 @@ Scene 2 videoGen (output: "image|end_frame") → Scene 3 videoGen (input: "image
 - Create these chaining edges for EVERY pair of sequential scenes.
 - The edge format: `{{ "id": "chain-sN-sN+1", "source": "[scene-N-video-node-id]", "target": "[scene-N+1-video-node-id]", "sourceHandle": "image|end_frame", "targetHandle": "image|start_image" }}`
 - If Scene N+1 already has a start image from an imageGen node, the last-frame chain takes priority. Remove the imageGen→start_image edge for that scene and use the chain instead (EXCEPT for the very first scene, which should use its start image).
+- If a scene is finalized through an `editorAgent`, the chaining source must be that editor node's `image|end_frame`. Do not chain from the upstream raw `videoGen` node in that case.
 
 ## 5. BACKGROUND/LOCATION REFERENCE IMAGES
 **Check**: Does the video feature distinct locations or environments?
@@ -483,6 +876,7 @@ Every `text` node prompt for a scene MUST follow this exact structure:
 - ALWAYS connect this new `mediaUpload` node to an appropriate downstream node:
   - If they attach a video and ask to edit it: Connect its `video|output` to `editorAgent`'s `video|ref_videos`.
   - If they attach an image and want to animate it: Connect its `image|output` to `videoGen`'s `image|start_image`.
+  - If they attach media and want analysis, prompt extraction, reverse engineering, style extraction, product understanding, or script/help derived from the media: connect it to an `assistant` node.
   - If the uploaded file is a video, it will automatically extract `start_frame` and `end_frame` outputs for you. You can connect the `mediaUpload`'s `image|start_frame` or `image|end_frame` to other nodes if needed.
 
 ## 9. ASPECT RATIO & DIMENSIONS (GLOBAL RULE)
@@ -502,8 +896,22 @@ Every `text` node prompt for a scene MUST follow this exact structure:
 - Do **NOT** create 1:1 (Square) images for a 16:9 or 9:16 video.
 - All Character References, Backgrounds, and Start/End frames MUST match the video ratio exactly.
 
-## 10. TEXT NODE REFERENCING (CRITICAL)
-When a **text** node is connected to a generator node (imageGen, videoGen, editorAgent, vision, audioGen),
+## 10. VIDEO NODE CONFIG DISCIPLINE (MANDATORY)
+For EVERY `videoGen` node you add or modify, set configs intentionally — never leave ambiguous defaults.
+- Always set: `model`, `duration`, `ratio`, and `resolution`.
+- `duration` must come from approved script timing (or explicit user duration), not a blanket default.
+- When editing an existing workflow, preserve existing per-node configs unless the user asks to change them.
+- `inputMode` must match connected handles:
+  - start/end frame handles => `i2v`
+  - reference image handles => `reference`
+  - elements handles => `elements`
+  - reference video handle => `v2v`
+  - no media handles => `t2v`
+- If external audio is connected, keep `generateAudio: false` unless user asks for both native + external audio.
+- If no external audio is connected and the model supports native audio, default to `generateAudio: true` for ad/reel workflows.
+
+## 11. TEXT NODE REFERENCING (CRITICAL)
+When a **text** node is connected to a generator node (imageGen, videoGen, editorAgent, assistant, vision, audioGen),
 the generator node's prompt/instruction field MUST reference the connected text node using the `@Text #N` syntax.
 
 **How it works:**
@@ -524,9 +932,10 @@ the generator node's prompt/instruction field MUST reference the connected text 
 - The `@Text #N` number corresponds to the text node's position among ALL text nodes (1-indexed).
   - If you create 3 text nodes, they are Text #1, Text #2, Text #3 (in the order they appear in the nodes array).
 - For `editorAgent` nodes, use `@Text #N` in the `instruction` field.
+- For `assistant` nodes, use `@Text #N` in the `instruction` field.
 - For `imageGen`, `videoGen`, and `audioGen` nodes, use `@Text #N` in the `prompt` field.
 
-## 11. PROACTIVE WEB SEARCH (MANDATORY)
+## 12. PROACTIVE WEB SEARCH (MANDATORY)
 **RULE: If the user mentions ANY website URL or domain name (e.g., "regulify.ai", "example.com", https://...), you MUST call the `search_web` tool IMMEDIATELY to fetch and read its content. Do NOT ask the user for permission. Do NOT skip this step.**
 - **EXCEPTION:** NEVER call `search_web` on S3 URLs or attachment URLs (e.g., URLs containing `.s3.`, `.s3-`, `s3.amazonaws.com`, or URLs from `[Attached: ...]` lines). These are private internal storage links and will return AccessDenied. Just use them directly in `mediaUpload` node `output` fields.
 - **Query format**: Pass ONLY the bare domain or URL as the query — e.g., `"regulify.ai"` or `"https://regulify.ai"`. Do NOT add `site:` operators, `OR`, or any other modifiers. The backend handles scraping automatically.
@@ -534,7 +943,7 @@ the generator node's prompt/instruction field MUST reference the connected text 
 - After fetching, summarize what you found in your `thinking` field, and reference it in your `message`.
 - Similarly, if the user asks about current events, news, or time-sensitive data, call `search_web` with a clear, concise query.
 
-## 12. LAYOUT GRID (Prevent Overlap)
+## 13. LAYOUT GRID (Prevent Overlap)
 You must use a strict GRID coordinate system based on ROW and COLUMN indices.
 - **Horizontal Grid Unit (X spacing)**: 700px between columns.
 - **Vertical Grid Unit (Y spacing)**: 600px between rows.
@@ -565,6 +974,9 @@ Edges: {json.dumps(current_edges)}
 # Chat History:
 {json.dumps(chat_history)}
 
+# Current Turn Attachments:
+{attachment_summary}
+
 # User Request:
 "{prompt}"
 
@@ -578,11 +990,12 @@ This thinking field should briefly describe:
 
 # Output Format (JSON only):
 {{
-    "thinking": "Your reasoning and planning here...",
-    "tool_calls": [
+  "thinking": "Brief analysis and plan...",
+  "message": "Friendly response to the user...",
+  "suggested_name": "A short, descriptive name for the workflow (e.g. 'Coffee Reel', 'AI News Video')",
+  "tool_calls": [
         {{"name": "search_web", "args": {{"query": "latest AI news"}}, "result": "Search results snippet..."}}
     ],
-    "message": "Response to user",
     "action": "replace_all OR update",
     "nodes": [ {{ "id": "n1", "type": "text", "position": {{ "x": 0, "y": 0 }}, "data": {{ "text": "Hello" }} }} ], 
     "edges": [ {{ "id": "e1", "source": "n1", "target": "n2", "sourceHandle": "text|text", "targetHandle": "text|prompt" }} ],
@@ -594,7 +1007,6 @@ This thinking field should briefly describe:
         "delete_edges": [ "edge-id-to-delete" ]
     }}
 }}
-Note: If `action` is "update", you ONLY need to return the `updates` object. Leave `nodes` and `edges` empty. Use this for small fixes to save time and tokens! If it's a completely new workflow, use "replace_all" and fill out `nodes` and `edges`.
 
 """
         
@@ -628,6 +1040,26 @@ Note: If `action` is "update", you ONLY need to return the `updates` object. Lea
                 {"role": "system", "content": "You must respond with valid JSON only."},
                 {"role": "user", "content": start_prompt}
             ]
+
+            multimodal_parts = await self._build_multimodal_content_parts(
+                attachments=attachments,
+                supports_video="video" in set(str(modality) for modality in effective_model.get("input_modalities", [])),
+            )
+            if multimodal_parts:
+                messages.append({
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": (
+                                "These are the media attachments for the current turn. Use them to answer the "
+                                "user directly when they ask about the media, or to ground workflow planning "
+                                "when they explicitly ask for a workflow."
+                            ),
+                        },
+                        *multimodal_parts,
+                    ],
+                })
             
             # First pass
             response = await self.openrouter_client.chat.completions.create(
@@ -684,7 +1116,7 @@ Note: If `action` is "update", you ONLY need to return the `updates` object. Lea
             
             # --- DEBUG LOGS ADDED FOR USER ---
             print("\n" + "="*80)
-            print(f"[DEBUG] MODEL USED: {model}")
+            print(f"[DEBUG] MODEL USED: {mapped_model}")
             print(f"[DEBUG] TOKEN USAGE: Input={token_usage['input']} | Output={token_usage['output']} | Total={token_usage['input'] + token_usage['output']}")
             print(f"[DEBUG] COST (USD):  ${cost_usd:.6f}")
             print("[DEBUG] RAW AI RESPONSE TEXT ALMOST EXACTLY AS RECEIVED:")
@@ -839,7 +1271,22 @@ Note: If `action` is "update", you ONLY need to return the `updates` object. Lea
             # Extract thinking and tool_calls from the response
             thinking = result.get("thinking", None)
             tool_calls = result.get("tool_calls", [])
-            action = result.get("action", "replace_all")
+            raw_action = str(result.get("action", "")).strip().lower()
+            action = "none"
+            if raw_action == "update":
+                action = "update"
+            elif raw_action in {"replace", "replace_all", "replace-all"}:
+                action = "replace_all"
+
+            # Fallback behavior when the model omits action:
+            # - updates payload => update mode
+            # - non-empty nodes/edges => replace mode
+            # - empty nodes/edges => chat-only reply (no workflow mutation)
+            if action == "none":
+                if isinstance(result.get("updates"), dict):
+                    action = "update"
+                elif bool(result.get("nodes")) or bool(result.get("edges")):
+                    action = "replace_all"
             
             # Sanitize tool_calls to ensure proper format
             sanitized_tool_calls = []
@@ -851,6 +1298,8 @@ Note: If `action` is "update", you ONLY need to return the `updates` object. Lea
                     "result": tc.get("result", None)
                 })
                 
+            should_apply_workflow = action in {"update", "replace_all"}
+
             # Process partial updates vs full replace
             if action == "update" and "updates" in result:
                 final_nodes = {n["id"]: n for n in current_nodes}
@@ -890,7 +1339,7 @@ Note: If `action` is "update", you ONLY need to return the `updates` object. Lea
                         
                 result_nodes = list(final_nodes.values())
                 result_edges = list(final_edges.values())
-            else:
+            elif action == "replace_all":
                 result_nodes = result.get("nodes", [])
                 result_edges = result.get("edges", [])
                 
@@ -900,16 +1349,31 @@ Note: If `action` is "update", you ONLY need to return the `updates` object. Lea
                         e["sourceHandle"] = e.pop("source_handle")
                     if "target_handle" in e:
                         e["targetHandle"] = e.pop("target_handle")
+            else:
+                # Chat-only answer: preserve current workflow exactly.
+                result_nodes = current_nodes
+                result_edges = current_edges
             
-            normalized_audio_nodes, audio_warnings = self._normalize_audio_nodes_for_category(result_nodes)
-            normalized_nodes, model_warnings = self._normalize_video_nodes_for_capabilities(
-                normalized_audio_nodes,
-                result_edges,
-            )
+            audio_warnings: List[str] = []
+            model_warnings: List[str] = []
+            if should_apply_workflow:
+                normalized_audio_nodes, audio_warnings = self._normalize_audio_nodes_for_category(result_nodes)
+                normalized_nodes, model_warnings = self._normalize_video_nodes_for_capabilities(
+                    normalized_audio_nodes,
+                    result_edges,
+                )
+            else:
+                normalized_nodes = result_nodes
 
             message = result.get("message", "Workflow generated")
+            suggested_name = result.get("suggested_name")
             if model_warnings or audio_warnings:
                 message = f"{message} (Adjusted some nodes to valid model capabilities.)"
+            if attachments and effective_model.get("display_name") != requested_model.get("display_name"):
+                message = (
+                    f"{message} (Used {effective_model.get('display_name')} for this turn so the attached media "
+                    "could be analyzed directly.)"
+                )
 
             return {
                 "success": True,
@@ -917,6 +1381,8 @@ Note: If `action` is "update", you ONLY need to return the `updates` object. Lea
                 "thinking": thinking,
                 "thinking_duration_ms": elapsed_ms,
                 "tool_calls": sanitized_tool_calls,
+                "action": action,
+                "apply_workflow": should_apply_workflow,
                 "nodes": normalized_nodes,
                 "edges": result_edges,
                 "token_usage": token_usage,

@@ -15,7 +15,7 @@ import {
 
 import { cn } from "@/lib/utils";
 import { S3Image } from "@/components/ui/s3-image";
-import { ChatMessage, ToolCall } from "@/lib/workflow-api";
+import { ChatAttachment, ChatMessage, ToolCall } from "@/lib/workflow-api";
 import { motion, AnimatePresence } from "framer-motion";
 import { MarkdownContent, HighlightedReferences } from "@/components/workflow/markdown-content";
 
@@ -226,18 +226,34 @@ export function ChatMessageItem({ message }: { message: ChatMessage }) {
     const isUser = message.role === "user";
 
     if (isUser) {
-        const attachmentRegex = /\[Attached: (.*?)\] \((.*?)\) - URL: (.*?)$/gm;
         let cleanContent = message.content;
-        const attachments: { filename: string; type: string; url: string }[] = [];
+        let attachments: ChatAttachment[] = Array.isArray(message.attachments) ? message.attachments : [];
 
-        let match;
-        while ((match = attachmentRegex.exec(message.content)) !== null) {
-            attachments.push({
-                filename: match[1],
-                type: match[2],
-                url: match[3],
-            });
-            cleanContent = cleanContent.replace(match[0], "");
+        if (attachments.length === 0) {
+            const attachmentRegex = /\[Attached: (.*?)\] \((.*?)\) - URL: (.*?)$/gm;
+            const attachmentWithoutUrlRegex = /\[Attached: (.*?)\] \((.*?)\)$/gm;
+            const legacyAttachments: ChatAttachment[] = [];
+
+            let match;
+            while ((match = attachmentRegex.exec(message.content)) !== null) {
+                legacyAttachments.push({
+                    filename: match[1],
+                    type: match[2],
+                    url: match[3],
+                });
+                cleanContent = cleanContent.replace(match[0], "");
+            }
+
+            while ((match = attachmentWithoutUrlRegex.exec(message.content)) !== null) {
+                legacyAttachments.push({
+                    filename: match[1],
+                    type: match[2],
+                    url: "",
+                });
+                cleanContent = cleanContent.replace(match[0], "");
+            }
+
+            attachments = legacyAttachments;
         }
         cleanContent = cleanContent.trim();
 
@@ -249,14 +265,35 @@ export function ChatMessageItem({ message }: { message: ChatMessage }) {
                         {attachments.length > 0 && (
                             <div className={`flex flex-wrap gap-1.5 ${cleanContent ? 'mt-3' : ''}`}>
                                 {attachments.map((att, idx) => (
-                                    <div key={idx} className="rounded-lg overflow-hidden border border-border/50 bg-muted/40 max-w-[120px] shadow-sm">
-                                        {att.type.startsWith("image") && (
+                                    <div key={idx} 
+                                        draggable={Boolean(att.url)}
+                                        onDragStart={(e) => {
+                                            if (!att.url) return;
+                                            e.dataTransfer.setData("text/plain", att.url);
+                                            e.dataTransfer.setData("application/json", JSON.stringify({
+                                                type: "asset",
+                                                url: att.url,
+                                                asset_category: att.type,
+                                            }));
+                                        }}
+                                        className="rounded-lg overflow-hidden border border-border/50 bg-muted/40 max-w-[120px] shadow-sm cursor-pointer hover:border-primary/50 transition-colors"
+                                    >
+                                        {att.url && att.type.startsWith("image") && (
                                             <S3Image src={att.url} alt={att.filename} width={200} height={200} className="w-full h-auto object-cover" unoptimized />
                                         )}
-                                        {att.type.startsWith("video") && (
+                                        {att.url && att.type.startsWith("video") && (
                                             <video src={att.url} className="w-full h-auto" controls />
                                         )}
-                                        {!att.type.startsWith("image") && !att.type.startsWith("video") && (
+                                        {att.url && att.type.startsWith("audio") && (
+                                            <div className="p-2 space-y-2 min-w-[180px]">
+                                                <div className="text-xs flex items-center gap-1.5">
+                                                    <Paperclip className="w-3 h-3" />
+                                                    <span className="truncate">{att.filename}</span>
+                                                </div>
+                                                <audio src={att.url} controls className="w-full h-8" />
+                                            </div>
+                                        )}
+                                        {!att.type.startsWith("image") && !att.type.startsWith("video") && !att.type.startsWith("audio") && (
                                             <div className="p-2 text-xs flex items-center gap-1">
                                                 <Paperclip className="w-3 h-3" />
                                                 <span className="truncate">{att.filename}</span>

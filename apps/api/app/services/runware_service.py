@@ -5,6 +5,7 @@ import time
 import base64
 from typing import Dict, Any, List, Optional
 from app.core.config import settings
+from app.core.model_registry import get_model_by_air_id
 
 # Generous read timeout since async models like Kling Image can take 2-4 minutes
 _TIMEOUT = httpx.Timeout(connect=10.0, read=600.0, write=30.0, pool=5.0)
@@ -131,7 +132,7 @@ class RunwareService:
             
         return {"success": False, "error": f"Task {task_uuid} timed out after {max_attempts*delay} seconds."}
 
-    async def generate_image(self, prompt: str, width: int = 1024, height: int = 1024, model: str = "bfl:flux-2@dev", number_results: int = 1) -> dict:
+    async def generate_image(self, prompt: str, width: int = 1024, height: int = 1024, model: str = "runware:400@1", number_results: int = 1) -> dict:
         """Generate an image from text."""
         task = {
             "taskType": "imageInference",
@@ -166,7 +167,7 @@ class RunwareService:
             "cost": data.get("cost", 0.0),
         }
 
-    async def image_to_image(self, prompt: str, image_url: str, width: int = 1024, height: int = 1024, model: str = "bfl:flux-2@dev", strength: float = 0.8) -> dict:
+    async def image_to_image(self, prompt: str, image_url: Any, width: int = 1024, height: int = 1024, model: str = "runware:400@1", strength: float = 0.8) -> dict:
         """Generate an image based on an input image (reference / seed image).
 
         ┌─────────────────────────────────────────────────────────────────────┐
@@ -179,6 +180,8 @@ class RunwareService:
         │  ─────────────   ────────────────────────   ─────────  ──────────   │
         │  google          referenceImages: [uri]     No         Yes (array)  │
         │  openai          referenceImages: [uri]     No         Yes (array)  │
+        │  runware         referenceImages: [uri]     No         Yes (array)  │
+        │  bfl             inputs.referenceImages     No         Yes (array)  │
         │  klingai         inputs.referenceImages     No         Yes (array)  │
         │  bytedance       referenceImages: [uri]     No         Yes (array)  │
         │  recraft         referenceImages: [uri]     No         Inconsistent │
@@ -193,7 +196,17 @@ class RunwareService:
         │  i2i will return Runware errors that are hard to diagnose.          │
         └─────────────────────────────────────────────────────────────────────┘
         """
-        seed_image = await self._url_to_data_uri(image_url)
+        seed_images = []
+        if isinstance(image_url, list):
+            for url in image_url:
+                if url:
+                    seed_images.append(await self._url_to_data_uri(url))
+        else:
+            if image_url:
+                seed_images.append(await self._url_to_data_uri(image_url))
+        
+        if not seed_images:
+            return {"success": False, "error": "No valid reference images provided"}
 
         task: Dict[str, Any] = {
             "taskType": "imageInference",
@@ -205,20 +218,17 @@ class RunwareService:
 
         provider = model.split(":")[0].lower() if ":" in model else ""
 
-        if provider in ("google", "openai"):
-            task["referenceImages"] = [seed_image]
-        elif provider == "klingai":
-            task["inputs"] = {"referenceImages": [seed_image]}
-        elif provider == "bytedance":
-            task["referenceImages"] = [seed_image]
-        elif provider == "recraft":
-            task["referenceImages"] = [seed_image]
+        if provider in ("google", "openai", "runware", "bytedance", "recraft"):
+            task["referenceImages"] = seed_images
+        elif provider in ("klingai", "bfl"):
+            task["inputs"] = {"referenceImages": seed_images}
         elif provider == "xai":
-            task["seedImage"] = seed_image
+            task["seedImage"] = seed_images[-1] # xai only takes 1, use the latest
             task["strength"] = strength
         else:
-            task["seedImage"] = seed_image
-            task["strength"] = strength
+            task["seedImage"] = seed_images[-1]
+            if provider != "bfl":
+                task["strength"] = strength
         
         resp = await self._post([task])
         if not resp["success"]:
@@ -286,6 +296,231 @@ class RunwareService:
         "3:4":  (720, 960),
     }
 
+    _VIDEO_RESOLUTION_DIMENSIONS: Dict[str, Dict[str, Dict[str, tuple[int, int]]]] = {
+        "google:3@": {
+            "720p": {
+                "16:9": (1280, 720),
+                "9:16": (720, 1280),
+                "1:1": (1024, 1024),
+                "4:3": (960, 720),
+                "3:4": (720, 960),
+                "3:2": (1152, 768),
+                "2:3": (768, 1152),
+                "21:9": (1344, 576),
+            },
+            "4k": {
+                "16:9": (3840, 2160),
+                "9:16": (2160, 3840),
+                "1:1": (3072, 3072),
+                "4:3": (2880, 2160),
+                "3:4": (2160, 2880),
+                "3:2": (3456, 2304),
+                "2:3": (2304, 3456),
+                "21:9": (4032, 1728),
+            },
+        },
+        "openai:3@2": {
+            "720p": {
+                "16:9": (1280, 720),
+                "9:16": (720, 1280),
+                "1:1": (720, 720),
+                "4:3": (960, 720),
+                "3:4": (720, 960),
+                "3:2": (1104, 624),
+                "2:3": (624, 1104),
+                "21:9": (1392, 592),
+            },
+            "1080p": {
+                "16:9": (1920, 1080),
+                "9:16": (1080, 1920),
+                "1:1": (1080, 1080),
+                "4:3": (1440, 1080),
+                "3:4": (1080, 1440),
+                "3:2": (1656, 936),
+                "2:3": (936, 1656),
+                "21:9": (2088, 888),
+            },
+        },
+        "openai:3@1": {
+            "720p": {
+                "16:9": (1280, 720),
+                "9:16": (720, 1280),
+                "1:1": (720, 720),
+                "4:3": (960, 720),
+                "3:4": (720, 960),
+                "3:2": (1104, 624),
+                "2:3": (624, 1104),
+                "21:9": (1392, 592),
+            },
+        },
+        "klingai:kling-video@3-pro": {
+            "720p": {
+                "16:9": (1280, 720),
+                "9:16": (720, 1280),
+                "1:1": (960, 960),
+                "4:3": (960, 720),
+                "3:4": (720, 960),
+            },
+            "1080p": {
+                "16:9": (1920, 1080),
+                "9:16": (1080, 1920),
+                "1:1": (1440, 1440),
+                "4:3": (1440, 1080),
+                "3:4": (1080, 1440),
+            },
+        },
+        "klingai:kling-video@3-standard": {
+            "720p": {
+                "16:9": (1280, 720),
+                "9:16": (720, 1280),
+                "1:1": (960, 960),
+                "4:3": (960, 720),
+                "3:4": (720, 960),
+            },
+            "1080p": {
+                "16:9": (1920, 1080),
+                "9:16": (1080, 1920),
+                "1:1": (1440, 1440),
+                "4:3": (1440, 1080),
+                "3:4": (1080, 1440),
+            },
+        },
+        "lightricks:ltx@2.3": {
+            "1080p": {
+                "16:9": (1920, 1080),
+                "9:16": (1080, 1920),
+            },
+            "1440p": {
+                "16:9": (2560, 1440),
+                "9:16": (1440, 2560),
+            },
+            "4k": {
+                "16:9": (3840, 2160),
+                "9:16": (2160, 3840),
+            },
+        },
+        "lightricks:ltx@2.3-fast": {
+            "1080p": {
+                "16:9": (1920, 1080),
+                "9:16": (1080, 1920),
+            },
+            "1440p": {
+                "16:9": (2560, 1440),
+                "9:16": (1440, 2560),
+            },
+            "4k": {
+                "16:9": (3840, 2160),
+                "9:16": (2160, 3840),
+            },
+        },
+        "bytedance:seedance@1.5-pro": {
+            "720p": {
+                "16:9": (1280, 720),
+                "9:16": (720, 1280),
+            },
+            "1080p": {
+                "16:9": (1920, 1080),
+                "9:16": (1080, 1920),
+            },
+        },
+        "minimax:4@1": {
+            "720p": {
+                "16:9": (1366, 768),
+                "9:16": (768, 1366),
+            },
+            "1080p": {
+                "16:9": (1920, 1080),
+                "9:16": (1080, 1920),
+            },
+        },
+        "xai:grok-imagine@video": {
+            "480p": {
+                "16:9": (854, 480),
+                "9:16": (480, 854),
+                "1:1": (480, 480),
+                "4:3": (640, 480),
+                "3:4": (480, 640),
+                "3:2": (768, 512),
+                "2:3": (512, 768),
+            },
+            "720p": {
+                "16:9": (1280, 720),
+                "9:16": (720, 1280),
+                "1:1": (720, 720),
+                "4:3": (960, 720),
+                "3:4": (720, 960),
+                "3:2": (1152, 768),
+                "2:3": (768, 1152),
+            },
+        },
+        "pixverse:1@7": {
+            "360p": {
+                "16:9": (640, 360),
+                "9:16": (360, 640),
+                "1:1": (360, 360),
+            },
+            "540p": {
+                "16:9": (960, 540),
+                "9:16": (540, 960),
+                "1:1": (540, 540),
+            },
+            "720p": {
+                "16:9": (1280, 720),
+                "9:16": (720, 1280),
+                "1:1": (720, 720),
+            },
+            "1080p": {
+                "16:9": (1920, 1080),
+                "9:16": (1080, 1920),
+                "1:1": (1080, 1080),
+            },
+        },
+        "vidu:4@1": {
+            "360p": {
+                "16:9": (640, 360),
+                "9:16": (360, 640),
+                "1:1": (360, 360),
+            },
+            "540p": {
+                "16:9": (960, 540),
+                "9:16": (540, 960),
+                "1:1": (540, 540),
+            },
+            "720p": {
+                "16:9": (1280, 720),
+                "9:16": (720, 1280),
+                "1:1": (720, 720),
+            },
+            "1080p": {
+                "16:9": (1920, 1080),
+                "9:16": (1080, 1920),
+                "1:1": (1080, 1080),
+            },
+        },
+        "vidu:4@2": {
+            "360p": {
+                "16:9": (640, 360),
+                "9:16": (360, 640),
+                "1:1": (360, 360),
+            },
+            "540p": {
+                "16:9": (960, 540),
+                "9:16": (540, 960),
+                "1:1": (540, 540),
+            },
+            "720p": {
+                "16:9": (1280, 720),
+                "9:16": (720, 1280),
+                "1:1": (720, 720),
+            },
+            "1080p": {
+                "16:9": (1920, 1080),
+                "9:16": (1080, 1920),
+                "1:1": (1080, 1080),
+            },
+        },
+    }
+
     # Default IMAGE dimensions — every value is a multiple of 64.
     # Safe for FLUX, Stable Diffusion, and Runware-native models (runware:100@1,
     # runware:101@1, etc.).  Models with stricter requirements MUST have their
@@ -315,6 +550,13 @@ class RunwareService:
         # └──────────────────────────────────────────────────────────────┘
 
         "klingai:kling-video@3-pro": {
+            "16:9": (1920, 1080),
+            "9:16": (1080, 1920),
+            "1:1":  (1440, 1440),
+            "4:3":  (1440, 1080),
+            "3:4":  (1080, 1440),
+        },
+        "klingai:kling-video@3-standard": {
             "16:9": (1920, 1080),
             "9:16": (1080, 1920),
             "1:1":  (1440, 1440),
@@ -427,10 +669,10 @@ class RunwareService:
             "21:9": (1552, 656),
         },
 
-        # OpenAI GPT Image 1  (AIR: openai:1@1)
+        # OpenAI GPT Image 1.5  (AIR: openai:4@1)
         # Only 3 aspect ratios supported by OpenAI.
         # Source: https://runware.ai/docs/providers/openai
-        "openai:1": {
+        "openai:4": {
             "16:9": (1536, 1024),
             "9:16": (1024, 1536),
             "1:1":  (1024, 1024),
@@ -459,12 +701,36 @@ class RunwareService:
         },
     }
 
-    def _resolve_dimensions(self, model: str, aspect_ratio: str) -> tuple:
+    def _resolve_dimensions(
+        self,
+        model: str,
+        aspect_ratio: str,
+        resolution: Optional[str] = None,
+    ) -> tuple[int, int]:
         """Return (width, height) for a VIDEO model and aspect ratio.
 
-        Checks _MODEL_DIMENSIONS first (prefix match), then falls back to
-        _VIDEO_DEFAULT_DIMENSIONS.
+        Prefers exact model+resolution tables when available, then falls back
+        to legacy model-level ratios, then generic video defaults.
         """
+        if resolution:
+            for prefix, resolution_map in self._VIDEO_RESOLUTION_DIMENSIONS.items():
+                if model.startswith(prefix):
+                    selected_map = resolution_map.get(resolution)
+                    if not selected_map:
+                        selected_map = resolution_map[next(iter(resolution_map))]
+                        print(
+                            f"[Runware] ⚠️ _resolve_dimensions: resolution '{resolution}' not supported for {model}; "
+                            f"falling back to '{next(iter(resolution_map))}'"
+                        )
+                    dims = selected_map.get(
+                        aspect_ratio,
+                        selected_map.get("16:9", next(iter(selected_map.values()))),
+                    )
+                    print(
+                        f"[Runware] _resolve_dimensions: {model} ({resolution}, {aspect_ratio}) → "
+                        f"{dims[0]}x{dims[1]} (matched prefix '{prefix}')"
+                    )
+                    return dims
         for prefix, dim_map in self._MODEL_DIMENSIONS.items():
             if model.startswith(prefix):
                 dims = dim_map.get(aspect_ratio, dim_map.get("16:9", (1280, 720)))
@@ -508,39 +774,118 @@ class RunwareService:
         print(f"[Runware] _resolve_image_dimensions: {model} ({aspect_ratio}) → {dims[0]}x{dims[1]} (IMAGE defaults — ensure this model accepts multiples of 64)")
         return dims
 
-    def _resolve_duration(self, model: str, duration: int) -> int | float:
-        """Return valid duration for the model constraints."""
-        if model.startswith("google:"):
-            # Veo 3.1 only supports 4, 6, 8
-            if duration <= 4: return 4
-            elif duration <= 6: return 6
-            else: return 8
+    def _resolve_duration(
+        self,
+        model: str,
+        duration: int,
+        resolution: Optional[str] = None,
+        has_reference_video: bool = False,
+    ) -> int | float:
+        """Return a supported duration for the selected model and resolution."""
+        entry = get_model_by_air_id(model)
+        if entry:
+            if has_reference_video and model.startswith("xai:grok-imagine@video"):
+                return max(2, min(10, int(duration)))
+
+            duration_min = entry.get("duration_min")
+            duration_max = entry.get("duration_max")
+            duration_step = entry.get("duration_step", 1)
+            if isinstance(duration_min, int) and isinstance(duration_max, int):
+                clamped = max(duration_min, min(duration_max, int(duration)))
+                if isinstance(duration_step, int) and duration_step > 1:
+                    offset = clamped - duration_min
+                    rounded = duration_min + (((offset + duration_step - 1) // duration_step) * duration_step)
+                    return min(duration_max, rounded)
+                return clamped
+
+            config_durations = sorted(
+                {
+                    int(cfg.get("duration"))
+                    for cfg in entry.get("configs", [])
+                    if isinstance(cfg, dict)
+                    and isinstance(cfg.get("duration"), int)
+                    and (resolution is None or cfg.get("resolution") == resolution)
+                }
+            )
+            if not config_durations:
+                config_durations = sorted(
+                    {
+                        int(cfg.get("duration"))
+                        for cfg in entry.get("configs", [])
+                        if isinstance(cfg, dict) and isinstance(cfg.get("duration"), int)
+                    }
+                )
+            if config_durations:
+                for supported in config_durations:
+                    if duration <= supported:
+                        return supported
+                return config_durations[-1]
+
         return duration
 
-    def _audio_provider_settings(self, model: str, generate_audio: bool) -> Optional[Dict[str, Any]]:
-        """Build providerSettings for native audio generation if supported."""
-        if not generate_audio:
-            return None
+    def _audio_task_fields(
+        self,
+        model: str,
+        generate_audio: bool,
+    ) -> tuple[Dict[str, Any], bool]:
+        """Build audio-related task fields and report native-audio support.
+
+        Returns:
+            (task_patch, supports_native_audio)
+        """
         provider = model.split(":")[0].lower() if ":" in model else ""
-        # Verified payload shape on Runware for Veo:
-        # providerSettings.google.generateAudio = true
+
+        # Google Veo: default is ON, so pass explicit false when disabled.
         if provider == "google":
-            return {"google": {"generateAudio": True}}
-        return None
+            return {"providerSettings": {"google": {"generateAudio": bool(generate_audio)}}}, True
+
+        # Kling VIDEO 3.0: providerSettings.klingai.sound (default false).
+        if provider == "klingai" and model.startswith("klingai:kling-video@3-"):
+            return {"providerSettings": {"klingai": {"sound": bool(generate_audio)}}}, True
+
+        # Seedance 1.5 Pro: providerSettings.bytedance.audio (default true).
+        if model.startswith("bytedance:seedance@1.5-pro"):
+            return {"providerSettings": {"bytedance": {"audio": bool(generate_audio)}}}, True
+
+        if model.startswith("lightricks:ltx@"):
+            return {"settings": {"audio": bool(generate_audio)}}, True
+
+        if provider == "pixverse":
+            return {"providerSettings": {"pixverse": {"audio": bool(generate_audio)}}}, True
+
+        if provider == "vidu":
+            return {"providerSettings": {"vidu": {"audio": bool(generate_audio)}}}, True
+
+        return {}, False
 
     async def generate_video(
         self,
         prompt: str,
         model: str = "klingai:kling-video@3-standard",
         duration: int = 5,
+        resolution: str = "720p",
         aspect_ratio: str = "16:9",
         generate_audio: bool = False,
+        reference_images: Optional[List[str]] = None,
+        element_images: Optional[List[str]] = None,
+        element_videos: Optional[List[str]] = None,
+        element_voices: Optional[List[str]] = None,
+        reference_video: Optional[str] = None,
     ) -> dict:
-        """Generate a video from text."""
-        width, height = self._resolve_dimensions(model, aspect_ratio)
-        resolved_duration = self._resolve_duration(model, duration)
+        """Generate a video from text (optionally with references or video extension input)."""
+        provider = model.split(":")[0].lower() if ":" in model else ""
+        width, height = self._resolve_dimensions(model, aspect_ratio, resolution)
+        resolved_duration = self._resolve_duration(
+            model,
+            duration,
+            resolution=resolution,
+            has_reference_video=bool(reference_video),
+        )
         
-        print(f"[VideoGenerator] Resolved dimensions for {model} ({aspect_ratio}): {width}x{height}, duration: {resolved_duration}")
+        print(
+            f"[VideoGenerator] Resolved dimensions for {model} ({resolution}, {aspect_ratio}): "
+            f"{width}x{height}, duration: {resolved_duration}"
+        )
 
         task = {
             "taskType": "videoInference",
@@ -553,18 +898,89 @@ class RunwareService:
             "height": height
         }
 
-        provider_settings = self._audio_provider_settings(model, generate_audio)
-        if provider_settings:
-            task["providerSettings"] = provider_settings
+        audio_task_patch, _ = self._audio_task_fields(model, generate_audio)
+        if audio_task_patch:
+            task.update(audio_task_patch)
         elif generate_audio:
             return {
                 "success": False,
                 "error": (
                     f"Native audio was requested but model '{model}' does not support it. "
                     "Please either disable 'Generate Audio' or switch to an audio-capable model (e.g. Google Veo 3.1 / Veo 3.1 Fast)."
-                ),
+                )
             }
-        
+
+        inputs_payload: Dict[str, Any] = {}
+        if reference_images:
+            ref_images: List[str] = []
+            for image in reference_images:
+                if isinstance(image, str) and image:
+                    ref_images.append(await self._url_to_data_uri(image))
+            if ref_images:
+                if provider == "google":
+                    task["referenceImages"] = ref_images
+                else:
+                    inputs_payload["referenceImages"] = ref_images
+
+        if element_videos and (element_images or element_voices):
+            return {
+                "success": False,
+                "error": "Elements cannot combine videos with images/audio in the same generation.",
+            }
+
+        if element_voices and not element_images:
+            return {
+                "success": False,
+                "error": "Element audio inputs require at least one element image.",
+            }
+
+        if element_images or element_videos:
+            kling_elements: List[Dict[str, Any]] = []
+
+            if element_videos:
+                for idx, video in enumerate(element_videos):
+                    if isinstance(video, str) and video:
+                        kling_elements.append(
+                            {
+                                "id": f"element_{idx + 1}",
+                                "videos": [video],
+                            }
+                        )
+            else:
+                voices = [voice for voice in (element_voices or []) if isinstance(voice, str) and voice]
+                for idx, image in enumerate(element_images or []):
+                    if isinstance(image, str) and image:
+                        element_obj: Dict[str, Any] = {
+                            "id": f"element_{idx + 1}",
+                            "frontalImage": await self._url_to_data_uri(image),
+                        }
+                        if voices and idx == 0:
+                            element_obj["voices"] = voices
+                        kling_elements.append(element_obj)
+
+            if kling_elements:
+                inputs_payload["elements"] = kling_elements
+
+        if reference_video and isinstance(reference_video, str):
+            if provider == "klingai":
+                inputs_payload["referenceVideos"] = [reference_video]
+            elif provider == "openai":
+                return {
+                    "success": False,
+                    "error": (
+                        "Sora remix/extension on Runware requires the source output videoId, "
+                        "not just a video URL. Please use text or image mode for Sora in this flow."
+                    ),
+                }
+            else:
+                inputs_payload["video"] = reference_video
+            if provider == "xai":
+                task.pop("width", None)
+                task.pop("height", None)
+
+        if inputs_payload:
+            task["inputs"] = inputs_payload
+
         resp = await self._post([task])
         if not resp["success"]:
             return resp
@@ -657,6 +1073,7 @@ class RunwareService:
         prompt: str,
         model: str = "klingai:kling-video@3-standard",
         duration: int = 5,
+        resolution: str = "720p",
         aspect_ratio: str = "16:9",
         end_image_url: Optional[str] = None,
         generate_audio: bool = False,
@@ -675,9 +1092,14 @@ class RunwareService:
         - alibaba (wan):      task["inputs"]["frameImages"] = [uuid]  ← end-frame NOT supported
         """
         # Convert aspect ratio to width/height (respects per-model overrides)
-        width, height = self._resolve_dimensions(model, aspect_ratio)
+        provider = model.split(":")[0].lower() if ":" in model else ""
+        width, height = self._resolve_dimensions(model, aspect_ratio, resolution)
+        resolved_duration = self._resolve_duration(model, duration, resolution=resolution)
 
-        print(f"[RunwareService] image_to_video: model={model}, aspect_ratio={aspect_ratio}, has_end_image={bool(end_image_url)}")
+        print(
+            f"[RunwareService] image_to_video: model={model}, resolution={resolution}, "
+            f"aspect_ratio={aspect_ratio}, has_end_image={bool(end_image_url)}"
+        )
 
         # Step 1: Convert the start URL to a data URI
         data_uri = await self._url_to_data_uri(image_url)
@@ -722,12 +1144,12 @@ class RunwareService:
             "outputType": "URL",
             "outputFormat": "MP4",
             "positivePrompt": prompt,
-            "duration": duration,
+            "duration": resolved_duration,
         }
 
-        provider_settings = self._audio_provider_settings(model, generate_audio)
-        if provider_settings:
-            task["providerSettings"] = provider_settings
+        audio_task_patch, _ = self._audio_task_fields(model, generate_audio)
+        if audio_task_patch:
+            task.update(audio_task_patch)
         elif generate_audio:
             return {
                 "success": False,
@@ -736,8 +1158,6 @@ class RunwareService:
                     "Please either disable 'Generate Audio' or switch to an audio-capable model (e.g. Google Veo 3.1 / Veo 3.1 Fast)."
                 ),
             }
-
-        provider = model.split(":")[0].lower() if ":" in model else ""
 
         if provider == "google":
             # Google Veo: top-level frameImages with "inputImage" key
@@ -758,6 +1178,33 @@ class RunwareService:
                 print(f"[RunwareService] Added end-frame to {provider} payload")
             task["inputs"] = {"frameImages": frame_images}
 
+        elif provider in ("openai", "lightricks", "minimax", "xai"):
+            task["width"] = width
+            task["height"] = height
+            if end_image_ref:
+                print(f"[RunwareService] ⚠️ {provider} only supports a start frame; end image was ignored")
+            task["inputs"] = {
+                "frameImages": [{"image": image_ref, "frame": "first"}]
+            }
+
+        elif provider == "vidu":
+            task["width"] = width
+            task["height"] = height
+            frame_images = [{"image": image_ref, "frame": "first"}]
+            if end_image_ref:
+                frame_images.append({"image": end_image_ref, "frame": "last"})
+                print(f"[RunwareService] Added end-frame to {provider} payload")
+            task["inputs"] = {"frameImages": frame_images}
+
+        elif provider == "pixverse":
+            task["width"] = width
+            task["height"] = height
+            frame_images = [{"inputImage": image_ref, "frame": "first"}]
+            if end_image_ref:
+                frame_images.append({"inputImage": end_image_ref, "frame": "last"})
+                print(f"[RunwareService] Added end-frame to {provider} payload")
+            task["inputs"] = {"frameImages": frame_images}
+
         elif provider == "alibaba":
             # Wan 2.6 / Flash: plain string list, end-frame not supported
             if end_image_ref:
@@ -766,7 +1213,7 @@ class RunwareService:
             task["resolution"] = "720p"
 
         else:
-            # Bytedance (Seedance), MiniMax (Hailuo), PixVerse:
+            # Bytedance Seedance and similar providers accept top-level frameImages.
             task["width"] = width
             task["height"] = height
             frame_images = [{"inputImage": image_ref, "frame": "first"}]

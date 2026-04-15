@@ -1,13 +1,15 @@
 "use client";
 
-import { ArrowLeft, Loader2, CheckCircle2, Cloud, MessageSquare, Play, Square, Share2, Link2, Check, Globe, Lock } from "lucide-react";
+import { ArrowLeft, Loader2, CheckCircle2, Cloud, MessageSquare, Play, Square, Share2, Link2, Check, Globe, Lock, Package } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useWorkflowStore } from "@/lib/workflow-store";
 import { useRouter } from "next/navigation";
 import { useState, useEffect, useCallback } from "react";
-import { useMobileTab } from "@/app/dashboard/layout";
+import { useMobileTab } from "@/components/workflow/mobile-tab-context";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
+import { YourStuffPanel } from "@/components/your-stuff-panel";
 
 export function WorkflowHeader() {
     const router = useRouter();
@@ -16,6 +18,7 @@ export function WorkflowHeader() {
     const { setActiveTab } = useMobileTab();
     const [showShareMenu, setShowShareMenu] = useState(false);
     const [copied, setCopied] = useState(false);
+    const [isYourStuffOpen, setIsYourStuffOpen] = useState(false);
 
     const shareUrl = typeof window !== "undefined" && id ? `${window.location.origin}/w/?id=${id}` : "";
 
@@ -56,6 +59,7 @@ export function WorkflowHeader() {
     };
 
     return (
+        <>
         <div className="h-12 md:h-14 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 flex items-center justify-between px-2 md:px-4 sticky top-0 z-50">
             <div className="flex items-center gap-2 md:gap-4 min-w-0 flex-1">
                 <Button
@@ -97,6 +101,28 @@ export function WorkflowHeader() {
             </div>
 
             <div className="flex items-center gap-2">
+                {/* Your Stuff */}
+                <Button
+                    variant="outline"
+                    size="sm"
+                    className={cn(
+                        "h-8 gap-2 hidden sm:flex",
+                        isYourStuffOpen && "bg-accent/80"
+                    )}
+                    onClick={() => setIsYourStuffOpen(!isYourStuffOpen)}
+                >
+                    <Package className="w-3.5 h-3.5" />
+                    <span>Your Stuff</span>
+                </Button>
+                <Button
+                    variant="outline"
+                    size="icon"
+                    className={cn("h-8 w-8 sm:hidden", isYourStuffOpen && "bg-accent/80")}
+                    onClick={() => setIsYourStuffOpen(!isYourStuffOpen)}
+                >
+                    <Package className="w-4 h-4" />
+                </Button>
+
                 {/* Share Button */}
                 <div className="relative">
                     <Button
@@ -203,5 +229,13 @@ export function WorkflowHeader() {
                 </button>
             </div>
         </div>
+
+        {/* Your Stuff Panel */}
+        <YourStuffPanel
+            isOpen={isYourStuffOpen}
+            onClose={() => setIsYourStuffOpen(false)}
+            currentWorkflowId={id}
+        />
+        </>
     );
 }

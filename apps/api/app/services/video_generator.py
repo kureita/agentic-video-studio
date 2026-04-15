@@ -118,6 +118,11 @@ class VideoGenerator:
         model_name: Optional[str] = None,
         audio_url: Optional[str] = None,
         generate_audio: bool = False,
+        reference_images: Optional[List[str]] = None,
+        element_images: Optional[List[str]] = None,
+        element_videos: Optional[List[str]] = None,
+        element_voices: Optional[List[str]] = None,
+        reference_video: Optional[str] = None,
     ) -> dict:
         """Generate a video clip from a text prompt."""
         if self.use_mock:
@@ -136,8 +141,14 @@ class VideoGenerator:
                 prompt=prompt,
                 model=target_model,
                 duration=duration,
+                resolution=resolution,
                 aspect_ratio=aspect_ratio,
                 generate_audio=generate_audio,
+                reference_images=reference_images,
+                element_images=element_images,
+                element_videos=element_videos,
+                element_voices=element_voices,
+                reference_video=reference_video,
             )
             
             # Optionally add lip-sync if audio_url provided and supported
@@ -190,6 +201,7 @@ class VideoGenerator:
                 prompt=prompt,
                 model=target_model,
                 duration=duration,
+                resolution=resolution,
                 aspect_ratio=aspect_ratio,
                 end_image_url=end_image_url,
                 generate_audio=generate_audio,
@@ -219,6 +231,7 @@ class VideoGenerator:
         prompt: str,
         reference_images: List[str],
         duration: int = 5,
+        resolution: str = "720p",
         aspect_ratio: str = "16:9",
         model_name: Optional[str] = None,
         generate_audio: bool = False,
@@ -226,16 +239,43 @@ class VideoGenerator:
         """Generate video using reference images."""
         if not reference_images:
             return {"success": False, "error": "No reference images"}
-        
-        # We can just use the first image for image-to-video for now, 
-        # or map to a Runware model that accepts multiple images if any.
-        return await self.generate_from_image(
+
+        return await self.generate_clip(
             prompt=prompt,
-            image_path=reference_images[0],
             duration=duration,
+            resolution=resolution,
             aspect_ratio=aspect_ratio,
             model_name=model_name,
             generate_audio=generate_audio,
+            reference_images=reference_images,
+        )
+
+    async def generate_with_elements(
+        self,
+        prompt: str,
+        element_images: Optional[List[str]] = None,
+        element_videos: Optional[List[str]] = None,
+        element_voices: Optional[List[str]] = None,
+        duration: int = 5,
+        resolution: str = "720p",
+        aspect_ratio: str = "16:9",
+        model_name: Optional[str] = None,
+        generate_audio: bool = False,
+    ) -> dict:
+        """Generate video using Kling elements input."""
+        if not element_images and not element_videos:
+            return {"success": False, "error": "No elements provided"}
+
+        return await self.generate_clip(
+            prompt=prompt,
+            duration=duration,
+            resolution=resolution,
+            aspect_ratio=aspect_ratio,
+            model_name=model_name,
+            generate_audio=generate_audio,
+            element_images=element_images,
+            element_videos=element_videos,
+            element_voices=element_voices,
         )
 
     async def generate_with_interpolation(
@@ -244,6 +284,7 @@ class VideoGenerator:
         first_frame_path: str,
         last_frame_path: str,
         duration: int = 5,
+        resolution: str = "720p",
         aspect_ratio: str = "16:9",
         model_name: Optional[str] = None,
         generate_audio: bool = False,
@@ -260,6 +301,7 @@ class VideoGenerator:
             image_path=first_frame_path,
             end_image_url=last_frame_path,
             duration=duration,
+            resolution=resolution,
             aspect_ratio=aspect_ratio,
             model_name=model_name,
             generate_audio=generate_audio,
@@ -267,9 +309,26 @@ class VideoGenerator:
 
     async def extend_video(
         self,
-        original_video,
+        original_video: str,
         prompt: str,
+        duration: int = 5,
         resolution: str = "720p",
+        aspect_ratio: str = "16:9",
+        model_name: Optional[str] = None,
+        audio_url: Optional[str] = None,
+        generate_audio: bool = False,
     ) -> dict:
-        """Extend a previously generated video."""
-        return {"success": False, "error": "Video extension not natively supported yet via wrapper"}
+        """Extend or guide generation using an input reference video."""
+        if not original_video:
+            return {"success": False, "error": "No input video provided for video extension"}
+
+        return await self.generate_clip(
+            prompt=prompt,
+            duration=duration,
+            resolution=resolution,
+            aspect_ratio=aspect_ratio,
+            model_name=model_name,
+            audio_url=audio_url,
+            generate_audio=generate_audio,
+            reference_video=original_video,
+        )

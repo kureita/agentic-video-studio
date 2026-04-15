@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 
-from app.api.endpoints import projects, scrape, generate, canvas, workflow, agent, assets, billing
+from app.api.endpoints import projects, scrape, generate, canvas, workflow, agent, assets, billing, user_assets
 from app.api.endpoints import public_workflow
 from app.api.endpoints import dodo_webhook
 from app.core.auth import get_current_user
@@ -43,6 +43,7 @@ router.include_router(workflow.router, prefix="/workflows", tags=["workflows"])
 router.include_router(agent.router, prefix="/agent", tags=["agent"])
 router.include_router(assets.router, prefix="/assets", tags=["assets"])
 router.include_router(billing.router, tags=["billing"])
+router.include_router(user_assets.router, prefix="/user-assets", tags=["user-assets"])
 
 
 # ============================================

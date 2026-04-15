@@ -27,7 +27,7 @@ class ImageGenerator:
             print("[ImageGenerator] Running in PRODUCTION mode - using Runware API")
         
         # Default model for general text-to-image
-        self.default_model = "bfl:flux-2@dev"  # FLUX.2 [dev] — cheapest image model in registry
+        self.default_model = "runware:400@1"  # FLUX.2 [dev] — cheapest image model in registry
 
     def _get_mock_image(self) -> Optional[Path]:
         """Get a random existing image from static/images for mock mode."""
@@ -113,7 +113,7 @@ class ImageGenerator:
         │  Grok Imagine Image     ❌     —               —                 │
         │  Imagen 4 Ultra         ❌     —               —                 │
         │  Imagen 4 Preview       ❌     —               —                 │
-        │  FLUX.2 [dev]           ✅     seedImage        1                │
+        │  FLUX.2 [dev]           ✅     referenceImages  1+               │
         │  FLUX.2 [flex]          ✅     seedImage        1                │
         │  FLUX.2 [klein] 9B      ❌     —               —                 │
         │                                                                  │
@@ -138,7 +138,7 @@ class ImageGenerator:
         prompt: str,
         aspect_ratio: str = "16:9",
         style: str = "realistic",
-        reference_image: Optional[str] = None,
+        reference_image: Optional[Any] = None,
         model_name: Optional[str] = None,
     ) -> dict:
         """
@@ -183,7 +183,8 @@ class ImageGenerator:
             print(f"[ImageGenerator] Generating image with {target_model} ({width}x{height}): {enhanced_prompt[:100]}...")
             
             if reference_image:
-                print(f"[ImageGenerator] Processing reference image: {reference_image[:80]}...")
+                ref_print = reference_image[:80] if isinstance(reference_image, str) else str(reference_image)[:80]
+                print(f"[ImageGenerator] Processing reference image: {ref_print}...")
                 enhanced_prompt = f"Based on the provided reference image: {enhanced_prompt}"
                 result = await self.runware.image_to_image(
                     prompt=enhanced_prompt,

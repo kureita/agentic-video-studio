@@ -22,14 +22,15 @@ import { cn, ALLOWED_MEDIA_TYPES } from "@/lib/utils";
 import Image from "next/image";
 import { S3Image } from "@/components/ui/s3-image";
 import { useWorkflowStore } from "@/lib/workflow-store";
-import { ChatMessage } from "@/lib/workflow-api";
+import { ChatAttachment, ChatMessage } from "@/lib/workflow-api";
 import { api } from "@/lib/api";
+import { AgentModel, useAgentModels } from "@/lib/agent-models";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChatMessageItem, TypingIndicator } from "@/components/workflow/chat-messages";
 import { toast } from "sonner";
 import { AddCreditsModal } from "@/components/billing/add-credits-modal";
 import { useAuth0 } from "@auth0/auth0-react";
-import { useMobileTab } from "@/app/dashboard/layout";
+import { useMobileTab } from "@/components/workflow/mobile-tab-context";
 import { useRouter } from "next/navigation";
 
 
@@ -43,6 +44,7 @@ function getNodeTypeIcon(type: string) {
         case 'text': return <Type className="w-3 h-3" />;
         case 'imageGen': return <ImageIcon className="w-3 h-3" />;
         case 'videoGen': return <Video className="w-3 h-3" />;
+        case 'assistant': return <Eye className="w-3 h-3" />;
         case 'vision': return <Eye className="w-3 h-3" />;
         case 'editorAgent': return <Clapperboard className="w-3 h-3" />;
         case 'mediaUpload': return <Upload className="w-3 h-3" />;
@@ -56,7 +58,8 @@ function getNodeTypeLabel(type: string) {
         case 'text': return 'Text';
         case 'imageGen': return 'Image Gen';
         case 'videoGen': return 'Video Gen';
-        case 'vision': return 'Vision';
+        case 'assistant': return 'Media Assistant';
+        case 'vision': return 'Media Assistant';
         case 'editorAgent': return 'Editor Agent';
         case 'mediaUpload': return 'Media Upload';
         case 'audioGen': return 'Audio Gen';
@@ -64,10 +67,7 @@ function getNodeTypeLabel(type: string) {
     }
 }
 
-interface Attachment {
-    url: string;
-    type: string;
-    filename: string;
+interface Attachment extends ChatAttachment {
     file?: File;
 }
 
@@ -82,6 +82,7 @@ function CursorInput({
     isUploading,
     selectedModel,
     onModelSelect,
+    modelOptions,
 }: {
     value: string;
     onChange: (val: string) => void;
@@ -93,6 +94,7 @@ function CursorInput({
     isUploading: boolean;
     selectedModel: string;
     onModelSelect: (model: string) => void;
+    modelOptions: AgentModel[];
 }) {
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const [showContextMenu, setShowContextMenu] = useState(false);
@@ -312,7 +314,7 @@ function CursorInput({
                             <div className="px-4 pb-2 pt-1 flex items-start gap-1.5 opacity-60">
                                 <div className="mt-[4px] w-1 h-1 rounded-full bg-muted-foreground"></div>
                                 <p className="text-[10px] text-muted-foreground leading-tight">
-                                    Media assets are routed directly to your workflow. AI analysis for images and videos is coming soon, we&apos;re working hard on it!
+                                    Upload media to use it in chat or in your workflow.
                                 </p>
                             </div>
                         </motion.div>
@@ -425,28 +427,28 @@ function CursorInput({
                                             Model
                                         </div>
                                         <div className="max-h-[240px] overflow-y-auto flex flex-col">
-                                            {[
-                                                "Gemini 3.1 Pro Preview (High)",
-                                                "Gemini 3.1 Flash Lite Preview (Low)",
-                                                "Claude 4.6 Opus (High)",
-                                                "Claude 4.6 Sonnet (Medium)",
-                                                "Claude 4.5 Haiku (Low)",
-                                                "GPT-5.4 Pro (High)",
-                                                "GPT-5 Mini (Medium)",
-                                                "GPT-5 Nano (Low)"
-                                            ].map((modelName) => (
+                                            {modelOptions.map((model) => (
                                                 <button
-                                                    key={modelName}
+                                                    key={model.display_name}
                                                     onClick={() => {
-                                                        onModelSelect(modelName);
+                                                        onModelSelect(model.display_name);
                                                         setShowModelMenu(false);
                                                     }}
                                                     className={cn(
-                                                        "w-full text-left px-2 py-2 text-[11px] hover:bg-accent/80 hover:text-accent-foreground cursor-pointer flex items-center justify-between",
-                                                        selectedModel === modelName && "bg-accent/60 text-accent-foreground font-medium"
+                                                        "w-full text-left px-2 py-2 text-[11px] hover:bg-accent/80 hover:text-accent-foreground cursor-pointer flex items-start justify-between gap-2",
+                                                        selectedModel === model.display_name && "bg-accent/60 text-accent-foreground font-medium"
                                                     )}
                                                 >
-                                                    <span className={cn(selectedModel !== modelName && "text-muted-foreground/90")}>{modelName}</span>
+                                                    <div className="min-w-0">
+                                                        <div className={cn(selectedModel !== model.display_name && "text-muted-foreground/90")}>
+                                                            {model.display_name}
+                                                        </div>
+                                                        {model.input_modalities.filter((modality) => modality !== "text").length > 0 && (
+                                                            <div className="text-[10px] text-muted-foreground/60 mt-0.5">
+                                                                {model.input_modalities.filter((modality) => modality !== "text").join(" • ")}
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                 </button>
                                             ))}
                                         </div>
@@ -522,8 +524,9 @@ function MobileSwitchToCanvas() {
 
 export function AgentSidebar() {
     const router = useRouter();
-    const { chatHistory, addChatMessage, setNodes, setEdges, nodes, edges } = useWorkflowStore();
+    const { chatHistory, addChatMessage, setNodes, setEdges, nodes, edges, name: workflowName, setName: setWorkflowName } = useWorkflowStore();
     const { getAccessTokenSilently } = useAuth0();
+    const { models: agentModels } = useAgentModels();
     const storeId = useWorkflowStore((state) => state.id);
     const [input, setInput] = useState("");
     const [isLoading, setIsLoading] = useState(false);
@@ -572,6 +575,13 @@ export function AgentSidebar() {
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [chatHistory, isLoading]);
+
+    useEffect(() => {
+        if (!agentModels.length) return;
+        if (!agentModels.some((model) => model.display_name === selectedModel)) {
+            setSelectedModel(agentModels[0].display_name);
+        }
+    }, [agentModels, selectedModel]);
 
     const handleFileUpload = async (files: FileList | null) => {
         if (!files || files.length === 0) return;
@@ -623,7 +633,7 @@ export function AgentSidebar() {
                 {
                     role: "assistant" as const,
                     content:
-                        "Hello! I'm your AI creative assistant powered by Gemini. Tell me what video you want to create, and I'll build the workflow for you.",
+                        "Hello! I'm your AI creative assistant. Tell me what you want to create, and I can either build the workflow or analyze attached media directly in chat.",
                 },
             ]
             : chatHistory;
@@ -631,6 +641,7 @@ export function AgentSidebar() {
     const handleSubmit = async (overrideMessage?: string | unknown) => {
         let userMessage: string;
         const finalAttachments = [...pendingAttachments];
+        const typedPrompt = typeof overrideMessage === "string" ? overrideMessage : input.trim();
 
         if (overrideMessage && typeof overrideMessage === 'string') {
             // Auto-prompt: use the override directly
@@ -649,6 +660,12 @@ export function AgentSidebar() {
                         if (att.file) {
                             const formData = new FormData();
                             formData.append("file", att.file);
+                            if (storeId) {
+                                formData.append("workflow_id", storeId);
+                            }
+                            if (workflowName) {
+                                formData.append("workflow_name", workflowName);
+                            }
                             const response = await api.post("/api/assets/upload", formData, {
                                 headers: { "Content-Type": "multipart/form-data" },
                             });
@@ -676,20 +693,17 @@ export function AgentSidebar() {
             }
 
             userMessage = input.trim();
-            if (finalAttachments.length > 0) {
-                const attachmentLines = finalAttachments.map(
-                    (att) => `[Attached: ${att.filename}] (${att.type}) - URL: ${att.url}`
-                );
-                userMessage += (userMessage ? '\n' : '') + attachmentLines.join('\n');
-            }
-
             setInput("");
             setPendingAttachments([]);
         }
 
-        if (!userMessage || isLoading) return;
+        if ((!userMessage && finalAttachments.length === 0) || isLoading) return;
 
-        addChatMessage({ role: "user", content: userMessage });
+        addChatMessage({
+            role: "user",
+            content: userMessage,
+            attachments: finalAttachments.map(({ filename, type, url }) => ({ filename, type, url })),
+        });
         setIsLoading(true);
 
         try {
@@ -697,16 +711,26 @@ export function AgentSidebar() {
             // to avoid circular JSON errors from SDK objects in the store
             const sanitizedHistory = chatHistory.map((m) => ({
                 role: m.role,
-                content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
+                content: [
+                    typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
+                    ...(Array.isArray(m.attachments)
+                        ? m.attachments.map((attachment) => `[Attached: ${attachment.filename}] (${attachment.type})`)
+                        : []),
+                ].filter(Boolean).join('\n'),
             }));
 
             const token = await getAccessTokenSilently();
             const response = await api.post("/api/agent/flow", {
-                prompt: userMessage,
+                prompt: typedPrompt || (finalAttachments.length > 0 ? "Please analyze the attached media." : userMessage),
                 model: selectedModel,
                 current_nodes: nodes,
                 current_edges: edges,
                 chat_history: sanitizedHistory,
+                attachments: finalAttachments.map((attachment) => ({
+                    filename: attachment.filename,
+                    type: attachment.type,
+                    url: attachment.url,
+                })),
             }, {
                 headers: { Authorization: `Bearer ${token}` }
             });
@@ -732,7 +756,10 @@ export function AgentSidebar() {
                         edges: statusRes.data.result?.edges,
                         thinking: statusRes.data.result?.thinking,
                         thinking_duration_ms: statusRes.data.result?.thinking_duration_ms,
+                        action: statusRes.data.result?.action,
+                        apply_workflow: statusRes.data.result?.apply_workflow,
                         tool_calls: statusRes.data.result?.tool_calls,
+                        suggested_name: statusRes.data.result?.suggested_name,
                         error: statusRes.data.error,
                     };
                     break;
@@ -740,7 +767,25 @@ export function AgentSidebar() {
             }
 
             if (result.success) {
-                if (Array.isArray(result.nodes)) {
+                if (result.suggested_name && workflowName.startsWith("Untitled Workflow")) {
+                    setWorkflowName(result.suggested_name);
+                }
+
+                const hasNodeArray = Array.isArray(result.nodes);
+                const hasEdgeArray = Array.isArray(result.edges);
+                const hasAnyElement =
+                    (hasNodeArray && result.nodes.length > 0) ||
+                    (hasEdgeArray && result.edges.length > 0);
+                const indicatesWorkflowAction = result.action === "replace_all" || result.action === "update";
+                const shouldApplyWorkflow =
+                    result.apply_workflow ??
+                    (
+                        (hasNodeArray || hasEdgeArray) &&
+                        (hasAnyElement || indicatesWorkflowAction)
+                    );
+
+                let appliedWorkflow = false;
+                if (shouldApplyWorkflow && hasNodeArray) {
                     setNodes(result.nodes);
                     interface AgentEdge {
                         id?: string;
@@ -752,7 +797,8 @@ export function AgentSidebar() {
                         target_handle?: string;
                         [key: string]: unknown;
                     }
-                    const validEdges = (result.edges || []).map((e: AgentEdge | unknown) => {
+                    const edgeList = hasEdgeArray ? result.edges : [];
+                    const validEdges = edgeList.map((e: AgentEdge | unknown) => {
                         const safeE = e as AgentEdge;
                         return {
                             ...safeE,
@@ -762,11 +808,27 @@ export function AgentSidebar() {
                         };
                     });
                     setEdges(validEdges);
+                    appliedWorkflow = true;
+
+                    // Make newly generated workflows immediately visible on canvas.
+                    if (typeof window !== "undefined") {
+                        window.setTimeout(() => {
+                            window.dispatchEvent(new CustomEvent("kureita:fit-workflow-view", {
+                                detail: { workflowId: storeId || undefined },
+                            }));
+                        }, 40);
+                    }
                 }
+
+                const likelyWorkflowRequest = /\b(create|build|make|generate|workflow|scene|node|ad|edit|modify|update|connect)\b/i
+                    .test(typedPrompt || "");
+                const assistantContent = likelyWorkflowRequest && !appliedWorkflow
+                    ? `${result.message || "I processed your request."}\n\nI couldn't apply workflow changes because no valid node payload was returned. Please retry and I’ll regenerate the nodes.`
+                    : (result.message || "I've updated the workflow based on your request.");
 
                 addChatMessage({
                     role: "assistant",
-                    content: result.message || "I've updated the workflow based on your request.",
+                    content: assistantContent,
                     thinking: result.thinking || undefined,
                     thinking_duration_ms: result.thinking_duration_ms || undefined,
                     tool_calls: result.tool_calls || undefined,
@@ -827,6 +889,12 @@ export function AgentSidebar() {
 
     useEffect(() => {
         if (storeId && !autoPromptSent.current) {
+            const initialModel = sessionStorage.getItem("kureita_initial_model");
+            if (initialModel) {
+                setSelectedModel(initialModel);
+                sessionStorage.removeItem("kureita_initial_model");
+            }
+
             const prompt = sessionStorage.getItem("kureita_initial_prompt");
             if (prompt) {
                 autoPromptSent.current = true;
@@ -901,6 +969,7 @@ export function AgentSidebar() {
                 isUploading={isUploading}
                 selectedModel={selectedModel}
                 onModelSelect={setSelectedModel}
+                modelOptions={agentModels}
             />
 
             {/* Resize Handle */}
@@ -930,4 +999,3 @@ export function AgentSidebar() {
         </div>
     );
 }
-

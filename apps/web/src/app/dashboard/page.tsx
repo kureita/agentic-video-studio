@@ -1,16 +1,26 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useCallback, useRef } from "react";
-import { Plus, MoreHorizontal, Clock, Trash2, Pencil, Loader2, ArrowRight, Sparkles, Film, AlertCircle } from "lucide-react";
+import { Plus, MoreHorizontal, Clock, Trash2, Pencil, Loader2, ArrowUp, Sparkles, Film, AlertCircle, ChevronDown, Paperclip, X } from "lucide-react";
 import { WorkflowPreview } from "@/components/workflow/workflow-preview";
 import { Button } from "@/components/ui/button";
 import { S3Image } from "@/components/ui/s3-image";
 import { workflowApi, WorkflowListItem } from "@/lib/workflow-api";
 import { workflowInspirations, WorkflowInspiration } from "@/lib/inspirations"
-import { cn } from "@/lib/utils";
+import { cn, ALLOWED_MEDIA_TYPES } from "@/lib/utils";
 import { toast } from "sonner";
+import { api } from "@/lib/api";
+import { motion, AnimatePresence } from "framer-motion";
+
+interface Attachment {
+    url: string;
+    type: string;
+    filename: string;
+    file?: File;
+}
 
 const FORK_SESSION_KEY = "kureita_fork_workflow_id";
 
@@ -26,8 +36,34 @@ export default function DashboardPage() {
     // Hero input state
     const [heroInput, setHeroInput] = useState("");
     const [isCreating, setIsCreating] = useState(false);
+    const [isUploading, setIsUploading] = useState(false);
+    const [pendingAttachments, setPendingAttachments] = useState<Attachment[]>([]);
+    const [selectedModel, setSelectedModel] = useState("Gemini 3.1 Pro Preview (High)");
+    const [showModelMenu, setShowModelMenu] = useState(false);
     const [creatingInspirationId, setCreatingInspirationId] = useState<string | null>(null);
-    const heroInputRef = useRef<HTMLInputElement>(null);
+    const heroInputRef = useRef<HTMLTextAreaElement>(null);
+    const modelMenuRef = useRef<HTMLDivElement>(null);
+
+    // Auto-resize textarea
+    useEffect(() => {
+        if (heroInputRef.current) {
+            heroInputRef.current.style.height = "0";
+            const scrollHeight = Math.min(heroInputRef.current.scrollHeight, 160);
+            heroInputRef.current.style.height = `${scrollHeight}px`;
+        }
+    }, [heroInput]);
+
+    useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+            if (modelMenuRef.current && !modelMenuRef.current.contains(e.target as Node)) {
+                setShowModelMenu(false);
+            }
+        };
+        if (showModelMenu) {
+            document.addEventListener('mousedown', handleClickOutside);
+            return () => document.removeEventListener('mousedown', handleClickOutside);
+        }
+    }, [showModelMenu]);
 
     // Check for pending workflow redirect (from public viewer → login → here)
     useEffect(() => {
@@ -59,17 +95,104 @@ export default function DashboardPage() {
         }
     };
 
+    const handleFileUpload = (files: FileList | null) => {
+        if (!files || files.length === 0) return;
+
+        const allowedTypes = ALLOWED_MEDIA_TYPES;
+        const newAttachments: Attachment[] = [];
+        let hasInvalidFiles = false;
+
+        for (const file of Array.from(files)) {
+            if (!allowedTypes.includes(file.type)) {
+                hasInvalidFiles = true;
+                continue;
+            }
+
+            newAttachments.push({
+                filename: file.name,
+                url: URL.createObjectURL(file),
+                type: file.type,
+                file: file
+            });
+        }
+
+        if (hasInvalidFiles) {
+            toast.error("Format not supported. Please use accepted image, video, or audio formats.");
+        }
+
+        if (newAttachments.length > 0) {
+            setPendingAttachments((prev) => [...prev, ...newAttachments]);
+        }
+    };
+
+    const handleRemoveAttachment = (index: number) => {
+        setPendingAttachments((prev) => {
+            const att = prev[index];
+            if (att.url.startsWith('blob:')) {
+                URL.revokeObjectURL(att.url);
+            }
+            return prev.filter((_, i) => i !== index);
+        });
+    };
+
     const createFromPrompt = useCallback(async () => {
-        const prompt = heroInput.trim();
-        if (!prompt || isCreating) return;
+        let userMessage = heroInput.trim();
+        const finalAttachments = [...pendingAttachments];
+        if ((!userMessage && finalAttachments.length === 0) || isCreating || isUploading) return;
 
         setIsCreating(true);
+
+        // Upload pending files first
+        const filesToUpload = finalAttachments.filter(a => a.file);
+        if (filesToUpload.length > 0) {
+            setIsUploading(true);
+            try {
+                for (let i = 0; i < finalAttachments.length; i++) {
+                    const att = finalAttachments[i];
+                    if (att.file) {
+                        const formData = new FormData();
+                        formData.append("file", att.file);
+                        const response = await api.post("/api/assets/upload", formData, {
+                            headers: { "Content-Type": "multipart/form-data" },
+                        });
+                        if (response.data.success) {
+                            if (att.url.startsWith('blob:')) {
+                                URL.revokeObjectURL(att.url);
+                            }
+                            finalAttachments[i] = {
+                                filename: response.data.filename,
+                                url: response.data.url,
+                                type: response.data.type
+                            };
+                        } else {
+                            throw new Error("Upload failed for " + att.filename);
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error("Upload error:", error);
+                toast.error("Failed to upload attachments");
+                setIsUploading(false);
+                setIsCreating(false);
+                return;
+            }
+            setIsUploading(false);
+        }
+
+        if (finalAttachments.length > 0) {
+            const attachmentLines = finalAttachments.map(
+                (att) => `[Attached: ${att.filename}] (${att.type}) - URL: ${att.url}`
+            );
+            userMessage += (userMessage ? '\n' : '') + attachmentLines.join('\n');
+        }
+
         try {
             const response = await workflowApi.create("Untitled Workflow");
             const newWorkflow = response.data;
 
-            // store prompt for the agent sidebar to pick up
-            sessionStorage.setItem("kureita_initial_prompt", prompt);
+            // store prompt and model for the agent sidebar to pick up
+            sessionStorage.setItem("kureita_initial_prompt", userMessage);
+            sessionStorage.setItem("kureita_initial_model", selectedModel);
 
             router.push(`/dashboard/workflow?id=${newWorkflow.id}`);
         } catch (err) {
@@ -77,7 +200,7 @@ export default function DashboardPage() {
             toast.error("Failed to create workflow");
             setIsCreating(false);
         }
-    }, [heroInput, isCreating, router]);
+    }, [heroInput, isCreating, isUploading, pendingAttachments, selectedModel, router]);
 
     const createFromInspiration = useCallback(async (inspiration: WorkflowInspiration) => {
         if (creatingInspirationId) return;
@@ -184,56 +307,197 @@ export default function DashboardPage() {
 
                 <div className="w-full max-w-xl mt-5">
                     <div className={cn(
-                        "relative flex items-center rounded-xl border transition-all duration-200",
-                        "bg-muted/20 border-border/50",
-                        "focus-within:border-primary/40 focus-within:bg-muted/30",
-                        "focus-within:shadow-lg focus-within:shadow-primary/5",
+                        "relative rounded-xl border transition-all duration-200",
+                        "bg-muted/30 border-border/50",
+                        "focus-within:border-primary/40 focus-within:bg-muted/50",
+                        "shadow-sm focus-within:shadow-md focus-within:shadow-primary/5"
                     )}>
-                        <input
+                        {/* Inline Attachment Previews */}
+                        <AnimatePresence>
+                            {pendingAttachments.length > 0 && (
+                                <motion.div
+                                    initial={{ height: 0, opacity: 0 }}
+                                    animate={{ height: "auto", opacity: 1 }}
+                                    exit={{ height: 0, opacity: 0 }}
+                                    className="overflow-hidden"
+                                >
+                                    <div className="flex flex-wrap gap-1.5 px-3 pt-2.5">
+                                        {pendingAttachments.map((att, idx) => (
+                                            <motion.div
+                                                key={`${att.filename}-${idx}`}
+                                                initial={{ scale: 0.8, opacity: 0 }}
+                                                animate={{ scale: 1, opacity: 1 }}
+                                                exit={{ scale: 0.8, opacity: 0 }}
+                                                transition={{ duration: 0.15 }}
+                                                className="group/att relative"
+                                            >
+                                                {att.type.startsWith("image") ? (
+                                                    <div className="relative">
+                                                        <div className="h-14 w-14 rounded-lg overflow-hidden border border-border/40 bg-muted/40">
+                                                            {att.url.startsWith('blob:') ? (
+                                                                // eslint-disable-next-line @next/next/no-img-element
+                                                                <img src={att.url} alt={att.filename} className="w-full h-full object-cover" />
+                                                            ) : (
+                                                                <S3Image src={att.url} alt={att.filename} fill className="object-cover" unoptimized />
+                                                            )}
+                                                        </div>
+                                                        <button
+                                                            onClick={() => handleRemoveAttachment(idx)}
+                                                            className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center opacity-0 group-hover/att:opacity-100 transition-opacity cursor-pointer shadow-sm z-10"
+                                                        >
+                                                            <X className="w-2.5 h-2.5" />
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <div className="relative flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-border/40 bg-muted/40 text-left">
+                                                        <Paperclip className="w-3 h-3 text-muted-foreground/60 shrink-0" />
+                                                        <span className="text-[11px] text-muted-foreground truncate max-w-[80px]">{att.filename}</span>
+                                                        <button
+                                                            onClick={() => handleRemoveAttachment(idx)}
+                                                            className="p-0.5 rounded hover:bg-muted text-muted-foreground/40 hover:text-muted-foreground transition-colors cursor-pointer shrink-0"
+                                                        >
+                                                            <X className="w-3 h-3" />
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </motion.div>
+                                        ))}
+                                        {isUploading && (
+                                            <div className="h-14 w-14 rounded-lg border border-border/40 bg-muted/40 flex items-center justify-center">
+                                                <Loader2 className="w-4 h-4 animate-spin text-muted-foreground/50" />
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="px-4 pb-2 pt-1 flex items-start gap-1.5 opacity-60">
+                                        <div className="mt-[4px] w-1 h-1 rounded-full bg-muted-foreground"></div>
+                                        <p className="text-[10px] text-muted-foreground leading-tight text-left">
+                                            Media assets are routed directly to your workflow. AI analysis for images and videos is coming soon, we&apos;re working hard on it!
+                                        </p>
+                                    </div>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+
+                        <textarea
                             ref={heroInputRef}
-                            type="text"
+                            rows={1}
                             value={heroInput}
                             onChange={(e) => setHeroInput(e.target.value)}
                             onKeyDown={(e) => {
-                                if (e.key === "Enter" && heroInput.trim()) {
-                                    createFromPrompt();
+                                if (e.key === "Enter" && !e.shiftKey) {
+                                    e.preventDefault();
+                                    if (heroInput.trim() || pendingAttachments.length > 0) {
+                                        createFromPrompt();
+                                    }
                                 }
                             }}
                             placeholder="Describe your video idea..."
                             disabled={isCreating}
                             className={cn(
-                                "flex-1 bg-transparent px-4 py-3 text-sm placeholder:text-muted-foreground/40",
-                                "focus:outline-none",
+                                "w-full resize-none bg-transparent px-3.5 pt-3 pb-1 text-[13px] placeholder:text-muted-foreground/40",
+                                "focus:outline-none leading-relaxed",
+                                "min-h-[60px] max-h-[160px]",
                                 isCreating && "opacity-50 cursor-not-allowed"
                             )}
                         />
-                        <button
-                            onClick={createFromPrompt}
-                            disabled={!heroInput.trim() || isCreating}
-                            className={cn(
-                                "mr-2 p-2 rounded-lg transition-all duration-200",
-                                heroInput.trim()
-                                    ? "bg-primary text-primary-foreground shadow-sm hover:bg-primary/90"
-                                    : "bg-transparent text-muted-foreground/25 cursor-default"
-                            )}
-                        >
-                            {isCreating ? (
-                                <Loader2 className="w-4 h-4 animate-spin" />
-                            ) : (
-                                <ArrowRight className="w-4 h-4" />
-                            )}
-                        </button>
-                    </div>
+                        <div className="flex items-center justify-end gap-1.5 px-2.5 pb-2 pt-0.5">
+                            {/* Right actions: Model select + Upload + Submit */}
+                            {/* Model selector */}
+                            <div className="relative" ref={modelMenuRef}>
+                                <button
+                                    onClick={() => setShowModelMenu(!showModelMenu)}
+                                    className={cn(
+                                        "flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] transition-colors cursor-pointer",
+                                        "text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted/60",
+                                        showModelMenu && "text-muted-foreground bg-muted/60",
+                                        isCreating && "opacity-50 cursor-not-allowed"
+                                    )}
+                                    disabled={isCreating || isUploading}
+                                >
+                                    <ChevronDown className="w-3.5 h-3.5" />
+                                    <span>{selectedModel}</span>
+                                </button>
 
-                    {/* Or create a blank workflow */}
-                    <div className="mt-3 flex items-center justify-center">
-                        <button
-                            onClick={createNewWorkflow}
-                            className="inline-flex items-center gap-1.5 text-[13px] text-muted-foreground/60 hover:text-foreground/80 transition-colors duration-200 py-1 px-2 rounded-md hover:bg-muted/30"
-                        >
-                            <Plus className="w-3.5 h-3.5" />
-                            <span>or start with a blank workflow</span>
-                        </button>
+                                {/* Model Menu Dropdown */}
+                                <AnimatePresence>
+                                    {showModelMenu && (
+                                        <motion.div
+                                            initial={{ opacity: 0, y: -4, scale: 0.96 }}
+                                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                                            exit={{ opacity: 0, y: -4, scale: 0.96 }}
+                                            transition={{ duration: 0.12 }}
+                                            className="absolute top-full right-0 mt-2 w-64 bg-popover text-popover-foreground rounded-lg border shadow-xl overflow-hidden z-[100] text-left"
+                                        >
+                                            <div className="px-3 py-2 text-[11px] text-muted-foreground border-b border-border/50">
+                                                Model
+                                            </div>
+                                            <div className="max-h-[240px] overflow-y-auto flex flex-col">
+                                                {[
+                                                    "Gemini 3.1 Pro Preview (High)",
+                                                    "Gemini 3.1 Flash Lite Preview (Low)",
+                                                    "Claude 4.6 Opus (High)",
+                                                    "Claude 4.6 Sonnet (Medium)",
+                                                    "Claude 4.5 Haiku (Low)",
+                                                    "GPT-5.4 Pro (High)",
+                                                    "GPT-5 Mini (Medium)",
+                                                    "GPT-5 Nano (Low)"
+                                                ].map((modelName) => (
+                                                    <button
+                                                        key={modelName}
+                                                        onClick={() => {
+                                                            setSelectedModel(modelName);
+                                                            setShowModelMenu(false);
+                                                        }}
+                                                        className={cn(
+                                                            "w-full text-left px-2 py-2 text-[11px] hover:bg-accent/80 hover:text-accent-foreground cursor-pointer flex items-center justify-between",
+                                                            selectedModel === modelName && "bg-accent/60 text-accent-foreground font-medium"
+                                                        )}
+                                                    >
+                                                        <span className={cn(selectedModel !== modelName && "text-muted-foreground/90")}>{modelName}</span>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
+                            </div>
+
+                            {/* Attachment button */}
+                            <label
+                                className={cn(
+                                    "p-1.5 rounded-md transition-colors cursor-pointer",
+                                    "text-muted-foreground/40 hover:text-muted-foreground hover:bg-muted/60",
+                                    (isUploading || isCreating) && "opacity-50 cursor-not-allowed"
+                                )}
+                            >
+                                <Paperclip className="w-3.5 h-3.5" />
+                                <input
+                                    type="file"
+                                    className="hidden"
+                                    onChange={(e) => handleFileUpload(e.target.files)}
+                                    disabled={isUploading || isCreating}
+                                    accept="image/*,video/*,audio/*"
+                                    multiple
+                                />
+                            </label>
+
+                            <button
+                                onClick={createFromPrompt}
+                                disabled={(!heroInput.trim() && pendingAttachments.length === 0) || isCreating || isUploading}
+                                className={cn(
+                                    "p-1.5 rounded-lg transition-all duration-200 cursor-pointer",
+                                    heroInput.trim() || pendingAttachments.length > 0
+                                        ? "bg-primary text-primary-foreground shadow-sm hover:shadow-md hover:bg-primary/90"
+                                        : "bg-muted/60 text-muted-foreground/30 cursor-not-allowed"
+                                )}
+                            >
+                                {isCreating || isUploading ? (
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                    <ArrowUp className="w-3.5 h-3.5" />
+                                )}
+                            </button>
+                        </div>
                     </div>
                 </div>
             </section>
@@ -249,7 +513,7 @@ export default function DashboardPage() {
                     <div className="flex items-center justify-center py-12">
                         <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
                     </div>
-                ) : hasWorkflows && (
+                ) : (
                     <section>
                         <div className="flex items-center justify-between mb-4">
                             <div>
@@ -272,7 +536,7 @@ export default function DashboardPage() {
                                         className="block"
                                     >
                                         <div className="relative aspect-[4/3] rounded-lg border border-border/60 bg-card overflow-hidden transition-all duration-200 hover:border-border hover:shadow-sm hover:shadow-primary/5">
-                                            {/* Thumbnail or gradient placeholder */}
+                                            {/* Thumbnail or nodes preview or gradient placeholder */}
                                             {workflow.thumbnail_url ? (
                                                 <S3Image
                                                     src={workflow.thumbnail_url}
@@ -281,24 +545,37 @@ export default function DashboardPage() {
                                                     fill
                                                     unoptimized
                                                 />
+                                            ) : (workflow.nodes && workflow.nodes.length > 0) ? (
+                                                <div className="absolute inset-0 bg-muted/40 pointer-events-none">
+                                                    <WorkflowPreview
+                                                        nodes={workflow.nodes.map(n => ({
+                                                            id: n.id,
+                                                            type: n.type,
+                                                            position: n.position,
+                                                        }))}
+                                                        edges={(workflow.edges || []).map(e => ({
+                                                            id: e.id,
+                                                            source: e.source,
+                                                            target: e.target,
+                                                        }))}
+                                                    />
+                                                </div>
                                             ) : (
-                                                <div className="absolute inset-0 bg-[hsl(220,15%,8%)]">
+                                                <div className="absolute inset-0 bg-muted/40">
                                                     <div className="absolute inset-0 flex items-center justify-center">
-                                                        <Film className="w-8 h-8 text-muted-foreground/20" />
+                                                        <Image src="/kureita_logo.svg" alt="Workflow" width={32} height={32} className="w-8 h-8 opacity-40 invert mix-blend-screen" unoptimized />
                                                     </div>
                                                 </div>
                                             )}
 
                                             {/* Status badge */}
-                                            {workflow.status && workflow.status !== 'draft' && (
+                                            {workflow.status && workflow.status !== 'draft' && workflow.status !== 'ready' && (
                                                 <div className={cn(
                                                     "absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded text-[10px] font-medium flex items-center gap-1 backdrop-blur-sm",
-                                                    workflow.status === 'ready' && "bg-green-500/20 text-green-400 border border-green-500/20",
                                                     workflow.status === 'generating' && "bg-amber-500/20 text-amber-400 border border-amber-500/20",
                                                     workflow.status === 'failed' && "bg-red-500/20 text-red-400 border border-red-500/20",
                                                 )}
                                                 >
-                                                    {workflow.status === 'ready' && <><Sparkles className="w-2.5 h-2.5" /> Ready</>}
                                                     {workflow.status === 'generating' && <><Loader2 className="w-2.5 h-2.5 animate-spin" /> Generating</>}
                                                     {workflow.status === 'failed' && <><AlertCircle className="w-2.5 h-2.5" /> Failed</>}
                                                 </div>
@@ -380,7 +657,6 @@ export default function DashboardPage() {
                                             </h3>
                                         )}
                                         <div className="flex items-center text-[11px] text-muted-foreground/60 mt-0.5">
-                                            <Clock className="w-2.5 h-2.5 mr-1" />
                                             <span>{formatDate(workflow.updated_at)}</span>
                                         </div>
                                     </div>
@@ -421,7 +697,7 @@ export default function DashboardPage() {
                                     {/* Thumbnail */}
                                     <div className={cn(
                                         "relative aspect-[16/10] rounded-lg border overflow-hidden transition-all duration-200",
-                                        "border-border/40 bg-[hsl(220,15%,8%)]",
+                                        "border-border/40 bg-muted/40",
                                         "group-hover/tpl:border-border/80 group-hover/tpl:shadow-md group-hover/tpl:shadow-primary/5",
                                         "group-focus-visible/tpl:border-primary/40 group-focus-visible/tpl:ring-1 group-focus-visible/tpl:ring-primary/20",
                                         creatingInspirationId === template.id && "border-primary/40"

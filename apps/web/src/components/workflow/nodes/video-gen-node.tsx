@@ -7,27 +7,150 @@ import { usePresignedUrl } from "@/lib/use-presigned-url";
 import { workflowApi } from "@/lib/workflow-api";
 import { useWorkflowStore } from "@/lib/workflow-store";
 import { useModels } from "@/lib/use-models";
+import type { Model } from "@/lib/api";
 import { toast } from "sonner";
 import { extractFrameFromVideo } from "@/lib/video-utils";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 
-const DEFAULT_INPUTS: { id: string, label: string, type: "text" | "image" | "video" | "audio" }[] = [
-    { id: "text", label: "Text/Prompt", type: "text" },
-    { id: "start_image", label: "Start Image", type: "image" },
-    { id: "end_image", label: "End Image", type: "image" },
-    { id: "audio", label: "Audio", type: "audio" }
-];
+type InputMode = "t2v" | "i2v" | "reference" | "elements" | "v2v";
+type PersistedVideoNodeSettings = {
+    model?: string;
+    duration?: string;
+    resolution?: string;
+    inputMode?: string;
+    generateAudio?: boolean;
+    ratio?: string;
+    updatedAt?: number;
+};
+
+const DEFAULT_DURATIONS = ["4s", "5s", "6s", "8s", "10s"];
+const DEFAULT_RESOLUTIONS = ["720p", "1080p", "4k"];
+const DEFAULT_INPUT_MODES: InputMode[] = ["t2v"];
+const INPUT_MODE_PRIORITY: InputMode[] = ["i2v", "reference", "elements", "v2v", "t2v"];
+const ALL_INPUT_MODES: InputMode[] = ["t2v", "i2v", "reference", "elements", "v2v"];
+const LOCAL_PERSIST_KEYS = ["model", "duration", "resolution", "inputMode", "ratio", "generateAudio"] as const;
+
+const sortDurationOptions = (durations: string[]) => {
+    return [...durations].sort((a, b) => {
+        const aNum = parseInt(a.replace("s", ""), 10);
+        const bNum = parseInt(b.replace("s", ""), 10);
+        if (Number.isNaN(aNum) || Number.isNaN(bNum)) return a.localeCompare(b);
+        return aNum - bNum;
+    });
+};
+
+const getModelDurations = (model?: Model, resolution?: string) => {
+    if (!model) return DEFAULT_DURATIONS;
+
+    const min = typeof model.duration_min === "number" ? model.duration_min : undefined;
+    const max = typeof model.duration_max === "number" ? model.duration_max : undefined;
+    const step = typeof model.duration_step === "number" && model.duration_step > 0 ? model.duration_step : 1;
+
+    const matchingConfigDurations = Array.from(
+        new Set(
+            (model.configs || [])
+                .filter((c) => !resolution || c.resolution === resolution)
+                .map((c) => (c.duration ? `${c.duration}s` : null))
+                .filter(Boolean) as string[]
+        )
+    );
+    if (matchingConfigDurations.length > 0 && !(typeof min === "number" && typeof max === "number" && max >= min)) {
+        return sortDurationOptions(matchingConfigDurations);
+    }
+
+    if (typeof min === "number" && typeof max === "number" && max >= min) {
+        const values: string[] = [];
+        for (let s = min; s <= max; s += step) {
+            values.push(`${s}s`);
+        }
+        if (values.length > 0) return values;
+    }
+
+    return DEFAULT_DURATIONS;
+};
+
+const getModelResolutions = (model?: Model) => {
+    if (!model) return DEFAULT_RESOLUTIONS;
+    const resolutions = Array.from(new Set((model.configs || []).map((c) => c.resolution).filter(Boolean) as string[]));
+    return resolutions.length > 0 ? resolutions : DEFAULT_RESOLUTIONS;
+};
+
+const getFrameImagesMax = (model?: Model) => {
+    const max = typeof model?.frame_images_max === "number" ? model.frame_images_max : 2;
+    return max > 0 ? max : 1;
+};
+
+const getReferenceImageBounds = (model?: Model) => {
+    const min = typeof model?.reference_images_min === "number" ? model.reference_images_min : 1;
+    const max = typeof model?.reference_images_max === "number" ? model.reference_images_max : 1;
+    return { min, max: Math.max(min, max) };
+};
+
+const isInputMode = (value: string): value is InputMode =>
+    ALL_INPUT_MODES.includes(value as InputMode);
+
+const getModelInputModes = (model?: Model): InputMode[] => {
+    if (!model) return DEFAULT_INPUT_MODES;
+
+    const declaredModes = (model.input_modes || [])
+        .map((mode) => mode.toLowerCase())
+        .filter(isInputMode);
+
+    if (declaredModes.length > 0) {
+        return Array.from(new Set(declaredModes));
+    }
+
+    const caps = new Set((model.capabilities || []).map((cap) => cap.toLowerCase()));
+    const inferred: InputMode[] = [];
+    if (caps.has("i2v")) inferred.push("i2v");
+    if (caps.has("reference")) inferred.push("reference");
+    if (caps.has("elements")) inferred.push("elements");
+    if (caps.has("v2v")) inferred.push("v2v");
+    if (caps.has("t2v") || inferred.length === 0) inferred.push("t2v");
+    return Array.from(new Set(inferred));
+};
+
+const sortInputModes = (modes: InputMode[]) => {
+    const unique = Array.from(new Set(modes.filter((mode) => isInputMode(mode))));
+    return unique.sort((a, b) => INPUT_MODE_PRIORITY.indexOf(a) - INPUT_MODE_PRIORITY.indexOf(b));
+};
+
+const getInputModeLabel = (mode: InputMode, frameImagesMax: number) => {
+    switch (mode) {
+        case "i2v":
+            return "Start/End Frame";
+        case "reference":
+            return "Reference";
+        case "elements":
+            return "Elements";
+        case "v2v":
+            return "Video Extend";
+        case "t2v":
+        default:
+            return "Text to Video";
+    }
+};
+
+const getNativeAudioDefault = (model?: Model) => {
+    const hasAudioCapability = !!model?.capabilities?.some((c) => c.toLowerCase() === "audio");
+    if (!hasAudioCapability) return false;
+    if (typeof model?.native_audio_default === "boolean") return model.native_audio_default;
+    return true;
+};
 
 const getCapabilitiesLabel = (capabilities: string[] = []) => {
-    const hasT2V = !!capabilities.find(c => c.toLowerCase() === "t2v");
     const hasI2V = !!capabilities.find(c => c.toLowerCase() === "i2v");
+    const hasReference = !!capabilities.find(c => c.toLowerCase() === "reference");
+    const hasElements = !!capabilities.find(c => c.toLowerCase() === "elements");
+    const hasV2V = !!capabilities.find(c => c.toLowerCase() === "v2v");
     const hasAudio = !!capabilities.find(c => c.toLowerCase() === "audio");
 
     let label = "";
-    if (hasT2V && hasI2V) label = "Text to Video & Image to Video";
-    else if (hasI2V) label = "Image to Video";
-    else if (hasT2V) label = "Text to Video";
+    if (hasI2V) label = "Image-to-Video";
+    if (hasReference) label += (label ? " + " : "") + "Reference";
+    if (hasElements) label += (label ? " + " : "") + "Elements";
+    if (hasV2V) label += (label ? " + " : "") + "Video Extend";
 
     if (hasAudio) {
         label += label ? " + Audio" : "Audio Generation";
@@ -40,11 +163,15 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
     const { deleteElements, updateNodeData } = useReactFlow();
     const { nodes, setNodes, runNode, clearNodeOutput, outputs, runningNodeId, setRawOutput } = useWorkflowStore();
 
-    const { models } = useModels();
+    const { models, isLoading: isModelsLoading } = useModels();
     const videoModels = models.filter(m => m.type === "video");
 
     // Derive workflowId from the URL query param: /dashboard/workflow?id=<workflowId>
     const workflowId = useMemo(() => new URLSearchParams(window.location.search).get('id') || '', []);
+    const settingsStorageKey = useMemo(
+        () => `video_gen_node:${workflowId || "unknown"}:${id}`,
+        [workflowId, id]
+    );
 
     const [extractingHandle, setExtractingHandle] = useState<string | null>(null);
     const [extractionError, setExtractionError] = useState<string | null>(null);
@@ -53,8 +180,12 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
 
     const [showModelMenu, setShowModelMenu] = useState(false);
     const [showDurationMenu, setShowDurationMenu] = useState(false);
+    const [showInputModeMenu, setShowInputModeMenu] = useState(false);
+    const [hasCompletedInitialHydration, setHasCompletedInitialHydration] = useState(false);
+    const saveTimerRef = useRef<number | null>(null);
     const modelMenuRef = useRef<HTMLDivElement>(null);
     const durationMenuRef = useRef<HTMLDivElement>(null);
+    const inputModeMenuRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -67,12 +198,15 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
             if (durationMenuRef.current && !durationMenuRef.current.contains(event.target as Node)) {
                 setShowDurationMenu(false);
             }
+            if (inputModeMenuRef.current && !inputModeMenuRef.current.contains(event.target as Node)) {
+                setShowInputModeMenu(false);
+            }
         };
-        if (menuOpen || showModelMenu || showDurationMenu) {
+        if (menuOpen || showModelMenu || showDurationMenu || showInputModeMenu) {
             document.addEventListener("mousedown", handleClickOutside);
         }
         return () => document.removeEventListener("mousedown", handleClickOutside);
-    }, [menuOpen, showModelMenu, showDurationMenu]);
+    }, [menuOpen, showModelMenu, showDurationMenu, showInputModeMenu]);
 
     const isRunning = runningNodeId === id;
     const rawOutput = (outputs[id] as string | undefined) || (data.output as string | undefined);
@@ -146,83 +280,291 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
     }, [workflowId, id, output, outputs, setRawOutput]);
 
 
+    const schedulePersistSettings = useCallback((updates: Record<string, unknown>) => {
+        const shouldPersistNow = LOCAL_PERSIST_KEYS
+            .some((key) => key in updates);
+        if (!shouldPersistNow) return;
+
+        if (saveTimerRef.current !== null) {
+            window.clearTimeout(saveTimerRef.current);
+        }
+
+        saveTimerRef.current = window.setTimeout(() => {
+            const state = useWorkflowStore.getState();
+            if (state.id && !state.isPublicView && state.isDirty && !state.isSaving) {
+                void state.saveWorkflow();
+            }
+            saveTimerRef.current = null;
+        }, 500);
+    }, []);
+
+    useEffect(() => {
+        return () => {
+            if (saveTimerRef.current !== null) {
+                window.clearTimeout(saveTimerRef.current);
+                saveTimerRef.current = null;
+                const state = useWorkflowStore.getState();
+                if (state.id && !state.isPublicView && state.isDirty && !state.isSaving) {
+                    void state.saveWorkflow();
+                }
+            }
+        };
+    }, []);
+
+    const persistLocalSettingsPatch = useCallback((updates: Record<string, unknown>) => {
+        if (!hasCompletedInitialHydration) return;
+
+        const localPatch: Record<string, unknown> = {};
+        for (const key of LOCAL_PERSIST_KEYS) {
+            if (key in updates) {
+                localPatch[key] = updates[key];
+            }
+        }
+
+        if (Object.keys(localPatch).length === 0) return;
+
+        try {
+            const existingRaw = localStorage.getItem(settingsStorageKey);
+            const existing = existingRaw ? JSON.parse(existingRaw) as PersistedVideoNodeSettings : {};
+            localStorage.setItem(
+                settingsStorageKey,
+                JSON.stringify({
+                    ...existing,
+                    ...localPatch,
+                    updatedAt: Date.now(),
+                })
+            );
+        } catch (err) {
+            console.warn("[VideoNode] Failed to persist local settings patch", err);
+        }
+    }, [hasCompletedInitialHydration, settingsStorageKey]);
+
     // Sync node data to workflow store
     const updateData = useCallback((updates: Record<string, unknown>) => {
         updateNodeData(id, updates);
+        const latestNodes = useWorkflowStore.getState().nodes;
         setNodes(
-            nodes.map((n) =>
+            latestNodes.map((n) =>
                 n.id === id ? { ...n, data: { ...n.data, ...updates } } : n
             )
         );
-    }, [id, updateNodeData, setNodes, nodes]);
+        persistLocalSettingsPatch(updates);
+        schedulePersistSettings(updates);
+    }, [id, updateNodeData, setNodes, persistLocalSettingsPatch, schedulePersistSettings]);
 
-    const currentModelId = (typeof data.model === 'string' ? data.model : (videoModels.length > 0 ? videoModels[0].id : "kling-video-3-standard"));
-    const currentModelEntry = videoModels.find(m => m.id === currentModelId) || videoModels.find(m => m.name === currentModelId);
+    const currentModelId = typeof data.model === "string"
+        ? data.model
+        : (videoModels.length > 0 ? videoModels[0].id : "kling-video-3-standard");
+    const currentModelEntry = videoModels.find((m) => m.id === currentModelId) || videoModels.find((m) => m.name === currentModelId);
     const currentModelDisplayName = currentModelEntry?.name || currentModelId;
-    const configInputs = DEFAULT_INPUTS;
 
     const selectedModelData = currentModelEntry;
+    const validResolutions = useMemo(() => getModelResolutions(selectedModelData), [selectedModelData]);
+    const effectiveResolution = validResolutions.includes(typeof data.resolution === "string" ? data.resolution : "")
+        ? (data.resolution as string || validResolutions[0])
+        : validResolutions[0];
+    const validDurations = useMemo(
+        () => getModelDurations(selectedModelData, effectiveResolution),
+        [selectedModelData, effectiveResolution]
+    );
+    const availableInputModes = useMemo(
+        () => sortInputModes(getModelInputModes(selectedModelData)),
+        [selectedModelData]
+    );
+    const frameImagesMax = useMemo(() => getFrameImagesMax(selectedModelData), [selectedModelData]);
+    const referenceBounds = useMemo(() => getReferenceImageBounds(selectedModelData), [selectedModelData]);
+    const nativeAudioDefault = useMemo(() => getNativeAudioDefault(selectedModelData), [selectedModelData]);
+
+    const selectableInputModes = useMemo(
+        () => selectedModelData ? availableInputModes : [],
+        [availableInputModes, selectedModelData]
+    );
+    const requestedInputMode = useMemo(() => {
+        if (typeof data.inputMode !== "string") return undefined;
+        const normalized = data.inputMode.toLowerCase();
+        if (normalized === "auto") return "t2v";
+        return isInputMode(normalized) ? normalized : undefined;
+    }, [data.inputMode]);
+    const defaultInputMode = selectableInputModes.includes("t2v") ? "t2v" : (selectableInputModes[0] || "t2v");
+    const inputMode = selectedModelData
+        ? ((requestedInputMode
+            && selectableInputModes.includes(requestedInputMode))
+            ? requestedInputMode
+            : defaultInputMode)
+        : (requestedInputMode || "t2v");
+
+    useEffect(() => {
+        if (!selectedModelData) return;
+
+        if (requestedInputMode !== inputMode) {
+            updateData({ inputMode });
+        }
+    }, [selectedModelData, requestedInputMode, inputMode, updateData]);
+
+    const configInputs = useMemo(() => {
+        const inputs: { id: string, label: string, type: "text" | "image" | "video" | "audio" }[] = [
+            { id: "text", label: "Text/Prompt", type: "text" }
+        ];
+
+        if (inputMode === "i2v") {
+            inputs.push({ id: "start_image", label: "Start Image", type: "image" });
+            if (frameImagesMax > 1) {
+                inputs.push({ id: "end_image", label: "End Image", type: "image" });
+            }
+        } else if (inputMode === "reference") {
+            const referenceHandleId = referenceBounds.max <= 1 ? "reference_image" : "reference_images";
+            const referenceLabel = referenceBounds.max <= 1 ? "Reference Image" : "Reference Images";
+            inputs.push({ id: referenceHandleId, label: referenceLabel, type: "image" });
+        } else if (inputMode === "elements") {
+            inputs.push({ id: "elements_image", label: "Element Image", type: "image" });
+            inputs.push({ id: "elements_video", label: "Element Video", type: "video" });
+            inputs.push({ id: "elements_audio", label: "Element Audio", type: "audio" });
+        } else if (inputMode === "v2v") {
+            inputs.push({ id: "reference_video", label: "Reference Video", type: "video" });
+        }
+
+        // Show external audio input connection ONLY for models that explicitly support it.
+        // Kling 3.0 uses native audio provider settings and should not expose an audio input handle.
+        const supportsExternalAudioInput = !!currentModelEntry?.capabilities?.some(
+            (c: string) => c.toLowerCase() === "audio_input"
+        );
+        const isKlingVideo3 = typeof currentModelEntry?.id === "string" && currentModelEntry.id.startsWith("kling-video-3-");
+        if (supportsExternalAudioInput && !isKlingVideo3 && inputMode !== "elements") {
+            inputs.push({ id: "audio", label: "Audio", type: "audio" });
+        }
+
+        return inputs;
+    }, [
+        inputMode,
+        currentModelEntry,
+        frameImagesMax,
+        referenceBounds.max,
+    ]);
+
     const hasNativeAudioCapability = !!selectedModelData?.capabilities?.some(
         (c) => c.toLowerCase() === "audio"
     );
-    const rawGenerateAudio = typeof data.generateAudio === "boolean" ? data.generateAudio : false;
+    const rawGenerateAudio = typeof data.generateAudio === "boolean" ? data.generateAudio : nativeAudioDefault;
     const generateAudio = hasNativeAudioCapability ? rawGenerateAudio : false;
+    const ratio = (data.ratio as string) || "16:9";
 
-    // Keep node data capability-consistent when assistant-selected model/audio combos drift.
+    // Keep node data capability-consistent when model/audio defaults drift.
     useEffect(() => {
-        if (!hasNativeAudioCapability && rawGenerateAudio) {
-            updateData({ generateAudio: false });
+        if (!selectedModelData) return;
+
+        if (!hasNativeAudioCapability) {
+            if (typeof data.generateAudio === "boolean" && data.generateAudio) {
+                updateData({ generateAudio: false });
+            }
+            return;
         }
-    }, [hasNativeAudioCapability, rawGenerateAudio, updateData]);
-    let validDurations = ["5s", "8s", "10s"];
-    let validResolutions = ["720p", "1080p"];
-    if (selectedModelData && selectedModelData.configs) {
-        const d = Array.from(new Set(selectedModelData.configs.map(c => c.duration ? `${c.duration}s` : null).filter(Boolean)));
-        if (d.length > 0) validDurations = d as string[];
 
-        const r = Array.from(new Set(selectedModelData.configs.map(c => c.resolution).filter(Boolean)));
-        if (r.length > 0) validResolutions = r as string[];
-    }
+        if (typeof data.generateAudio !== "boolean") {
+            updateData({ generateAudio: nativeAudioDefault });
+        }
+    }, [selectedModelData, hasNativeAudioCapability, data.generateAudio, nativeAudioDefault, updateData]);
 
-    const effectiveDuration = validDurations.includes(typeof data.duration === 'string' ? data.duration : "")
+    const effectiveDuration = validDurations.includes(typeof data.duration === "string" ? data.duration : "")
         ? (data.duration as string || validDurations[0])
         : validDurations[0];
 
-    const effectiveResolution = validResolutions.includes(typeof data.resolution === 'string' ? data.resolution : "")
-        ? (data.resolution as string || validResolutions[0])
-        : validResolutions[0];
+    useEffect(() => {
+        if (!selectedModelData) return;
+
+        if (typeof data.resolution !== "string" || data.resolution !== effectiveResolution) {
+            updateData({ resolution: effectiveResolution });
+        }
+    }, [selectedModelData, data.resolution, effectiveResolution, updateData]);
+
+    useEffect(() => {
+        if (!selectedModelData) return;
+
+        if (typeof data.duration !== "string" || data.duration !== effectiveDuration) {
+            updateData({ duration: effectiveDuration });
+        }
+    }, [selectedModelData, data.duration, effectiveDuration, updateData]);
+
+    useEffect(() => {
+        setHasCompletedInitialHydration(false);
+    }, [settingsStorageKey]);
+
+    // Persist critical settings locally so refresh never loses unsynced choices.
+    useEffect(() => {
+        try {
+            const stored = localStorage.getItem(settingsStorageKey);
+            if (stored) {
+                const parsed = JSON.parse(stored) as PersistedVideoNodeSettings;
+                const patch: Record<string, unknown> = {};
+
+                if (typeof parsed.model === "string" && parsed.model !== currentModelId) patch.model = parsed.model;
+                if (typeof parsed.duration === "string" && parsed.duration !== effectiveDuration) patch.duration = parsed.duration;
+                if (typeof parsed.resolution === "string" && parsed.resolution !== effectiveResolution) patch.resolution = parsed.resolution;
+                if (typeof parsed.inputMode === "string") {
+                    const normalizedInputMode = parsed.inputMode.toLowerCase() === "auto" ? "t2v" : parsed.inputMode.toLowerCase();
+                    if (isInputMode(normalizedInputMode) && normalizedInputMode !== inputMode) {
+                        patch.inputMode = normalizedInputMode;
+                    }
+                }
+                if (typeof parsed.generateAudio === "boolean" && parsed.generateAudio !== generateAudio) patch.generateAudio = parsed.generateAudio;
+                if (typeof parsed.ratio === "string" && parsed.ratio !== ratio) patch.ratio = parsed.ratio;
+
+                if (Object.keys(patch).length > 0) {
+                    updateData(patch);
+                }
+            }
+        } catch (err) {
+            console.warn("[VideoNode] Failed to restore local settings", err);
+        } finally {
+            setHasCompletedInitialHydration(true);
+        }
+    }, [settingsStorageKey, currentModelId, effectiveDuration, effectiveResolution, inputMode, generateAudio, ratio, updateData]);
+
+    useEffect(() => {
+        if (!hasCompletedInitialHydration) return;
+        if (isModelsLoading) return;
+
+        try {
+            const snapshot = {
+                model: currentModelId,
+                duration: effectiveDuration,
+                resolution: effectiveResolution,
+                inputMode,
+                generateAudio,
+                ratio,
+                updatedAt: Date.now(),
+            };
+            localStorage.setItem(settingsStorageKey, JSON.stringify(snapshot));
+        } catch (err) {
+            console.warn("[VideoNode] Failed to persist local settings", err);
+        }
+    }, [hasCompletedInitialHydration, isModelsLoading, settingsStorageKey, currentModelId, effectiveDuration, effectiveResolution, inputMode, generateAudio, ratio]);
 
     const handleModelChange = (newModelId: string) => {
-        const newModelData = videoModels.find(m => m.id === newModelId);
-        let newValidDurations = ["5s", "8s", "10s"];
-        let newValidResolutions = ["720p", "1080p"];
-
-        if (newModelData && newModelData.configs) {
-            const d = Array.from(new Set(newModelData.configs.map(c => c.duration ? `${c.duration}s` : null).filter(Boolean)));
-            if (d.length > 0) newValidDurations = d as string[];
-
-            const r = Array.from(new Set(newModelData.configs.map(c => c.resolution).filter(Boolean)));
-            if (r.length > 0) newValidResolutions = r as string[];
-        }
-
-        const currentDur = data.duration as string || "4s";
-        let newDuration = currentDur;
-        if (!newValidDurations.includes(currentDur)) {
-            newDuration = newValidDurations[0];
-        }
-
-        const currentRes = data.resolution as string || "720p";
-        let newResolution = currentRes;
-        if (!newValidResolutions.includes(currentRes)) {
-            newResolution = newValidResolutions[0];
-        }
-
+        const newModelData = videoModels.find((m) => m.id === newModelId);
+        const newValidResolutions = getModelResolutions(newModelData);
+        const newInputModes = sortInputModes(getModelInputModes(newModelData));
         const newModelHasAudio = !!newModelData?.capabilities?.some((c) => c.toLowerCase() === "audio");
+        const newModelAudioDefault = getNativeAudioDefault(newModelData);
+
+        const currentRes = typeof data.resolution === "string" ? data.resolution : "720p";
+        const newResolution = newValidResolutions.includes(currentRes) ? currentRes : newValidResolutions[0];
+        const newValidDurations = getModelDurations(newModelData, newResolution);
+
+        const currentDur = typeof data.duration === "string" ? data.duration : "4s";
+        const newDuration = newValidDurations.includes(currentDur) ? currentDur : newValidDurations[0];
+
+        const rawInputMode = typeof data.inputMode === "string" ? data.inputMode.toLowerCase() : "";
+        const currentInputMode = rawInputMode === "auto" ? "t2v" : rawInputMode;
+        const newInputMode = (isInputMode(currentInputMode) && newInputModes.includes(currentInputMode))
+            ? currentInputMode
+            : (newInputModes.includes("t2v") ? "t2v" : (newInputModes[0] || "t2v"));
+
         updateData({
             model: newModelId,
             duration: newDuration,
             resolution: newResolution,
-            generateAudio: newModelHasAudio ? (typeof data.generateAudio === "boolean" ? data.generateAudio : false) : false,
+            inputMode: newInputMode,
+            generateAudio: newModelHasAudio ? newModelAudioDefault : false,
         });
     };
 
@@ -236,7 +578,6 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
         }
     };
 
-    const ratio = (data.ratio as string) || "16:9";
     const BASE_DIM = 300;
 
     const getDimensions = (r: string) => {
@@ -274,7 +615,7 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
         const val = e.target.value;
         const cursor = e.target.selectionStart;
 
-        updateNodeData(id, { prompt: val });
+        updateData({ prompt: val });
 
         const textBeforeCursor = val.slice(0, cursor);
         const lastAt = textBeforeCursor.lastIndexOf('@');
@@ -299,7 +640,7 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
 
         if (lastAt !== -1) {
             const newVal = val.slice(0, lastAt) + `@${label} ` + val.slice(cursor);
-            updateNodeData(id, { prompt: newVal });
+            updateData({ prompt: newVal });
             setShowSuggestions(false);
 
             setTimeout(() => {
@@ -346,7 +687,7 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
                     extractionError: extractionError || undefined,
                 },
             ]}
-            contentClassName="p-0 overflow-hidden isolate"
+            contentClassName="p-0 bg-black overflow-hidden isolate"
             onDelete={() => deleteElements({ nodes: [{ id }] })}
             onRun={() => runNode(id)}
             onClear={output ? () => clearNodeOutput(id) : undefined}
@@ -467,6 +808,7 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
                             onClick={() => {
                                 setShowDurationMenu(!showDurationMenu);
                                 setShowModelMenu(false);
+                                setShowInputModeMenu(false);
                                 setMenuOpen(false);
                             }}
                             className={cn(
@@ -491,7 +833,7 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
                                     <div className="px-3 py-2 text-[10px] font-semibold text-white/50 uppercase tracking-wider border-b border-white/10 bg-black/40">
                                         Duration
                                     </div>
-                                    <div className="flex flex-col p-1 nodrag nowheel">
+                                    <div className="max-h-[180px] overflow-y-auto flex flex-col p-1 nodrag nowheel">
                                         {validDurations.map(d => (
                                             <button
                                                 key={d}
@@ -522,6 +864,7 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
                             onClick={() => {
                                 setShowModelMenu(!showModelMenu);
                                 setShowDurationMenu(false);
+                                setShowInputModeMenu(false);
                                 setMenuOpen(false);
                             }}
                             className={cn(
@@ -545,7 +888,7 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
                                     <div className="px-3 py-2 text-[10px] font-semibold text-white/50 uppercase tracking-wider border-b border-white/10 bg-black/40">
                                         Model
                                     </div>
-                                    <div className="max-h-[160px] overflow-y-auto flex flex-col p-1 nodrag nowheel">
+                                    <div className="max-h-[180px] overflow-y-auto flex flex-col p-1 nodrag nowheel">
                                         {videoModels.map(m => (
                                             <button
                                                 key={m.id}
@@ -580,6 +923,70 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
                         </AnimatePresence>
                     </div>
 
+                    {/* Input Mode Pill */}
+                    {selectableInputModes.length > 0 && (
+                    <div className="relative flex-shrink-0 min-w-0 max-w-[110px]" ref={inputModeMenuRef}>
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setShowInputModeMenu(!showInputModeMenu);
+                                setShowModelMenu(false);
+                                setShowDurationMenu(false);
+                                setMenuOpen(false);
+                            }}
+                            className={cn(
+                                "flex items-center gap-1.5 h-7 w-full bg-black/60 backdrop-blur-md border border-white/10 rounded-full px-2 text-white/90 hover:bg-black/70 transition-colors cursor-pointer",
+                                showInputModeMenu && "bg-black/80 border-white/20"
+                            )}
+                        >
+                            <span className="text-[10px] font-medium truncate flex-grow text-left">
+                                {getInputModeLabel(inputMode, frameImagesMax)}
+                            </span>
+                            <ChevronDown className="w-2.5 h-2.5 text-white/50 flex-shrink-0" />
+                        </button>
+                        
+                        <AnimatePresence>
+                            {showInputModeMenu && (
+                                <motion.div
+                                    initial={{ opacity: 0, y: 4, scale: 0.96 }}
+                                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                                    exit={{ opacity: 0, y: 4, scale: 0.96 }}
+                                    transition={{ duration: 0.12 }}
+                                    className="absolute bottom-full right-0 mb-2 w-32 bg-black/90 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50 pointer-events-auto flex flex-col"
+                                >
+                                    <div className="px-3 py-2 text-[10px] font-semibold text-white/50 uppercase tracking-wider border-b border-white/10 bg-black/40">
+                                        Input Mode
+                                    </div>
+                                    <div className="max-h-[180px] overflow-y-auto flex flex-col p-1 nodrag nowheel">
+                                        {selectableInputModes.map((mode) => {
+                                            const label = getInputModeLabel(mode, frameImagesMax);
+
+                                            return (
+                                            <button
+                                                key={mode}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    updateData({ inputMode: mode });
+                                                    setShowInputModeMenu(false);
+                                                }}
+                                                className={cn(
+                                                    "w-full text-left px-2.5 py-1.5 text-[11px] rounded-lg hover:bg-white/10 cursor-pointer transition-colors",
+                                                    inputMode === mode && "bg-white/15 text-white font-medium"
+                                                )}
+                                            >
+                                                <span className={cn(inputMode !== mode && "text-white/80")}>
+                                                    {label}
+                                                </span>
+                                            </button>
+                                            );
+                                        })}
+                                    </div>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+                    </div>
+                    )}
+
                     {/* Kebab Menu for Settings */}
                     <div
                         className="relative flex-shrink-0"
@@ -594,6 +1001,7 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
                                 e.stopPropagation();
                                 setMenuOpen(!menuOpen);
                                 setShowModelMenu(false);
+                                setShowInputModeMenu(false);
                                 setShowDurationMenu(false);
                             }}
                         >
@@ -607,7 +1015,7 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
                                     animate={{ opacity: 1, y: 0, scale: 1 }}
                                     exit={{ opacity: 0, y: 4, scale: 0.96 }}
                                     transition={{ duration: 0.12 }}
-                                    className="absolute bottom-full right-0 mb-2 w-40 bg-black/90 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50 pointer-events-auto flex flex-col p-2 gap-3"
+                                    className="absolute bottom-full right-0 mb-2 w-40 max-h-[230px] overflow-y-auto bg-black/90 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl z-50 pointer-events-auto flex flex-col p-2 gap-3 nodrag nowheel"
                                 >
                                     <div className="text-[10px] font-medium text-white/50 uppercase tracking-wider px-1">Settings</div>
 
@@ -648,7 +1056,11 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
                                                     key={r}
                                                     onClick={(e) => {
                                                         e.stopPropagation();
-                                                        updateData({ resolution: r });
+                                                        const nextDurations = getModelDurations(selectedModelData, r);
+                                                        const nextDuration = nextDurations.includes(effectiveDuration)
+                                                            ? effectiveDuration
+                                                            : nextDurations[0];
+                                                        updateData({ resolution: r, duration: nextDuration });
                                                     }}
                                                     className={cn(
                                                         "px-2 py-1 text-[10px] rounded border transition-colors cursor-pointer flex-grow text-center",
@@ -666,24 +1078,35 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
                                     {/* Native Audio Toggle */}
                                     <div className="flex flex-col gap-1.5 nodrag nowheel">
                                         <label className="text-[10px] text-white/70 px-1">Native Audio</label>
-                                        <button
-                                            type="button"
-                                            disabled={!hasNativeAudioCapability}
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                if (!hasNativeAudioCapability) return;
-                                                updateData({ generateAudio: !generateAudio });
-                                            }}
-                                            className={cn(
-                                                "w-full px-2 py-1 text-[10px] rounded border transition-colors cursor-pointer text-center",
-                                                generateAudio
-                                                    ? "bg-white/20 border-white/30 text-white"
-                                                    : "bg-black/40 border-white/10 text-white/70 hover:bg-white/10",
-                                                !hasNativeAudioCapability && "opacity-50 cursor-not-allowed hover:bg-black/40"
-                                            )}
-                                        >
-                                            {generateAudio ? "Enabled" : "Disabled"}
-                                        </button>
+                                        <div className="flex items-center justify-between px-1">
+                                            <span className="text-[10px] text-white/90">{generateAudio ? "On" : "Off"}</span>
+                                            <button
+                                                type="button"
+                                                role="switch"
+                                                aria-label="Toggle native audio"
+                                                aria-checked={generateAudio}
+                                                disabled={!hasNativeAudioCapability}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    if (!hasNativeAudioCapability) return;
+                                                    updateData({ generateAudio: !generateAudio });
+                                                }}
+                                                className={cn(
+                                                    "relative inline-flex h-5 w-9 items-center rounded-full border transition-colors cursor-pointer",
+                                                    generateAudio
+                                                        ? "bg-emerald-400/80 border-emerald-200/50"
+                                                        : "bg-white/20 border-white/20",
+                                                    !hasNativeAudioCapability && "opacity-50 cursor-not-allowed"
+                                                )}
+                                            >
+                                                <span
+                                                    className={cn(
+                                                        "inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform",
+                                                        generateAudio ? "translate-x-4.5" : "translate-x-0.5"
+                                                    )}
+                                                />
+                                            </button>
+                                        </div>
                                         <p className="text-[9px] text-white/40 px-1">
                                             {hasNativeAudioCapability
                                                 ? "Creates model-native audio in the generated clip."

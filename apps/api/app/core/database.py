@@ -14,6 +14,9 @@ async def connect_to_mongo():
             await db_client.admin.command('ping')
             db = db_client[settings.mongodb_database]
             await db.dodo_payment_ledger.create_index("payment_id", unique=True)
+            # user_assets: compound index for fast user-scoped queries + dedup
+            await db.user_assets.create_index([("user_id", 1), ("url", 1)])
+            await db.user_assets.create_index([("user_id", 1), ("created_at", -1)])
             print("✓ Connected to MongoDB")
         else:
             print("⚠ MongoDB URL not found in settings")

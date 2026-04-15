@@ -184,6 +184,7 @@ Example:
   - Backgrounds: deep black (#0A0A0A), dark charcoal (#1A1A1A), or brand-dark variants
 - Drop shadows on text: subtle only. Max: `0px 2px 8px rgba(0,0,0,0.5)`. Never harsh.
 
+<<<<<<< Updated upstream
 ### 5. ANIMATION & MOTION DESIGN
 - Animations should feel EFFORTLESS and CONFIDENT, never flashy or desperate.
 - USE ABUNDANT MOTION GRAPHICS. Elevate plain video clips with elegant text overlays, animated transitions, or branded graphical elements to keep the viewer constantly engaged.
@@ -194,6 +195,14 @@ Example:
 - Scale animations: subtle range only (0.95-1.05). Never scale from 0 or to values > 1.15.
 - Stagger multiple text elements by 8-15 frames for a polished editorial feel.
 - Exit animations: simple fade out over 5-8 frames. No complex exit choreography.
+=======
+### 5. ANIMATION & MOTION DESIGN (STRICT OPT-IN)
+- CRITICAL RULE: DO NOT apply any video scaling, panning, zooming, vignettes, flashes or complex transitions UNLESS the user explicitly asks for them.
+- Stitched videos MUST use a sequential HARD CUT (no opacity/transparency interpolations) unless a fade is explicitly requested.
+- If a fade cross-transition IS requested, you MUST overlap the absolute timing padding so that the background never flashes black.
+- Text entries: fade + subtle translateY (10-20px max) is allowed ONLY if text overlays are actually requested.
+- Animations should feel minimal, never flashy.
+>>>>>>> Stashed changes
 
 ### 6. COMPOSITION LAYOUT
 - Embrace negative space. A composition that breathes is more premium than one that's cluttered.
@@ -730,6 +739,7 @@ Audio Tracks ({len(audio_tracks)} total):
 {audio_list if audio_list else "  (none)"}
 
 ### CRITICAL REMINDERS
+<<<<<<< Updated upstream
 - DIMENSIONS: Set the exported `width` and `height` to match the aspect ratio "{aspect_ratio}".
   - If "16:9": width = 1920, height = 1080
   - If "9:16": width = 1080, height = 1920
@@ -738,6 +748,12 @@ Audio Tracks ({len(audio_tracks)} total):
 - ZERO emojis in any text overlay. Write professional copy and use 'lucide-react' icons exclusively.
 - Choose brand-appropriate fonts from the typography guide. Do NOT default to Inter unless the brand is tech/SaaS. For aesthetic brands, use elegant or refined typefaces.
 - Keep animations subtle and confident. No bouncing, spinning, or flashy effects.
+=======
+- DIMENSIONS: Read the instruction carefully to determine the aspect ratio (9:16 vertical = width 1080, height 1920). Set the exported `width` and `height` exactly as requested.
+- ZERO emojis in any text overlay. Write professional copy only.
+- Choose brand-appropriate fonts from the typography guide. Do NOT default to Inter unless the brand is tech/SaaS.
+- STRICT OPT-IN EFFECTS: Do NOT add camera zooms, scale animations, vignettes, or opacity fades unless explicitly requested in the instruction. Use simple, sequential hard cuts for stitching.
+>>>>>>> Stashed changes
 - Embrace negative space. Less is more. Premium compositions breathe.
 {"- AUDIO: Set durationInFrames to AT LEAST " + str(max((t.get('duration_seconds', 0) for t in audio_tracks), default=0)) + " × fps to fit the audio. If the video clips fall short, YOU MUST ADD A HIGH-QUALITY MOTION GRAPHICS OUTRO to fill the void. This outro MUST be hyper-professional, clean, elegant, matched strictly to brand fonts, with ZERO emojis (use lucide-react icons)." if audio_tracks else ""}
 {"- AUDIO: Include ALL " + str(len(audio_tracks)) + " audio track(s) as <Audio> elements. Do NOT drop any." if audio_tracks else ""}

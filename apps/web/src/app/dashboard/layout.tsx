@@ -6,22 +6,7 @@ import { DashboardHeader } from "@/components/dashboard-header";
 import { AgentSidebar } from "@/components/workflow/agent-sidebar";
 import { AuthGuard } from "@/components/auth/auth-guard";
 
-// ============================================
-// Mobile Tab Context
-// ============================================
-interface MobileTabContextType {
-    activeTab: "chat" | "canvas";
-    setActiveTab: (tab: "chat" | "canvas") => void;
-}
-
-export const MobileTabContext = createContext<MobileTabContextType>({
-    activeTab: "chat",
-    setActiveTab: () => { },
-});
-
-export function useMobileTab() {
-    return useContext(MobileTabContext);
-}
+import { MobileTabContext, MobileTabContextType } from "@/components/workflow/mobile-tab-context";
 
 const MOBILE_STYLES = `
 @media (max-width: 767px) {

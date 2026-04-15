@@ -23,6 +23,7 @@ class AgentJob(BaseModel):
     current_nodes: Optional[List[Dict[str, Any]]] = []
     current_edges: Optional[List[Dict[str, Any]]] = []
     chat_history: Optional[List[Dict[str, Any]]] = []
+    attachments: Optional[List[Dict[str, Any]]] = []
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     

@@ -359,6 +359,17 @@ export interface Model {
   category?: string;        // Sub-type for audio: "tts" | "music" | "sfx"
   coming_soon?: boolean;    // True if model is announced but not yet available
   capabilities: string[];
+  input_modes?: string[];
+  duration_min?: number;
+  duration_max?: number;
+  duration_step?: number;
+  reference_images_min?: number;
+  reference_images_max?: number;
+  elements_min?: number;
+  elements_max?: number;
+  frame_images_min?: number;
+  frame_images_max?: number;
+  native_audio_default?: boolean;
   configs: ModelConfig[];
   default_config_id: string;
 }
@@ -402,4 +413,3 @@ export const assetsApi = {
 export const healthApi = {
   check: () => api.get("/health"),
 };
-
