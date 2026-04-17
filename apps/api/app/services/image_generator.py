@@ -5,7 +5,7 @@ import os
 import random
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 import httpx
 
 from app.core.config import settings
