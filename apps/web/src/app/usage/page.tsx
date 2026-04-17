@@ -12,7 +12,16 @@ import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { AddCreditsModal } from "@/components/billing/add-credits-modal";
 
-type ActionType = "ai_chat" | "video_gen" | "image_gen" | "audio_gen" | "render" | "deposit" | "voucher_redeem" | "referral_bonus";
+type ActionType =
+    | "ai_chat"
+    | "video_gen"
+    | "image_gen"
+    | "audio_gen"
+    | "render"
+    | "signup_bonus"
+    | "deposit"
+    | "voucher_redeem"
+    | "referral_bonus";
 
 interface UsageLog {
     _id: string;
@@ -33,6 +42,7 @@ const ACTION_LABELS: Record<string, { label: string, icon: React.ReactNode, colo
     image_gen: { label: "Image Generation", icon: <ImageIcon className="w-4 h-4" />, color: "bg-muted text-foreground/80" },
     audio_gen: { label: "Voiceover", icon: <Music className="w-4 h-4" />, color: "bg-muted text-foreground/80" },
     render: { label: "Final Export", icon: <CheckCircle2 className="w-4 h-4" />, color: "bg-muted text-foreground/80" },
+    signup_bonus: { label: "Welcome Credit", icon: <DollarSign className="w-4 h-4" />, color: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400" },
     deposit: { label: "Deposit", icon: <DollarSign className="w-4 h-4" />, color: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400" },
     voucher_redeem: { label: "Voucher Redeemed", icon: <DollarSign className="w-4 h-4" />, color: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400" },
     referral_bonus: { label: "Referral Bonus", icon: <DollarSign className="w-4 h-4" />, color: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400" },
@@ -101,7 +111,7 @@ export default function UsageDashboard() {
     }, [searchParams, user?.sub, getAccessTokenSilently, router]);
 
     // Calculate total spent (only debits! exclude credits)
-    const CREDIT_TYPES = ["deposit", "voucher_redeem", "referral_bonus"];
+    const CREDIT_TYPES = ["signup_bonus", "deposit", "voucher_redeem", "referral_bonus"];
     const totalSpent = logs
         .filter(log => !CREDIT_TYPES.includes(log.action_type))
         .reduce((sum, log) => sum + Math.abs(log.total_usd || 0), 0);
@@ -252,7 +262,7 @@ export default function UsageDashboard() {
                                 <TableBody>
                                     {logs.map((log) => {
                                         const actionConfig = ACTION_LABELS[log.action_type] || { label: "Unknown", icon: <Activity className="w-4 h-4" />, color: "bg-muted text-muted-foreground" };
-                                        const isCredit = ["deposit", "voucher_redeem", "referral_bonus"].includes(log.action_type);
+                                        const isCredit = ["signup_bonus", "deposit", "voucher_redeem", "referral_bonus"].includes(log.action_type);
                                         const displayValue = Math.abs(log.total_usd || 0).toFixed(4);
 
                                         return (

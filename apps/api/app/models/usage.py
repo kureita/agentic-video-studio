@@ -21,6 +21,7 @@ class ActionType(str, Enum):
     IMAGE_GEN = "image_gen"
     AUDIO_GEN = "audio_gen"
     RENDER = "render"
+    SIGNUP_BONUS = "signup_bonus"
     REFERRAL_BONUS = "referral_bonus"
     VOUCHER_REDEEM = "voucher_redeem"
     DEPOSIT = "deposit"  # For payment gateway top-ups

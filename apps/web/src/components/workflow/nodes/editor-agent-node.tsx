@@ -324,8 +324,7 @@ export const EditorAgentNode = memo(({ id, selected, data }: NodeProps) => {
                         <div className="relative w-full h-full">
                             <video
                                 src={videoSrc!}
-                                controls
-                                className="w-full h-full object-cover nodrag nopan nowheel"
+                                className="w-full h-full object-cover pointer-events-none select-none nopan nowheel"
                                 autoPlay
                                 loop
                                 crossOrigin="anonymous"

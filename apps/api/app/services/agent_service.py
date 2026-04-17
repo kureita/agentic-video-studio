@@ -130,8 +130,12 @@ class AgentService:
         for attachment in attachments:
             filename = str(attachment.get("filename") or "file")
             media_type = str(attachment.get("type") or "application/octet-stream")
-            summary_parts.append(f"{filename} ({media_type})")
-        return ", ".join(summary_parts)
+            file_url = str(attachment.get("url") or "").strip()
+            if file_url:
+                summary_parts.append(f"[Attached: {filename}] ({media_type}) - URL: {file_url}")
+            else:
+                summary_parts.append(f"[Attached: {filename}] ({media_type})")
+        return "\n".join(summary_parts)
 
     def _infer_attachment_modalities(self, attachments: List[Dict[str, Any]]) -> List[str]:
         modalities: List[str] = []
@@ -643,14 +647,15 @@ Your #1 priority is VISUAL CONSISTENCY — every character, background, and styl
 
 # Available Node Types and Their Handles:
 
-1. **text** - Text prompt node for writing prompts/scripts
+1. **text** - Text prompt node for writing still-image prompts, motion prompts, scripts, or instructions
    - Outputs: "text|text" (type: text)
-   - Data: {{ "label": "Scene X Prompt", "text": "The actual prompt text here" }}
+   - Data: {{ "label": "Scene X Start Frame Prompt" or "Scene X Motion Prompt", "text": "The actual prompt text here" }}
 
 2. **imageGen** - Image Generator (Multiple models via Runware)
    - Inputs: "text|prompt" (type: text), "image|image" (type: image, optional reference image)
    - Outputs: "image|image" (type: image)
    - Data: {{ "label": "Start Frame Scene X", "prompt": "Description", "ratio": "16:9", "model": "flux-2-dev" }}
+   - **Prompt Type**: Write this as a STILL FRAME prompt. Describe one frozen cinematic moment with composition, subject pose, expression, wardrobe, environment, and framing. Do NOT describe motion over time here.
    - **IMPORTANT**: Only set `"ratio"` (e.g. "16:9", "9:16", "1:1", "4:3", "3:4"). Do NOT set `"width"` or `"height"` — the backend resolves exact pixel dimensions automatically per model. Each model has its own supported dimensions.
    - **IMPORTANT**: Use the model **id** (e.g. `"flux-2-dev"`, `"nano-banana-2"`), NOT the display name.
    - **Available Models**: {image_model_names}
@@ -663,6 +668,7 @@ Your #1 priority is VISUAL CONSISTENCY — every character, background, and styl
    - Inputs: "text|text" (type: text), "image|start_image" (type: image), "image|end_image" (type: image, optional), "audio|audio" (type: audio, optional)
    - Outputs: "video|video" (type: video), "image|start_frame" (type: image, first frame), "image|end_frame" (type: image, last frame)
    - Data: {{ "label": "Video Scene X", "prompt": "Motion description", "duration": "6s", "ratio": "9:16", "model": "kling-video-3-standard", "generateAudio": true, "inputMode": "t2v" }}
+   - **Prompt Type**: Write this as a MOTION prompt. If `start_image` is connected, assume the clip starts from that exact frame, then describe what changes over time: subject movement, camera movement, timing, performance, atmosphere shifts, and the ending beat.
    - **Available Models**: {video_model_names}
    - **Duration Constraints**: {duration_constraints_text}
    - **Model Selection Rules (CRITICAL)**:
@@ -848,23 +854,58 @@ Each scene prompt (except the first) MUST include a brief transition sentence at
 This gives the AI model narrative context and helps it understand spatial/temporal continuity.
 
 ## 7. STRUCTURED PROMPT TEMPLATE (Mandatory Format)
-Every `text` node prompt for a scene MUST follow this exact structure:
+If a scene includes BOTH a generated `imageGen` start frame and a `videoGen` clip, you MUST create TWO separate text nodes for that scene:
+- one `text` node for the still start-frame prompt
+- one `text` node for the video motion prompt
+
+Do NOT connect the same text node to both the scene's `imageGen` and `videoGen` when a start frame is being generated.
+
+### 7A. Start-Frame Text Node Template
+The start-frame `text` node MUST follow this exact structure:
 
 ```
 [CHARACTER BIBLE — copied verbatim]
 
 [STYLE BIBLE — copied verbatim]
 
-[SCENE ACTION — unique per scene, includes transition context]
-[Describe what happens: character actions, movements, expressions, interactions]
+[STATIC MOMENT — unique per scene]
+[Describe exactly one frozen instant: pose, expression, props, environment, composition]
 
-[CAMERA DIRECTION — specific per scene]
-[Shot type, camera movement, framing. e.g., "Medium close-up, slow dolly push in, eye-level angle"]
+[FRAMING — specific per scene]
+[Shot type and framing only. e.g., "Medium close-up, eye-level, centered subject, shallow depth of field"]
 ```
 
-**Rules:**
+**Start-frame rules:**
 - Character Bible and Style Bible blocks are IDENTICAL across all scene prompts — copy-paste, never rewrite.
-- Only SCENE ACTION and CAMERA DIRECTION change between scenes.
+- Only STATIC MOMENT and FRAMING change between scenes.
+- This prompt must read like a still image brief, not an animation brief.
+- Do NOT use temporal phrases like "begins to", "then", "while the camera moves", "slow dolly push", or "transitions into".
+- Focus on the best opening frame for the clip: exact pose, expression, environment, and composition at time zero.
+
+### 7B. Video Motion Text Node Template
+The video-motion `text` node MUST follow this exact structure:
+
+```
+[CHARACTER BIBLE — copied verbatim]
+
+[STYLE BIBLE — copied verbatim]
+
+[OPENING STATE — matches the generated start frame]
+[Describe the same setup the clip starts from so the motion feels anchored to the start image]
+
+[SCENE ACTION — unique per scene, includes transition context when needed]
+[Describe what changes over time: character actions, movements, interactions, atmosphere shifts]
+
+[CAMERA DIRECTION — specific per scene]
+[Shot type, camera movement, framing, timing. e.g., "Medium close-up, slow dolly push in, slight handheld drift, eye-level angle"]
+```
+
+**Video-motion rules:**
+- Character Bible and Style Bible blocks are IDENTICAL across all scene prompts — copy-paste, never rewrite.
+- OPENING STATE must clearly align with the connected start frame when one exists.
+- SCENE ACTION and CAMERA DIRECTION should describe motion over time, not just a static composition.
+- For scenes after the first, include transition context at the start of SCENE ACTION.
+- This prompt must read like an animation/directing brief, not a still image caption.
 - This prevents "identity drift" — the AI always has the same character/style anchors.
 
 ## 8. ATTACHMENTS (User Uploads & Drag-and-Drop)
@@ -920,14 +961,17 @@ the generator node's prompt/instruction field MUST reference the connected text 
 - At runtime, `@Text #N` gets replaced with the actual text content from the referenced text node.
 
 **Example:**
-- You create a text node (Text #1) with content "A golden retriever playing in a field of sunflowers"
-- You connect it to an imageGen node
-- The imageGen node's `prompt` field should be: `"@Text #1"` (or `"@Text #1, cinematic lighting"` if you want to add extra details)
-- You connect the same text node to a videoGen node
-- The videoGen node's `prompt` field should be: `"@Text #1"`
+- You create a start-frame text node (Text #1) with content "A golden retriever standing still in a sunflower field, front paw lifted, looking toward camera, golden-hour backlight, medium shot"
+- You connect Text #1 to an imageGen node
+- The imageGen node's `prompt` field should be: `"@Text #1"`
+- You create a separate motion text node (Text #2) with content "The same golden retriever starts running through the sunflowers as petals scatter and the camera tracks alongside at waist height"
+- You connect Text #2 to a videoGen node
+- The videoGen node's `prompt` field should be: `"@Text #2"`
 
 **Rules:**
 - If a text node is connected to a generator node, ALWAYS use `@Text #N` in the prompt/instruction.
+- If a scene has both `imageGen` and `videoGen`, create separate text nodes and separate `@Text #N` references for each.
+- Do NOT connect the same text node to both the scene's `imageGen` and `videoGen` when generating a start image for that scene.
 - Do NOT duplicate the text content directly in the generator's prompt field if a text node is connected.
 - The `@Text #N` number corresponds to the text node's position among ALL text nodes (1-indexed).
   - If you create 3 text nodes, they are Text #1, Text #2, Text #3 (in the order they appear in the nodes array).
@@ -956,8 +1000,9 @@ You must use a strict GRID coordinate system based on ROW and COLUMN indices.
 
 **Standard Layout Map**:
 - **Row 0 (References)**: Character Refs, Location Refs. (x=0, x=700, x=1400...)
-- **Row 1 (Scene 1)**: Text (x=0) -> Start Image (x=700) -> Video (x=1400)
-- **Row 2 (Scene 2)**: Text (x=0) -> Start Image (x=700) -> Video (x=1400)
+- **Row 1 (Scene 1 with start frame + video)**: Start-Frame Text (x=0) -> Start Image (x=700) -> Motion Text (x=1400) -> Video (x=2100)
+- **Row 2 (Scene 2 with start frame + video)**: Start-Frame Text (x=0) -> Start Image (x=700) -> Motion Text (x=1400) -> Video (x=2100)
+- **If a scene only has one generator**: use only the needed nodes, still keeping 700px spacing.
 - ...
 - **Row N (Final)**: Editor / Compilation Node.
 

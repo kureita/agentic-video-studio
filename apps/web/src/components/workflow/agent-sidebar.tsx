@@ -32,6 +32,7 @@ import { AddCreditsModal } from "@/components/billing/add-credits-modal";
 import { useAuth0 } from "@auth0/auth0-react";
 import { useMobileTab } from "@/components/workflow/mobile-tab-context";
 import { useRouter } from "next/navigation";
+import { inferMediaKind } from "@/lib/media-utils";
 
 
 // ============================================
@@ -234,7 +235,7 @@ function CursorInput({
                             <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center mb-1.5">
                                 <Upload className="w-4 h-4 text-primary" />
                             </div>
-                            <p className="text-xs font-medium text-foreground">Drop images or videos here</p>
+                            <p className="text-xs font-medium text-foreground">Drop images, videos, or audio here</p>
                             <p className="text-[10px] text-muted-foreground mt-0.5">Files will be added as attachments</p>
                         </motion.div>
                     )}
@@ -250,61 +251,81 @@ function CursorInput({
                             className="overflow-hidden"
                         >
                             <div className="flex flex-wrap gap-1.5 px-3 pt-2.5">
-                                {pendingAttachments.map((att, idx) => (
-                                    <motion.div
-                                        key={`${att.filename}-${idx}`}
-                                        initial={{ scale: 0.8, opacity: 0 }}
-                                        animate={{ scale: 1, opacity: 1 }}
-                                        exit={{ scale: 0.8, opacity: 0 }}
-                                        transition={{ duration: 0.15 }}
-                                        className="group/att relative"
-                                    >
-                                        {att.type.startsWith("image") ? (
-                                            <div className="relative">
-                                                <div className="h-14 w-14 rounded-lg overflow-hidden border border-border/40 bg-muted/40">
-                                                    {att.url.startsWith('blob:') ? (
-                                                        // eslint-disable-next-line @next/next/no-img-element
-                                                        <img src={att.url} alt={att.filename} className="w-full h-full object-cover" />
-                                                    ) : (
-                                                        <S3Image src={att.url} alt={att.filename} fill className="object-cover" unoptimized />
-                                                    )}
-                                                </div>
-                                                <button
-                                                    onClick={() => onRemoveAttachment(idx)}
-                                                    className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center opacity-0 group-hover/att:opacity-100 transition-opacity cursor-pointer shadow-sm z-10"
-                                                >
-                                                    <X className="w-2.5 h-2.5" />
-                                                </button>
-                                            </div>
-                                        ) : att.type.startsWith("video") ? (
-                                            <div className="relative">
-                                                <div className="h-14 w-20 rounded-lg overflow-hidden border border-border/40 bg-muted/40 relative">
-                                                    <video src={att.url} className="h-full w-full object-cover" />
-                                                    <div className="absolute inset-0 flex items-center justify-center bg-black/20">
-                                                        <Video className="w-4 h-4 text-white/80" />
+                                {pendingAttachments.map((att, idx) => {
+                                    const mediaKind = inferMediaKind({ mimeType: att.type, url: att.url });
+
+                                    return (
+                                        <motion.div
+                                            key={`${att.filename}-${idx}`}
+                                            initial={{ scale: 0.8, opacity: 0 }}
+                                            animate={{ scale: 1, opacity: 1 }}
+                                            exit={{ scale: 0.8, opacity: 0 }}
+                                            transition={{ duration: 0.15 }}
+                                            className="group/att relative"
+                                        >
+                                            {mediaKind === "image" ? (
+                                                <div className="relative">
+                                                    <div className="h-14 w-14 rounded-lg overflow-hidden border border-border/40 bg-muted/40">
+                                                        {att.url.startsWith('blob:') ? (
+                                                            // eslint-disable-next-line @next/next/no-img-element
+                                                            <img src={att.url} alt={att.filename} className="w-full h-full object-cover" />
+                                                        ) : (
+                                                            <S3Image src={att.url} alt={att.filename} fill className="object-cover" unoptimized />
+                                                        )}
                                                     </div>
+                                                    <button
+                                                        onClick={() => onRemoveAttachment(idx)}
+                                                        className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center opacity-0 group-hover/att:opacity-100 transition-opacity cursor-pointer shadow-sm z-10"
+                                                    >
+                                                        <X className="w-2.5 h-2.5" />
+                                                    </button>
                                                 </div>
-                                                <button
-                                                    onClick={() => onRemoveAttachment(idx)}
-                                                    className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center opacity-0 group-hover/att:opacity-100 transition-opacity cursor-pointer shadow-sm z-10"
-                                                >
-                                                    <X className="w-2.5 h-2.5" />
-                                                </button>
-                                            </div>
-                                        ) : (
-                                            <div className="relative flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-border/40 bg-muted/40">
-                                                <Paperclip className="w-3 h-3 text-muted-foreground/60" />
-                                                <span className="text-[11px] text-muted-foreground truncate max-w-[80px]">{att.filename}</span>
-                                                <button
-                                                    onClick={() => onRemoveAttachment(idx)}
-                                                    className="p-0.5 rounded hover:bg-muted text-muted-foreground/40 hover:text-muted-foreground transition-colors cursor-pointer"
-                                                >
-                                                    <X className="w-3 h-3" />
-                                                </button>
-                                            </div>
-                                        )}
-                                    </motion.div>
-                                ))}
+                                            ) : mediaKind === "video" ? (
+                                                <div className="relative">
+                                                    <div className="h-14 w-20 rounded-lg overflow-hidden border border-border/40 bg-muted/40 relative">
+                                                        <video src={att.url} className="h-full w-full object-cover" />
+                                                        <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+                                                            <Video className="w-4 h-4 text-white/80" />
+                                                        </div>
+                                                    </div>
+                                                    <button
+                                                        onClick={() => onRemoveAttachment(idx)}
+                                                        className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center opacity-0 group-hover/att:opacity-100 transition-opacity cursor-pointer shadow-sm z-10"
+                                                    >
+                                                        <X className="w-2.5 h-2.5" />
+                                                    </button>
+                                                </div>
+                                            ) : mediaKind === "audio" ? (
+                                                <div className="relative">
+                                                    <div className="min-w-[220px] max-w-[280px] px-2.5 py-2 rounded-lg border border-border/40 bg-muted/40 flex flex-col justify-center gap-2">
+                                                        <div className="flex items-center gap-1.5">
+                                                            <Music className="w-3 h-3 text-blue-400/80 shrink-0" />
+                                                            <span className="text-[11px] text-muted-foreground truncate">{att.filename}</span>
+                                                        </div>
+                                                        <audio src={att.url} controls preload="metadata" className="block w-full min-w-0" />
+                                                    </div>
+                                                    <button
+                                                        onClick={() => onRemoveAttachment(idx)}
+                                                        className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center opacity-0 group-hover/att:opacity-100 transition-opacity cursor-pointer shadow-sm z-10"
+                                                    >
+                                                        <X className="w-2.5 h-2.5" />
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                <div className="relative flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-border/40 bg-muted/40">
+                                                    <Paperclip className="w-3 h-3 text-muted-foreground/60" />
+                                                    <span className="text-[11px] text-muted-foreground truncate max-w-[80px]">{att.filename}</span>
+                                                    <button
+                                                        onClick={() => onRemoveAttachment(idx)}
+                                                        className="p-0.5 rounded hover:bg-muted text-muted-foreground/40 hover:text-muted-foreground transition-colors cursor-pointer"
+                                                    >
+                                                        <X className="w-3 h-3" />
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </motion.div>
+                                    );
+                                })}
                                 {isUploading && (
                                     <div className="h-14 w-14 rounded-lg border border-border/40 bg-muted/40 flex items-center justify-center">
                                         <Loader2 className="w-4 h-4 animate-spin text-muted-foreground/50" />
@@ -690,6 +711,12 @@ export function AgentSidebar() {
                     return;
                 }
                 setIsUploading(false);
+
+                if (filesToUpload.length > 0 && typeof window !== "undefined") {
+                    window.dispatchEvent(new CustomEvent("kureita:asset-uploaded", {
+                        detail: { workflowId: storeId || null },
+                    }));
+                }
             }
 
             userMessage = input.trim();
@@ -714,7 +741,9 @@ export function AgentSidebar() {
                 content: [
                     typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
                     ...(Array.isArray(m.attachments)
-                        ? m.attachments.map((attachment) => `[Attached: ${attachment.filename}] (${attachment.type})`)
+                        ? m.attachments.map((attachment) =>
+                            `[Attached: ${attachment.filename}] (${attachment.type})${attachment.url ? ` - URL: ${attachment.url}` : ""}`
+                        )
                         : []),
                 ].filter(Boolean).join('\n'),
             }));

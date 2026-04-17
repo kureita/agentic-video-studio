@@ -11,10 +11,13 @@ import { toast } from "sonner";
 import { workflowApi } from "@/lib/workflow-api";
 import { extractFrameFromVideo } from "@/lib/video-utils";
 import { ALLOWED_MEDIA_TYPES } from "@/lib/utils";
+import { inferMediaKind } from "@/lib/media-utils";
 
 export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
     const { deleteElements } = useReactFlow();
     const { runNode, clearNodeOutput, outputs, runningNodeId, setNodeOutput, setRawOutput } = useWorkflowStore();
+    const storeWorkflowId = useWorkflowStore((state) => state.id);
+    const workflowName = useWorkflowStore((state) => state.name);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [isUploading, setIsUploading] = useState(false);
     const [uploadProgress, setUploadProgress] = useState<number>(0);
@@ -30,7 +33,9 @@ export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
     const output = presignedOutput || rawOutput;
 
     // Derive workflowId from the URL query param
-    const workflowId = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('id') || '' : '';
+    const workflowId = typeof window !== 'undefined'
+        ? (new URLSearchParams(window.location.search).get('id') || storeWorkflowId || '')
+        : (storeWorkflowId || '');
 
     // Determine media type from data or current output
     const mediaType = data.mediaType || (output ? (
@@ -53,6 +58,11 @@ export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
 
                 // Update note data with aspect ratio
                 const { setNodes, nodes } = useWorkflowStore.getState();
+                const targetNode = nodes.find((n) => n.id === id);
+                const existingRatio = targetNode?.data?.aspectRatio;
+                if (typeof existingRatio === "number" && Math.abs(existingRatio - ar) < 0.001) {
+                    return;
+                }
                 setNodes(nodes.map(n => n.id === id ? { ...n, data: { ...n.data, aspectRatio: ar } } : n));
             };
 
@@ -138,6 +148,9 @@ export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
                     const response = await assetsApi.upload(file, (progressEvent: { loaded: number; total?: number }) => {
                         const percentCompleted = progressEvent.total ? Math.round((progressEvent.loaded * 100) / progressEvent.total) : 0;
                         setUploadProgress(percentCompleted);
+                    }, {
+                        workflowId: workflowId || undefined,
+                        workflowName: workflowName || undefined,
                     });
                     uploadedUrl = response.data.url;
                 }
@@ -146,6 +159,9 @@ export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
                 const response = await assetsApi.upload(file, (progressEvent: { loaded: number; total?: number }) => {
                     const percentCompleted = progressEvent.total ? Math.round((progressEvent.loaded * 100) / progressEvent.total) : 0;
                     setUploadProgress(percentCompleted);
+                }, {
+                    workflowId: workflowId || undefined,
+                    workflowName: workflowName || undefined,
                 });
                 uploadedUrl = response.data.url;
             }
@@ -192,6 +208,12 @@ export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
                         URL.revokeObjectURL(safeBlobUrl);
                     }
                 }, 1000);
+            }
+
+            if (typeof window !== "undefined") {
+                window.dispatchEvent(new CustomEvent("kureita:asset-uploaded", {
+                    detail: { workflowId: workflowId || null },
+                }));
             }
         } catch (error: unknown) {
             console.error("Upload error:", error);
@@ -243,20 +265,28 @@ export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
 
         // Check for internal dragging of S3 assets
         try {
-            const jsonData = e.dataTransfer.getData("application/json");
+            const jsonData =
+                e.dataTransfer.getData("application/kureita-asset") ||
+                e.dataTransfer.getData("application/json");
             if (jsonData) {
                 const data = JSON.parse(jsonData);
-                if (data.type === "asset" && data.url) {
-                    const uploadedType = data.asset_category.includes("video") || data.url.match(/\.(mp4|mov|webm)$/i) ? 'video' 
-                                       : data.asset_category.includes("audio") || data.url.match(/\.(mp3|wav|ogg|flac)$/i) ? 'audio' 
-                                       : 'image';
+                const outputUrl = data?.url || data?.presigned_url;
+                if (data.type === "asset" && outputUrl) {
+                    const inferredKind = inferMediaKind({
+                        mimeType: data.mime_type,
+                        assetCategory: data.asset_category,
+                        url: outputUrl,
+                        nodeData: data.node_data,
+                        nodeType: data.node_type,
+                    });
+                    const uploadedType = inferredKind === "unknown" ? "image" : inferredKind;
                     
                     const { setNodes, nodes } = useWorkflowStore.getState();
                     setNodes(nodes.map(n => n.id === id ? {
                         ...n,
-                        data: { ...n.data, mediaType: uploadedType, output: data.url }
+                        data: { ...n.data, mediaType: uploadedType, output: outputUrl }
                     } : n));
-                    setNodeOutput(id, data.url);
+                    setNodeOutput(id, outputUrl);
 
                     const { nodeExecutionStates } = useWorkflowStore.getState();
                     useWorkflowStore.setState({
@@ -362,8 +392,9 @@ export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
                         {mediaType === 'video' ? (
                             <video
                                 src={output as string}
-                                controls
-                                className="w-full h-full object-contain nodrag nopan nowheel"
+                                className="w-full h-full object-contain pointer-events-none select-none nopan nowheel"
+                                preload="metadata"
+                                playsInline
                             />
                         ) : mediaType === 'audio' ? (
                             <div className="w-full p-6 flex flex-col items-center gap-4">
@@ -381,7 +412,8 @@ export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
                                 src={rawOutput}
                                 alt="Uploaded media"
                                 fill
-                                className="object-contain"
+                                className="object-contain pointer-events-none select-none"
+                                draggable={false}
                                 unoptimized
                             />
                         )}

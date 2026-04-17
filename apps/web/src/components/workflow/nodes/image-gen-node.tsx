@@ -213,7 +213,8 @@ export const ImageGenNode = memo(({ id, selected, data }: NodeProps) => {
                         <S3Image
                             src={output}
                             alt="Generated"
-                            className="absolute inset-0 w-full h-full object-cover z-0 transition-transform duration-700 group-hover/image:scale-105"
+                            className="absolute inset-0 w-full h-full object-cover z-0 pointer-events-none select-none transition-transform duration-700 group-hover/image:scale-105"
+                            draggable={false}
                             fill
                             unoptimized
                             onLoad={(e) => {

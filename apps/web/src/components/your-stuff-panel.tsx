@@ -20,10 +20,11 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
-import { S3Image } from "@/components/ui/s3-image";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import { toast } from "sonner";
+import { usePresignedUrl } from "@/lib/use-presigned-url";
+import { inferMediaKind } from "@/lib/media-utils";
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -86,53 +87,105 @@ const CATEGORY_CONFIG: Record<string, { label: string; icon: React.ReactNode; co
 const KNOWN_CATEGORIES = new Set(Object.keys(CATEGORY_CONFIG));
 const CATEGORY_ORDER = ["generated_image", "generated_video", "generated_audio", "uploaded", "rendered_video"];
 
+function getAssetMediaKind(asset: AssetItem) {
+    return inferMediaKind({
+        assetCategory: asset.asset_category,
+        url: asset.url || asset.presigned_url,
+        nodeData: asset.node_data,
+        nodeType: asset.node_type,
+    });
+}
+
 // ── Asset Thumbnail ──────────────────────────────────────────────────
 
 function AssetThumbnail({ asset, onClick }: { asset: AssetItem; onClick: () => void }) {
-    const isImage =
-        asset.asset_category === "generated_image" ||
-        (asset.asset_category === "uploaded" && asset.presigned_url.match(/\.(jpg|jpeg|png|webp|gif)/i));
-    const isVideo =
-        asset.asset_category === "generated_video" ||
-        asset.asset_category === "rendered_video" ||
-        (asset.asset_category === "uploaded" && asset.presigned_url.match(/\.(mp4|mov|webm)/i));
-    const isAudio =
-        asset.asset_category === "generated_audio" ||
-        (asset.asset_category === "uploaded" && asset.presigned_url.match(/\.(mp3|wav|ogg|flac)/i));
+    const mediaKind = getAssetMediaKind(asset);
+    const { url: resolvedUrl } = usePresignedUrl(asset.url || asset.presigned_url);
+    const mediaUrl = resolvedUrl || asset.presigned_url || asset.url;
 
     const cat = CATEGORY_CONFIG[asset.asset_category];
     if (!cat) return null;
+
+    if (mediaKind === "audio") {
+        return (
+            <div
+                onClick={onClick}
+                draggable
+                onDragStart={(e) => {
+                    const payload = {
+                        type: "asset",
+                        url: asset.url,
+                        presigned_url: mediaUrl,
+                        asset_category: asset.asset_category,
+                        media_type: mediaKind,
+                        node_type: asset.node_type,
+                        node_data: asset.node_data || {},
+                    };
+                    e.dataTransfer.setData("text/plain", asset.url);
+                    e.dataTransfer.setData("application/json", JSON.stringify(payload));
+                    e.dataTransfer.setData("application/kureita-asset", JSON.stringify(payload));
+                    e.dataTransfer.effectAllowed = "copy";
+                }}
+                className="group relative col-span-3 rounded-lg border border-border/40 bg-muted/20 p-2 hover:border-border/70 hover:bg-muted/40 transition-all duration-200 cursor-pointer"
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        onClick();
+                    }
+                }}
+            >
+                <div
+                    className="rounded-md bg-background/60 px-1 py-1"
+                    onClick={(e) => e.stopPropagation()}
+                    onPointerDown={(e) => e.stopPropagation()}
+                >
+                    <audio src={mediaUrl} controls preload="metadata" className="block w-full min-w-0 h-10" />
+                </div>
+            </div>
+        );
+    }
 
     return (
         <button
             onClick={onClick}
             draggable
             onDragStart={(e) => {
-                e.dataTransfer.setData("text/plain", asset.url);
-                e.dataTransfer.setData("application/kureita-asset", JSON.stringify({
+                const payload = {
                     type: "asset",
                     url: asset.url,
-                    presigned_url: asset.presigned_url,
+                    presigned_url: mediaUrl,
                     asset_category: asset.asset_category,
+                    media_type: mediaKind,
                     node_type: asset.node_type,
                     node_data: asset.node_data || {},
-                }));
+                };
+                e.dataTransfer.setData("text/plain", asset.url);
+                e.dataTransfer.setData("application/json", JSON.stringify(payload));
+                e.dataTransfer.setData("application/kureita-asset", JSON.stringify(payload));
                 e.dataTransfer.effectAllowed = "copy";
             }}
             className="group relative aspect-square rounded-lg overflow-hidden border border-border/40 bg-muted/20 hover:border-border/70 hover:bg-muted/40 transition-all duration-200 cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-primary/40"
         >
-            {isImage ? (
-                <S3Image src={asset.url} alt="Asset" fill className="object-cover" unoptimized />
-            ) : isVideo ? (
-                <div className="absolute inset-0 flex items-center justify-center bg-black/40">
-                    <div className={cn("w-8 h-8 rounded-full flex items-center justify-center", cat.bgColor)}>
-                        <Video className={cn("w-4 h-4", cat.color)} />
-                    </div>
-                </div>
-            ) : isAudio ? (
-                <div className="absolute inset-0 flex items-center justify-center bg-black/20">
-                    <div className={cn("w-8 h-8 rounded-full flex items-center justify-center", cat.bgColor)}>
-                        <Music className={cn("w-4 h-4", cat.color)} />
+            {mediaKind === "image" ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={mediaUrl} alt="Asset" className="absolute inset-0 w-full h-full object-cover" />
+            ) : mediaKind === "video" ? (
+                <div className="absolute inset-0 bg-black/40">
+                    {mediaUrl && (
+                        <video
+                            src={mediaUrl}
+                            className="absolute inset-0 w-full h-full object-cover"
+                            muted
+                            playsInline
+                            preload="metadata"
+                        />
+                    )}
+                    <div className="absolute inset-0 flex items-center justify-center">
+                        <div className={cn("w-8 h-8 rounded-full flex items-center justify-center", cat.bgColor)}>
+                            <Video className={cn("w-4 h-4", cat.color)} />
+                        </div>
                     </div>
                 </div>
             ) : (
@@ -154,9 +207,12 @@ function AssetThumbnail({ asset, onClick }: { asset: AssetItem; onClick: () => v
 function AssetPreviewModal({ asset, onClose, onDeleteSuccess }: { asset: AssetItem; onClose: () => void; onDeleteSuccess?: () => void }) {
     const [copied, setCopied] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
+    const mediaKind = getAssetMediaKind(asset);
+    const { url: resolvedUrl } = usePresignedUrl(asset.url || asset.presigned_url);
+    const mediaUrl = resolvedUrl || asset.presigned_url || asset.url;
 
     const handleCopy = () => {
-        navigator.clipboard.writeText(asset.presigned_url);
+        navigator.clipboard.writeText(mediaUrl);
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
     };
@@ -175,17 +231,6 @@ function AssetPreviewModal({ asset, onClose, onDeleteSuccess }: { asset: AssetIt
             setIsDeleting(false);
         }
     };
-
-    const isImage =
-        asset.asset_category === "generated_image" ||
-        (asset.asset_category === "uploaded" && asset.presigned_url.match(/\.(jpg|jpeg|png|webp|gif)/i));
-    const isVideo =
-        asset.asset_category === "generated_video" ||
-        asset.asset_category === "rendered_video" ||
-        (asset.asset_category === "uploaded" && asset.presigned_url.match(/\.(mp4|mov|webm)/i));
-    const isAudio =
-        asset.asset_category === "generated_audio" ||
-        (asset.asset_category === "uploaded" && asset.presigned_url.match(/\.(mp3|wav|ogg|flac)/i));
 
     const cat = CATEGORY_CONFIG[asset.asset_category] || {
         label: "Asset", icon: <Package className="w-3.5 h-3.5" />, color: "text-zinc-400", bgColor: "bg-zinc-500/10",
@@ -210,18 +255,23 @@ function AssetPreviewModal({ asset, onClose, onDeleteSuccess }: { asset: AssetIt
                 <button onClick={onClose} className="absolute top-3 right-3 z-10 w-8 h-8 rounded-full bg-black/50 hover:bg-black/70 flex items-center justify-center text-white/80 hover:text-white transition-colors cursor-pointer">
                     <X className="w-4 h-4" />
                 </button>
-                <div className="bg-black/40 flex items-center justify-center min-h-[200px] max-h-[60vh]">
-                    {isImage ? (
+                <div className={cn(
+                    "bg-black/40 flex items-center justify-center",
+                    mediaKind === "audio" ? "px-6 py-6" : "min-h-[200px] max-h-[60vh]"
+                )}>
+                    {mediaKind === "image" ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={asset.presigned_url} alt="Asset preview" className="max-w-full max-h-[60vh] object-contain" />
-                    ) : isVideo ? (
-                        <video src={asset.presigned_url} controls autoPlay className="max-w-full max-h-[60vh]" />
-                    ) : isAudio ? (
-                        <div className="p-8 flex flex-col items-center gap-4">
-                            <div className={cn("w-16 h-16 rounded-full flex items-center justify-center", cat.bgColor)}>
-                                <Music className={cn("w-8 h-8", cat.color)} />
-                            </div>
-                            <audio src={asset.presigned_url} controls className="w-full max-w-md" />
+                        <img src={mediaUrl} alt="Asset preview" className="max-w-full max-h-[60vh] object-contain" />
+                    ) : mediaKind === "video" ? (
+                        <video src={mediaUrl} controls autoPlay className="max-w-full max-h-[60vh]" />
+                    ) : mediaKind === "audio" ? (
+                        <div className="w-full flex items-center justify-center">
+                            <audio
+                                src={mediaUrl}
+                                controls
+                                preload="metadata"
+                                className="block w-[360px] max-w-full min-w-0"
+                            />
                         </div>
                     ) : (
                         <div className="p-8 text-center text-muted-foreground text-sm">Preview not available</div>
@@ -240,7 +290,7 @@ function AssetPreviewModal({ asset, onClose, onDeleteSuccess }: { asset: AssetIt
                             {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
                             {copied ? "Copied" : "Copy URL"}
                         </button>
-                        <a href={asset.presigned_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
+                        <a href={mediaUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
                             <ExternalLink className="w-3.5 h-3.5" /> Open
                         </a>
                     </div>
@@ -427,6 +477,15 @@ export function YourStuffPanel({
 
     useEffect(() => {
         if (isOpen) fetchAssets();
+    }, [isOpen, fetchAssets]);
+
+    useEffect(() => {
+        if (typeof window === "undefined") return;
+        const handleAssetUploaded = () => {
+            if (isOpen) fetchAssets();
+        };
+        window.addEventListener("kureita:asset-uploaded", handleAssetUploaded);
+        return () => window.removeEventListener("kureita:asset-uploaded", handleAssetUploaded);
     }, [isOpen, fetchAssets]);
 
     // Close on click outside

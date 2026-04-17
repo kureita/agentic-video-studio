@@ -396,9 +396,19 @@ export const assetsApi = {
       params: { filename, content_type: contentType },
     }),
 
-  upload: (file: File, onUploadProgress?: (progressEvent: { loaded: number; total?: number }) => void) => {
+  upload: (
+    file: File,
+    onUploadProgress?: (progressEvent: { loaded: number; total?: number }) => void,
+    options?: { workflowId?: string; workflowName?: string }
+  ) => {
     const formData = new FormData();
     formData.append("file", file);
+    if (options?.workflowId) {
+      formData.append("workflow_id", options.workflowId);
+    }
+    if (options?.workflowName) {
+      formData.append("workflow_name", options.workflowName);
+    }
     return api.post("/api/assets/upload", formData, {
       headers: { "Content-Type": "multipart/form-data" },
       onUploadProgress,

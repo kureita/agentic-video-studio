@@ -48,7 +48,7 @@ export function AddCreditsModal({ open, onOpenChange, onSuccess, children }: Add
                 if (!cancelled) {
                     setDodoConfig(res.data);
                     const { min_usd, max_usd } = res.data;
-                    const suggested = Math.min(Math.max(25, min_usd), max_usd);
+                    const suggested = Math.min(min_usd, max_usd);
                     setTopupAmount(String(Number.isFinite(suggested) ? suggested : min_usd));
                 }
             } catch {
@@ -56,7 +56,7 @@ export function AddCreditsModal({ open, onOpenChange, onSuccess, children }: Add
                     setDodoConfig({
                         payments_enabled: false,
                         environment: "test_mode",
-                        min_usd: 5,
+                        min_usd: 10,
                         max_usd: 500,
                     });
                 }
@@ -171,7 +171,7 @@ export function AddCreditsModal({ open, onOpenChange, onSuccess, children }: Add
                                 <Input
                                     type="text"
                                     inputMode="decimal"
-                                    placeholder="25.00"
+                                    placeholder={dodoConfig ? dodoConfig.min_usd.toFixed(2) : "10.00"}
                                     value={topupAmount}
                                     onChange={(e) => setTopupAmount(e.target.value)}
                                     className="h-9 font-mono text-sm"

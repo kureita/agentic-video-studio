@@ -14,10 +14,11 @@ import {
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import { S3Image } from "@/components/ui/s3-image";
 import { ChatAttachment, ChatMessage, ToolCall } from "@/lib/workflow-api";
 import { motion, AnimatePresence } from "framer-motion";
 import { MarkdownContent, HighlightedReferences } from "@/components/workflow/markdown-content";
+import { usePresignedUrl } from "@/lib/use-presigned-url";
+import { inferMediaKind } from "@/lib/media-utils";
 
 // ============================================
 // Thinking Block
@@ -218,6 +219,68 @@ export function TypingIndicator() {
     );
 }
 
+function UserAttachmentCard({ attachment }: { attachment: ChatAttachment }) {
+    const mediaKind = inferMediaKind({
+        mimeType: attachment.type,
+        assetCategory: attachment.type,
+        url: attachment.url,
+    });
+    const { url: resolvedUrl } = usePresignedUrl(attachment.url);
+    const mediaUrl = resolvedUrl || attachment.url;
+
+    const isAudio = mediaKind === "audio";
+
+    return (
+        <div
+            draggable={Boolean(attachment.url)}
+            onDragStart={(e) => {
+                if (!attachment.url) return;
+                const payload = {
+                    type: "asset",
+                    filename: attachment.filename,
+                    url: attachment.url,
+                    presigned_url: mediaUrl || attachment.url,
+                    asset_category: attachment.type,
+                    mime_type: attachment.type,
+                    media_type: mediaKind,
+                };
+                e.dataTransfer.setData("text/plain", attachment.url);
+                e.dataTransfer.setData("application/json", JSON.stringify(payload));
+                e.dataTransfer.setData("application/kureita-asset", JSON.stringify(payload));
+                e.dataTransfer.effectAllowed = "copy";
+            }}
+            className={cn(
+                "rounded-lg overflow-hidden border border-border/50 bg-muted/40 shadow-sm transition-colors",
+                isAudio ? "w-[280px] max-w-full p-3" : "max-w-[180px] cursor-pointer hover:border-primary/50"
+            )}
+        >
+            {attachment.url && mediaKind === "image" && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={mediaUrl || attachment.url} alt={attachment.filename} className="w-full h-auto object-cover" />
+            )}
+            {mediaUrl && mediaKind === "video" && (
+                <video src={mediaUrl} className="w-full h-auto" controls preload="metadata" />
+            )}
+            {mediaUrl && mediaKind === "audio" && (
+                <div>
+                    <audio
+                        src={mediaUrl}
+                        controls
+                        preload="metadata"
+                        className="block w-full min-w-0 h-10"
+                    />
+                </div>
+            )}
+            {mediaKind === "unknown" && (
+                <div className="p-2 text-xs flex items-center gap-1">
+                    <Paperclip className="w-3 h-3" />
+                    <span className="truncate">{attachment.filename}</span>
+                </div>
+            )}
+        </div>
+    );
+}
+
 // ============================================
 // Chat Message Item
 // ============================================
@@ -265,41 +328,7 @@ export function ChatMessageItem({ message }: { message: ChatMessage }) {
                         {attachments.length > 0 && (
                             <div className={`flex flex-wrap gap-1.5 ${cleanContent ? 'mt-3' : ''}`}>
                                 {attachments.map((att, idx) => (
-                                    <div key={idx} 
-                                        draggable={Boolean(att.url)}
-                                        onDragStart={(e) => {
-                                            if (!att.url) return;
-                                            e.dataTransfer.setData("text/plain", att.url);
-                                            e.dataTransfer.setData("application/json", JSON.stringify({
-                                                type: "asset",
-                                                url: att.url,
-                                                asset_category: att.type,
-                                            }));
-                                        }}
-                                        className="rounded-lg overflow-hidden border border-border/50 bg-muted/40 max-w-[120px] shadow-sm cursor-pointer hover:border-primary/50 transition-colors"
-                                    >
-                                        {att.url && att.type.startsWith("image") && (
-                                            <S3Image src={att.url} alt={att.filename} width={200} height={200} className="w-full h-auto object-cover" unoptimized />
-                                        )}
-                                        {att.url && att.type.startsWith("video") && (
-                                            <video src={att.url} className="w-full h-auto" controls />
-                                        )}
-                                        {att.url && att.type.startsWith("audio") && (
-                                            <div className="p-2 space-y-2 min-w-[180px]">
-                                                <div className="text-xs flex items-center gap-1.5">
-                                                    <Paperclip className="w-3 h-3" />
-                                                    <span className="truncate">{att.filename}</span>
-                                                </div>
-                                                <audio src={att.url} controls className="w-full h-8" />
-                                            </div>
-                                        )}
-                                        {!att.type.startsWith("image") && !att.type.startsWith("video") && !att.type.startsWith("audio") && (
-                                            <div className="p-2 text-xs flex items-center gap-1">
-                                                <Paperclip className="w-3 h-3" />
-                                                <span className="truncate">{att.filename}</span>
-                                            </div>
-                                        )}
-                                    </div>
+                                    <UserAttachmentCard key={`${att.filename}-${att.url}-${idx}`} attachment={att} />
                                 ))}
                             </div>
                         )}

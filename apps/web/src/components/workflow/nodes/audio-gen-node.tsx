@@ -32,7 +32,7 @@ const PLACEHOLDER_MAP: Record<AudioType, string> = {
 
 export const AudioGenNode = memo(({ id, selected, data }: NodeProps) => {
     const { deleteElements, updateNodeData } = useReactFlow();
-    const { runNode, clearNodeOutput, outputs, runningNodeId } = useWorkflowStore();
+    const { runNode, clearNodeOutput, outputs, runningNodeId, setNodes } = useWorkflowStore();
     const { models } = useModels();
 
     // Filter audio models by current audioType's category
@@ -55,9 +55,22 @@ export const AudioGenNode = memo(({ id, selected, data }: NodeProps) => {
     // Keep selected model aligned with current audio type/category.
     React.useEffect(() => {
         if (audioModels.length > 0 && !currentModelEntry) {
-            updateNodeData(id, { model: audioModels[0].id });
+            const fallbackModelId = audioModels[0].id;
+            const state = useWorkflowStore.getState();
+            const targetNode = state.nodes.find((node) => node.id === id);
+            const storedModel = targetNode?.data?.model;
+            if (storedModel !== fallbackModelId) {
+                setNodes(
+                    state.nodes.map((node) =>
+                        node.id === id
+                            ? { ...node, data: { ...node.data, model: fallbackModelId } }
+                            : node
+                    )
+                );
+            }
+            updateNodeData(id, { model: fallbackModelId });
         }
-    }, [audioModels, currentModelEntry, id, updateNodeData]);
+    }, [audioModels, currentModelEntry, id, updateNodeData, setNodes]);
 
 
     const isRunning = runningNodeId === id;
@@ -202,7 +215,7 @@ export const AudioGenNode = memo(({ id, selected, data }: NodeProps) => {
                             <audio
                                 src={output}
                                 controls
-                                className="w-full"
+                                className="w-full pointer-events-none select-none"
                                 style={{ filter: 'drop-shadow(0 4px 6px rgba(0, 0, 0, 0.3))' }}
                             />
 

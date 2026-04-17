@@ -35,6 +35,7 @@ import { CommentNode } from "./nodes/comment-node";
 // Store
 import { useWorkflowStore } from "@/lib/workflow-store";
 import { usePublicView } from "@/lib/public-view-context";
+import { inferMediaKind } from "@/lib/media-utils";
 
 const nodeTypes = {
     text: TextNode,
@@ -344,6 +345,8 @@ function FlowEditorInner({ workflowId }: FlowEditorProps) {
             url?: string;
             presigned_url?: string;
             asset_category?: string;
+            media_type?: string;
+            mime_type?: string;
             node_type?: string;
             node_data?: Record<string, unknown>;
         };
@@ -369,6 +372,16 @@ function FlowEditorInner({ workflowId }: FlowEditorProps) {
         // Build node data from saved settings
         const savedData = payload.node_data || {};
         const nodeData: Record<string, unknown> = { ...savedData, output: payload.url };
+        if (nodeType === "mediaUpload" && !nodeData.mediaType) {
+            const inferredKind = inferMediaKind({
+                mimeType: payload.mime_type,
+                assetCategory: payload.media_type || payload.asset_category,
+                url: payload.url || payload.presigned_url,
+            });
+            if (inferredKind !== "unknown") {
+                nodeData.mediaType = inferredKind;
+            }
+        }
 
         // Generate unique ID & position at drop point
         const id = `${nodeType}_${Math.random().toString(36).substring(2, 9)}`;

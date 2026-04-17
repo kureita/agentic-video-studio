@@ -93,7 +93,7 @@ class Settings(BaseSettings):
     # One one-time product with "Pay what you want" enabled (dashboard → Products)
     dodo_topup_product_id: str = ""
     # Allowed custom top-up range (USD); enforced in API and should match product limits in Dodo
-    dodo_min_topup_usd: float = 5.0
+    dodo_min_topup_usd: float = 10.0
     dodo_max_topup_usd: float = 500.0
 
     # Optional

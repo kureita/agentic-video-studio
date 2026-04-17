@@ -16,7 +16,7 @@ const FIXED_MODEL = "Gemini 3.1 Pro Preview (High)";
 
 export const AssistantNode = memo(({ id, selected, data }: NodeProps<AssistantNodeType>) => {
     const { deleteElements, updateNodeData } = useReactFlow();
-    const { runNode, clearNodeOutput, outputs, runningNodeId } = useWorkflowStore();
+    const { runNode, clearNodeOutput, outputs, runningNodeId, setNodes } = useWorkflowStore();
 
     const [showSuggestions, setShowSuggestions] = useState(false);
     const [filterText, setFilterText] = useState("");
@@ -35,9 +35,21 @@ export const AssistantNode = memo(({ id, selected, data }: NodeProps<AssistantNo
 
     useEffect(() => {
         if (data.model !== FIXED_MODEL) {
+            const state = useWorkflowStore.getState();
+            const targetNode = state.nodes.find((node) => node.id === id);
+            const storedModel = targetNode?.data?.model;
+            if (storedModel !== FIXED_MODEL) {
+                setNodes(
+                    state.nodes.map((node) =>
+                        node.id === id
+                            ? { ...node, data: { ...node.data, model: FIXED_MODEL } }
+                            : node
+                    )
+                );
+            }
             updateNodeData(id, { model: FIXED_MODEL });
         }
-    }, [data.model, id, updateNodeData]);
+    }, [data.model, id, updateNodeData, setNodes]);
 
     const handleTextChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
         const val = e.target.value;
@@ -105,7 +117,7 @@ export const AssistantNode = memo(({ id, selected, data }: NodeProps<AssistantNo
         >
             <div className="flex w-[340px] flex-col">
                 {/* Output / Results Area */}
-                <div className="relative min-h-[200px] max-h-[260px] overflow-y-auto px-4 py-4 [scrollbar-width:thin] [scrollbar-color:rgba(255,255,255,0.08)_transparent]">
+                <div className="relative min-h-[200px] max-h-[260px] overflow-y-auto overscroll-contain px-4 py-4 nodrag nowheel [scrollbar-width:thin] [scrollbar-color:rgba(255,255,255,0.08)_transparent]">
                     {output ? (
                         <div className="text-[12.5px] leading-[1.75] text-foreground/80 whitespace-pre-wrap font-[system-ui] selection:bg-foreground/10">
                             {output}

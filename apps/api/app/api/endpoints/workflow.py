@@ -425,7 +425,11 @@ async def update_workflow(
     if request.edges is not None:
         update_data["edges"] = [edge.model_dump() for edge in request.edges]
     if request.chat_history is not None:
-        update_data["chat_history"] = [msg.model_dump() for msg in request.chat_history]
+        # Strip presigned params from attachment URLs before persisting.
+        # Fresh presigned URLs are generated when reading workflow data.
+        update_data["chat_history"] = strip_presigned_from_data(
+            [msg.model_dump() for msg in request.chat_history]
+        )
     
     user_id = current_user.get("_id")
     query = {

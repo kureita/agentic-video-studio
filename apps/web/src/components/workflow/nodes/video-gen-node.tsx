@@ -341,6 +341,14 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
 
     // Sync node data to workflow store
     const updateData = useCallback((updates: Record<string, unknown>) => {
+        const currentNode = useWorkflowStore.getState().nodes.find((n) => n.id === id);
+        if (currentNode) {
+            const hasRealChange = Object.entries(updates).some(([key, value]) => !Object.is(currentNode.data?.[key], value));
+            if (!hasRealChange) {
+                return;
+            }
+        }
+
         updateNodeData(id, updates);
         const latestNodes = useWorkflowStore.getState().nodes;
         setNodes(
@@ -706,8 +714,8 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
                     <>
                         <video
                             src={output}
-                            className="absolute inset-0 w-full h-full object-cover z-0 nodrag nopan nowheel"
-                            controls={!showSuggestions}
+                            className="absolute inset-0 w-full h-full object-cover z-0 pointer-events-none select-none nopan nowheel"
+                            preload="metadata"
                             playsInline
                             onLoadedMetadata={(e) => {
                                 const video = e.currentTarget;

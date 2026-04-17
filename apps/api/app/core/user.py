@@ -8,6 +8,10 @@ import uuid
 from datetime import datetime, timezone
 
 from app.core.database import get_users_collection
+from app.models.usage import ActionType, UsageLog
+
+
+SIGNUP_BONUS_USD = 1.0
 
 
 async def get_or_create_user(auth0_sub: str, email: str = "", name: str = "") -> dict:
@@ -52,14 +56,29 @@ async def get_or_create_user(auth0_sub: str, email: str = "", name: str = "") ->
         "name": name,
         "created_at": now,
         "updated_at": now,
-        "usd_balance": 0.0,  # Users start with $0, use vouchers to add balance
+        "usd_balance": SIGNUP_BONUS_USD,
         "referral_code": referral_code,
         "referred_by": None
     }
     
     result = await collection.insert_one(user_doc)
     user_doc["_id"] = str(result.inserted_id)
+
+    usage_log = UsageLog(
+        user_id=user_doc["_id"],
+        action_type=ActionType.SIGNUP_BONUS,
+        cost_usd=0.0,
+        commission_usd=0.0,
+        total_usd=SIGNUP_BONUS_USD,
+        metadata={"usd_added": SIGNUP_BONUS_USD},
+    )
+    await collection.database.usage_logs.insert_one(
+        usage_log.model_dump(by_alias=True, exclude_none=True)
+    )
     
-    print(f"[User] Created new user: {auth0_sub} ({email}) with $0.00 balance. Referral code: {referral_code}")
+    print(
+        f"[User] Created new user: {auth0_sub} ({email}) with "
+        f"${SIGNUP_BONUS_USD:.2f} balance. Referral code: {referral_code}"
+    )
     
     return user_doc
