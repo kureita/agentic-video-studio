@@ -392,9 +392,12 @@ export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
                         {mediaType === 'video' ? (
                             <video
                                 src={output as string}
-                                className="w-full h-full object-contain pointer-events-none select-none nopan nowheel"
+                                className="w-full h-full object-contain select-none nodrag nopan nowheel"
                                 preload="metadata"
                                 playsInline
+                                controls
+                                onPointerDown={(e) => e.stopPropagation()}
+                                onDoubleClick={(e) => e.stopPropagation()}
                             />
                         ) : mediaType === 'audio' ? (
                             <div className="w-full p-6 flex flex-col items-center gap-4">

@@ -160,7 +160,7 @@ const getCapabilitiesLabel = (capabilities: string[] = []) => {
 };
 
 export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
-    const { deleteElements, updateNodeData } = useReactFlow();
+    const { deleteElements } = useReactFlow();
     const { nodes, setNodes, runNode, clearNodeOutput, outputs, runningNodeId, setRawOutput } = useWorkflowStore();
 
     const { models, isLoading: isModelsLoading } = useModels();
@@ -183,6 +183,7 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
     const [showInputModeMenu, setShowInputModeMenu] = useState(false);
     const [hasCompletedInitialHydration, setHasCompletedInitialHydration] = useState(false);
     const saveTimerRef = useRef<number | null>(null);
+    const hydratedSettingsKeyRef = useRef<string | null>(null);
     const modelMenuRef = useRef<HTMLDivElement>(null);
     const durationMenuRef = useRef<HTMLDivElement>(null);
     const inputModeMenuRef = useRef<HTMLDivElement>(null);
@@ -215,19 +216,31 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
     const { url: presignedOutput } = usePresignedUrl(rawOutput);
     const output = presignedOutput || rawOutput;
 
+    const isCurrentSourceOutput = useCallback((expectedOutput?: string) => {
+        if (!expectedOutput) return false;
+
+        const state = useWorkflowStore.getState();
+        const currentNode = state.nodes.find((node) => node.id === id);
+        const latestOutput = (state.outputs[id] as string | undefined) || (currentNode?.data?.output as string | undefined);
+        return latestOutput === expectedOutput;
+    }, [id]);
+
     const handleExtractFrames = useCallback(async (handleId: string) => {
-        if (!workflowId || extractingHandle || !output) return;
+        const sourceOutput = rawOutput;
+        if (!workflowId || extractingHandle || !output || !sourceOutput) return;
         console.log('[ExtractFrames] Starting client-side extraction for node', id, 'workflow', workflowId, 'handle', handleId);
         setExtractingHandle(handleId);
         setExtractionError(null);
         try {
             const timeRatio = handleId === 'end_frame' ? 1 : 0;
             const base64Image = await extractFrameFromVideo(output, timeRatio);
+            if (!isCurrentSourceOutput(sourceOutput)) return;
 
             const startFramePayload = handleId === 'start_frame' ? base64Image : undefined;
             const endFramePayload = handleId === 'end_frame' ? base64Image : undefined;
 
             const res = await workflowApi.extractFrames(workflowId, id, startFramePayload, endFramePayload);
+            if (!isCurrentSourceOutput(sourceOutput)) return;
             console.log('[ExtractFrames] Save Response:', res.data);
 
             setRawOutput(`${id}__${handleId}`, base64Image);
@@ -239,11 +252,12 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
         } finally {
             setExtractingHandle(null);
         }
-    }, [workflowId, id, extractingHandle, output, setRawOutput]);
+    }, [workflowId, id, extractingHandle, output, rawOutput, setRawOutput, isCurrentSourceOutput]);
 
     // Automatically extract frames whenever a new video is generated
     useEffect(() => {
-        if (!workflowId || !output || !output.startsWith('http')) return;
+        const sourceOutput = rawOutput;
+        if (!workflowId || !output || !sourceOutput || !output.startsWith('http')) return;
 
         // Check if we already have frames for this video to avoid endless extraction loops
         const hasStartFrame = outputs[`${id}__start_frame`];
@@ -259,15 +273,17 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
 
                     if (!hasStartFrame) {
                         startFramePayload = await extractFrameFromVideo(output, 0);
+                        if (!isCurrentSourceOutput(sourceOutput)) return;
                         setRawOutput(`${id}__start_frame`, startFramePayload);
                     }
 
                     if (!hasEndFrame) {
                         endFramePayload = await extractFrameFromVideo(output, 1);
+                        if (!isCurrentSourceOutput(sourceOutput)) return;
                         setRawOutput(`${id}__end_frame`, endFramePayload);
                     }
 
-                    if (startFramePayload || endFramePayload) {
+                    if ((startFramePayload || endFramePayload) && isCurrentSourceOutput(sourceOutput)) {
                         await workflowApi.extractFrames(workflowId, id, startFramePayload, endFramePayload);
                         console.log(`[VideoNode ${id}] Auto-extraction complete and saved to backend.`);
                     }
@@ -277,7 +293,7 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
             }, 1000);
             return () => clearTimeout(timer);
         }
-    }, [workflowId, id, output, outputs, setRawOutput]);
+    }, [workflowId, id, output, rawOutput, outputs, setRawOutput, isCurrentSourceOutput]);
 
 
     const schedulePersistSettings = useCallback((updates: Record<string, unknown>) => {
@@ -341,24 +357,23 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
 
     // Sync node data to workflow store
     const updateData = useCallback((updates: Record<string, unknown>) => {
-        const currentNode = useWorkflowStore.getState().nodes.find((n) => n.id === id);
-        if (currentNode) {
-            const hasRealChange = Object.entries(updates).some(([key, value]) => !Object.is(currentNode.data?.[key], value));
-            if (!hasRealChange) {
-                return;
-            }
+        const state = useWorkflowStore.getState();
+        const currentNode = state.nodes.find((n) => n.id === id);
+        if (!currentNode) return;
+
+        const hasRealChange = Object.entries(updates).some(([key, value]) => !Object.is(currentNode.data?.[key], value));
+        if (!hasRealChange) {
+            return;
         }
 
-        updateNodeData(id, updates);
-        const latestNodes = useWorkflowStore.getState().nodes;
         setNodes(
-            latestNodes.map((n) =>
+            state.nodes.map((n) =>
                 n.id === id ? { ...n, data: { ...n.data, ...updates } } : n
             )
         );
         persistLocalSettingsPatch(updates);
         schedulePersistSettings(updates);
-    }, [id, updateNodeData, setNodes, persistLocalSettingsPatch, schedulePersistSettings]);
+    }, [id, setNodes, persistLocalSettingsPatch, schedulePersistSettings]);
 
     const currentModelId = typeof data.model === "string"
         ? data.model
@@ -493,28 +508,44 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
     }, [selectedModelData, data.duration, effectiveDuration, updateData]);
 
     useEffect(() => {
+        hydratedSettingsKeyRef.current = null;
         setHasCompletedInitialHydration(false);
     }, [settingsStorageKey]);
 
     // Persist critical settings locally so refresh never loses unsynced choices.
     useEffect(() => {
+        if (hydratedSettingsKeyRef.current === settingsStorageKey) {
+            return;
+        }
+
+        hydratedSettingsKeyRef.current = settingsStorageKey;
+
         try {
             const stored = localStorage.getItem(settingsStorageKey);
             if (stored) {
                 const parsed = JSON.parse(stored) as PersistedVideoNodeSettings;
                 const patch: Record<string, unknown> = {};
 
-                if (typeof parsed.model === "string" && parsed.model !== currentModelId) patch.model = parsed.model;
-                if (typeof parsed.duration === "string" && parsed.duration !== effectiveDuration) patch.duration = parsed.duration;
-                if (typeof parsed.resolution === "string" && parsed.resolution !== effectiveResolution) patch.resolution = parsed.resolution;
+                const rawModel = typeof data.model === "string" ? data.model : undefined;
+                const rawDuration = typeof data.duration === "string" ? data.duration : undefined;
+                const rawResolution = typeof data.resolution === "string" ? data.resolution : undefined;
+                const rawInputMode = typeof data.inputMode === "string"
+                    ? (data.inputMode.toLowerCase() === "auto" ? "t2v" : data.inputMode.toLowerCase())
+                    : undefined;
+                const rawRatio = typeof data.ratio === "string" ? data.ratio : undefined;
+                const rawGenerateAudio = typeof data.generateAudio === "boolean" ? data.generateAudio : undefined;
+
+                if (typeof parsed.model === "string" && parsed.model !== rawModel) patch.model = parsed.model;
+                if (typeof parsed.duration === "string" && parsed.duration !== rawDuration) patch.duration = parsed.duration;
+                if (typeof parsed.resolution === "string" && parsed.resolution !== rawResolution) patch.resolution = parsed.resolution;
                 if (typeof parsed.inputMode === "string") {
                     const normalizedInputMode = parsed.inputMode.toLowerCase() === "auto" ? "t2v" : parsed.inputMode.toLowerCase();
-                    if (isInputMode(normalizedInputMode) && normalizedInputMode !== inputMode) {
+                    if (isInputMode(normalizedInputMode) && normalizedInputMode !== rawInputMode) {
                         patch.inputMode = normalizedInputMode;
                     }
                 }
-                if (typeof parsed.generateAudio === "boolean" && parsed.generateAudio !== generateAudio) patch.generateAudio = parsed.generateAudio;
-                if (typeof parsed.ratio === "string" && parsed.ratio !== ratio) patch.ratio = parsed.ratio;
+                if (typeof parsed.generateAudio === "boolean" && parsed.generateAudio !== rawGenerateAudio) patch.generateAudio = parsed.generateAudio;
+                if (typeof parsed.ratio === "string" && parsed.ratio !== rawRatio) patch.ratio = parsed.ratio;
 
                 if (Object.keys(patch).length > 0) {
                     updateData(patch);
@@ -525,7 +556,16 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
         } finally {
             setHasCompletedInitialHydration(true);
         }
-    }, [settingsStorageKey, currentModelId, effectiveDuration, effectiveResolution, inputMode, generateAudio, ratio, updateData]);
+    }, [
+        settingsStorageKey,
+        data.model,
+        data.duration,
+        data.resolution,
+        data.inputMode,
+        data.generateAudio,
+        data.ratio,
+        updateData,
+    ]);
 
     useEffect(() => {
         if (!hasCompletedInitialHydration) return;
@@ -662,9 +702,11 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
     };
 
     // Frame previews extracted by the backend after video generation
-    const startFramePreview = (outputs[`${id}__start_frame`] as string | undefined) || undefined;
-    const endFramePreview = (outputs[`${id}__end_frame`] as string | undefined) || undefined;
     const hasVideoOutput = !!output;
+    const startFramePreview = hasVideoOutput ? ((outputs[`${id}__start_frame`] as string | undefined) || undefined) : undefined;
+    const endFramePreview = hasVideoOutput ? ((outputs[`${id}__end_frame`] as string | undefined) || undefined) : undefined;
+    const showPromptOverlay = !output;
+    const showSettingsBar = !output || selected || showDurationMenu || showModelMenu || showInputModeMenu || menuOpen;
 
     return (
         <NodeWrapper
@@ -714,9 +756,12 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
                     <>
                         <video
                             src={output}
-                            className="absolute inset-0 w-full h-full object-cover z-0 pointer-events-none select-none nopan nowheel"
+                            className="absolute inset-0 w-full h-full object-cover z-0 select-none nodrag nopan nowheel"
                             preload="metadata"
                             playsInline
+                            controls
+                            onPointerDown={(e) => e.stopPropagation()}
+                            onDoubleClick={(e) => e.stopPropagation()}
                             onLoadedMetadata={(e) => {
                                 const video = e.currentTarget;
                                 const w = video.videoWidth;
@@ -746,12 +791,11 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
                                 }
                             }}
                         />
-                        <div className="absolute inset-0 bg-black/40 z-0 pointer-events-none transition-opacity duration-300" />
 
                         {/* Download button */}
                         <button
                             onClick={handleDownload}
-                            className="absolute top-3 right-3 w-8 h-8 bg-black/60 backdrop-blur-md border border-white/10 rounded-full flex items-center justify-center text-white/90 hover:bg-black/80 hover:text-white transition-all z-30 opacity-0 group-hover/video:opacity-100"
+                            className="absolute top-3 right-3 w-8 h-8 bg-black/60 backdrop-blur-md border border-white/10 rounded-full flex items-center justify-center text-white/90 hover:bg-black/80 hover:text-white transition-all z-30 opacity-100 md:opacity-0 md:group-hover/video:opacity-100 nodrag nopan nowheel"
                         >
                             <Download className="w-4 h-4" />
                         </button>
@@ -769,7 +813,10 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
                 )}
 
                 {/* 3. Text Input Layer (Always Visible) */}
-                <div className={`relative z-10 h-full flex flex-col justify-end pb-12 pointer-events-none transition-all duration-300 ${output ? "opacity-0 group-hover/video:opacity-100 focus-within:opacity-100" : ""}`}>
+                <div className={cn(
+                    "relative z-10 h-full flex flex-col justify-end pb-12 pointer-events-none transition-all duration-300",
+                    showPromptOverlay ? "opacity-100 visible" : "opacity-0 invisible"
+                )}>
                     {/* Suggestions Popup */}
                     {showSuggestions && textNodes.length > 0 && (
                         <div className="absolute bottom-12 left-2 z-50 w-48 bg-popover text-popover-foreground rounded-md border shadow-md overflow-hidden animate-in fade-in zoom-in-95 duration-100 pointer-events-auto">
@@ -809,7 +856,14 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
                 </div>
 
                 {/* Controls Bar */}
-                <div className="absolute bottom-3 left-3 right-3 flex items-center gap-1 opacity-0 group-hover/video:opacity-100 transition-all duration-300 translate-y-2 group-hover/video:translate-y-0 z-20">
+                <div className={cn(
+                    "absolute left-3 flex items-center gap-1 transition-all duration-300 z-20",
+                    output
+                        ? (showSettingsBar
+                            ? "bottom-12 right-3 opacity-100 translate-y-0"
+                            : "bottom-12 right-3 opacity-0 translate-y-2 pointer-events-none")
+                        : "bottom-3 right-3 opacity-0 group-hover/video:opacity-100 translate-y-2 group-hover/video:translate-y-0"
+                )}>
                     {/* Duration Pill */}
                     <div className="relative flex-shrink-0" ref={durationMenuRef}>
                         <button

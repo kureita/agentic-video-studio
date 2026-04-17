@@ -117,6 +117,98 @@ interface RawEdge {
     [key: string]: unknown;
 }
 
+const FRAME_OUTPUT_HANDLES = ["start_frame", "end_frame"] as const;
+
+const getFrameOutputKeys = (nodeId: string) =>
+    FRAME_OUTPUT_HANDLES.map((handle) => `${nodeId}__${handle}`);
+
+const getNodeOutputValue = (state: Pick<WorkflowState, "outputs" | "nodes">, nodeId: string) => {
+    const output = state.outputs[nodeId];
+    if (typeof output === "string" && output.length > 0) return output;
+
+    const node = state.nodes.find((candidate) => candidate.id === nodeId);
+    const dataOutput = node?.data?.output;
+    return typeof dataOutput === "string" && dataOutput.length > 0 ? dataOutput : undefined;
+};
+
+const syncNodeDataOutput = (
+    nodes: Node[],
+    outputs: Record<string, string>,
+    affectedNodeIds: Set<string>
+) => {
+    if (affectedNodeIds.size === 0) return nodes;
+
+    return nodes.map((node) => {
+        if (!affectedNodeIds.has(node.id)) return node;
+
+        const nextData = { ...(node.data as Record<string, unknown>) };
+        const nextOutput = outputs[node.id];
+        if (typeof nextOutput === "string" && nextOutput.length > 0) {
+            nextData.output = nextOutput;
+        } else {
+            delete nextData.output;
+        }
+
+        return { ...node, data: nextData };
+    });
+};
+
+const clearNodeOutputArtifacts = (
+    state: Pick<WorkflowState, "outputs" | "nodes">,
+    nodeId: string
+) => {
+    const newOutputs = { ...state.outputs };
+    delete newOutputs[nodeId];
+    getFrameOutputKeys(nodeId).forEach((key) => delete newOutputs[key]);
+
+    const newNodes = syncNodeDataOutput(state.nodes, newOutputs, new Set([nodeId]));
+    return { newOutputs, newNodes };
+};
+
+const mergeOutputsWithDerivedState = (
+    state: Pick<WorkflowState, "outputs" | "nodes" | "edges">,
+    incomingOutputs: Record<string, string>
+) => {
+    const newOutputs = { ...state.outputs };
+    const affectedNodeIds = new Set<string>();
+
+    Object.entries(incomingOutputs).forEach(([key, value]) => {
+        const isFrameOutput = FRAME_OUTPUT_HANDLES.some((handle) => key.endsWith(`__${handle}`));
+        if (isFrameOutput) return;
+
+        if (state.outputs[key] !== value) {
+            getFrameOutputKeys(key).forEach((frameKey) => delete newOutputs[frameKey]);
+        }
+
+        newOutputs[key] = value;
+        affectedNodeIds.add(key);
+    });
+
+    Object.entries(incomingOutputs).forEach(([key, value]) => {
+        const frameMatch = key.match(/^(.*)__(start_frame|end_frame)$/);
+        if (!frameMatch) return;
+
+        newOutputs[key] = value;
+
+        const [, sourceNodeId, frameHandle] = frameMatch;
+        state.edges.forEach((edge) => {
+            if (edge.source !== sourceNodeId) return;
+
+            const sourceHandle = edge.sourceHandle || "";
+            if (!sourceHandle.endsWith(frameHandle)) return;
+
+            const targetNode = state.nodes.find((node) => node.id === edge.target);
+            if (targetNode?.type !== "imageGen") return;
+
+            newOutputs[edge.target] = value;
+            affectedNodeIds.add(edge.target);
+        });
+    });
+
+    const newNodes = syncNodeDataOutput(state.nodes, newOutputs, affectedNodeIds);
+    return { newOutputs, newNodes };
+};
+
 // Helper to infer missing handles for older workflows
 function inferMissingHandles(edge: RawEdge, nodes: Node[]) {
     let sourceHandle = edge.sourceHandle || edge.source_handle;
@@ -236,18 +328,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 
     setNodeOutput: (nodeId: string, output: string) => {
         set((state) => {
-            const newOutputs = { ...state.outputs, [nodeId]: output };
-
-            // Also update the node's data.output for persistence
-            const newNodes = state.nodes.map((node) => {
-                if (node.id === nodeId) {
-                    return {
-                        ...node,
-                        data: { ...node.data, output },
-                    };
-                }
-                return node;
-            });
+            const { newOutputs, newNodes } = mergeOutputsWithDerivedState(state, { [nodeId]: output });
 
             return {
                 outputs: newOutputs,
@@ -261,51 +342,23 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
         // Write directly to the outputs map without touching node.data.output.
         // Used for auxiliary keys like `{nodeId}__start_frame`.
         set((state) => {
-            const newOutputs = { ...state.outputs, [key]: value };
-            const newNodes = [...state.nodes];
-
             const frameMatch = key.match(/^(.*)__(start_frame|end_frame)$/);
             if (frameMatch) {
-                const [, sourceNodeId, frameHandle] = frameMatch;
-                state.edges.forEach((edge) => {
-                    if (edge.source !== sourceNodeId) return;
-                    const sourceHandle = edge.sourceHandle || "";
-                    if (!sourceHandle.endsWith(frameHandle)) return;
-                    const targetNode = newNodes.find((node) => node.id === edge.target);
-                    if (targetNode?.type !== "imageGen") return;
-
-                    newOutputs[edge.target] = value;
-                    const nodeIndex = newNodes.findIndex((node) => node.id === edge.target);
-                    if (nodeIndex !== -1) {
-                        newNodes[nodeIndex] = {
-                            ...newNodes[nodeIndex],
-                            data: { ...newNodes[nodeIndex].data, output: value },
-                        };
-                    }
-                });
+                const [, sourceNodeId] = frameMatch;
+                const sourceOutput = getNodeOutputValue(state, sourceNodeId);
+                if (!sourceOutput) {
+                    return {};
+                }
             }
 
+            const { newOutputs, newNodes } = mergeOutputsWithDerivedState(state, { [key]: value });
             return { outputs: newOutputs, nodes: newNodes };
         });
     },
 
     clearNodeOutput: (nodeId: string) => {
         set((state) => {
-            const newOutputs = { ...state.outputs };
-            delete newOutputs[nodeId];
-
-            // Also clear the node's data.output
-            const newNodes = state.nodes.map((node) => {
-                if (node.id === nodeId) {
-                    const newData = { ...node.data };
-                    delete newData.output;
-                    return {
-                        ...node,
-                        data: newData,
-                    };
-                }
-                return node;
-            });
+            const { newOutputs, newNodes } = clearNodeOutputArtifacts(state, nodeId);
 
             return {
                 outputs: newOutputs,
@@ -313,6 +366,18 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
                 isDirty: true
             };
         });
+
+        const { id, isPublicView, isSaving } = get();
+        if (!id || isPublicView) return;
+
+        void workflowApi.clearNodeOutput(id, nodeId).catch((error) => {
+            console.error("[WorkflowStore] Clear node output error:", error);
+            toast.error("Failed to clear node output");
+        });
+
+        if (!isSaving) {
+            void get().saveWorkflow();
+        }
     },
 
     addChatMessage: (message: ChatMessage) => {
@@ -562,9 +627,13 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
                 });
 
                 if (Object.keys(status.outputs).length > 0) {
-                    set((state) => ({
-                        outputs: { ...state.outputs, ...status.outputs },
-                    }));
+                    set((state) => {
+                        const { newOutputs, newNodes } = mergeOutputsWithDerivedState(state, status.outputs);
+                        return {
+                            outputs: newOutputs,
+                            nodes: newNodes,
+                        };
+                    });
                 }
             });
 
@@ -578,7 +647,11 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
                 isRunning: false,
                 isRunningAsync: false,
                 activeJobId: null,
-                outputs: { ...get().outputs, ...finalStatus.outputs },
+                ...(() => {
+                    const state = get();
+                    const { newOutputs, newNodes } = mergeOutputsWithDerivedState(state, finalStatus.outputs);
+                    return { outputs: newOutputs, nodes: newNodes };
+                })(),
                 nodeExecutionStates: finalNodeStates,
                 executionProgress: {
                     current: finalStatus.current_task_index,
@@ -660,9 +733,13 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
             });
 
             if (Object.keys(job.outputs).length > 0) {
-                set((state) => ({
-                    outputs: { ...state.outputs, ...job.outputs },
-                }));
+                set((state) => {
+                    const { newOutputs, newNodes } = mergeOutputsWithDerivedState(state, job.outputs);
+                    return {
+                        outputs: newOutputs,
+                        nodes: newNodes,
+                    };
+                });
             }
 
             // Resume polling
@@ -679,9 +756,13 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
                     },
                 });
                 if (Object.keys(status.outputs).length > 0) {
-                    set((state) => ({
-                        outputs: { ...state.outputs, ...status.outputs },
-                    }));
+                    set((state) => {
+                        const { newOutputs, newNodes } = mergeOutputsWithDerivedState(state, status.outputs);
+                        return {
+                            outputs: newOutputs,
+                            nodes: newNodes,
+                        };
+                    });
                 }
             });
 
@@ -694,7 +775,11 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
                 isRunning: false,
                 isRunningAsync: false,
                 activeJobId: null,
-                outputs: { ...get().outputs, ...finalStatus.outputs },
+                ...(() => {
+                    const state = get();
+                    const { newOutputs, newNodes } = mergeOutputsWithDerivedState(state, finalStatus.outputs);
+                    return { outputs: newOutputs, nodes: newNodes };
+                })(),
                 nodeExecutionStates: finalNodeStates,
             });
 
@@ -791,9 +876,13 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
                     }));
 
                     if (Object.keys(status.outputs).length > 0) {
-                        set((state) => ({
-                            outputs: { ...state.outputs, ...status.outputs },
-                        }));
+                        set((state) => {
+                            const { newOutputs, newNodes } = mergeOutputsWithDerivedState(state, status.outputs);
+                            return {
+                                outputs: newOutputs,
+                                nodes: newNodes,
+                            };
+                        });
                     }
                 });
 
@@ -803,53 +892,11 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
                     const storeOutput = finalStatus.outputs[targetId];
 
                     set((state) => {
-                        const newOutputs = { ...state.outputs, [targetId]: storeOutput };
-
-                        // ── Auto-fill start_frame / end_frame connected imageGen nodes ──
-                        // When a videoGen node finishes, the backend extracts the first/last
-                        // frame and stores them as `{nodeId}__start_frame` / `{nodeId}__end_frame`
-                        // in outputs. We find connected image nodes on those handles and
-                        // auto-set their output so the user sees the frame immediately.
-                        const targetNode = state.nodes.find(n => n.id === targetId);
-                        if (targetNode?.type === 'videoGen') {
-                            const startFrameData = finalStatus.outputs[`${targetId}__start_frame`] as string | undefined;
-                            const endFrameData = finalStatus.outputs[`${targetId}__end_frame`] as string | undefined;
-
-                            state.edges.forEach(edge => {
-                                if (edge.source !== targetId) return;
-                                const srcHandle = edge.sourceHandle || '';
-                                const isStartFrame = srcHandle.endsWith('start_frame');
-                                const isEndFrame = srcHandle.endsWith('end_frame');
-                                const downstreamNode = state.nodes.find((node) => node.id === edge.target);
-                                if (downstreamNode?.type !== 'imageGen') return;
-
-                                if (isStartFrame && startFrameData) {
-                                    console.log(`[WorkflowStore] Auto-filling node ${edge.target} with start_frame`);
-                                    newOutputs[edge.target] = startFrameData;
-                                } else if (isEndFrame && endFrameData) {
-                                    console.log(`[WorkflowStore] Auto-filling node ${edge.target} with end_frame`);
-                                    newOutputs[edge.target] = endFrameData;
-                                }
-                            });
-                        }
-
-                        // Also update node data for persistence
-                        const newNodes = state.nodes.map((node) => {
-                            if (node.id === targetId) {
-                                return {
-                                    ...node,
-                                    data: { ...node.data, output: storeOutput },
-                                };
-                            }
-                            // Update any auto-filled image nodes too
-                            if (newOutputs[node.id] && newOutputs[node.id] !== state.outputs[node.id]) {
-                                return {
-                                    ...node,
-                                    data: { ...node.data, output: newOutputs[node.id] },
-                                };
-                            }
-                            return node;
-                        });
+                        const mergedOutputs = {
+                            ...finalStatus.outputs,
+                            ...(typeof storeOutput === "string" ? { [targetId]: storeOutput } : {}),
+                        };
+                        const { newOutputs, newNodes } = mergeOutputsWithDerivedState(state, mergedOutputs);
 
                         return {
                             outputs: newOutputs,
@@ -942,9 +989,14 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
             const data = res.data;
 
             if (data.url) {
-                set((state) => ({
-                    outputs: { ...state.outputs, [nodeId]: data.presigned_url || data.url }
-                }));
+                set((state) => {
+                    const nextOutput = data.presigned_url || data.url;
+                    const { newOutputs, newNodes } = mergeOutputsWithDerivedState(state, { [nodeId]: nextOutput });
+                    return {
+                        outputs: newOutputs,
+                        nodes: newNodes,
+                    };
+                });
                 // Do NOT call setNodeOutput here — that would overwrite the TSX code
                 // with a video URL, causing a re-compile attempt on the URL.
                 // The video URL is persisted server-side; the local store keeps the TSX

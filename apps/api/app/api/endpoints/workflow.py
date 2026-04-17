@@ -710,6 +710,65 @@ async def extract_frames(
     }
 
 
+@router.delete("/{workflow_id}/nodes/{node_id}/output")
+async def clear_node_output(
+    workflow_id: str,
+    node_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """Clear a node's stored output plus any derived start/end frame outputs."""
+    collection = get_workflows_collection()
+
+    try:
+        oid = ObjectId(workflow_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid workflow ID")
+
+    user_id = current_user.get("_id")
+    query = {
+        "_id": oid,
+        "$or": [{"user_id": user_id}, {"user_id": {"$exists": False}}],
+    }
+
+    workflow = await collection.find_one(query)
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    updated_nodes = []
+    for node in workflow.get("nodes", []):
+        if node.get("id") != node_id:
+            updated_nodes.append(node)
+            continue
+
+        node_copy = dict(node)
+        node_data = dict(node_copy.get("data", {}) or {})
+        node_data.pop("output", None)
+        node_copy["data"] = node_data
+        updated_nodes.append(node_copy)
+
+    unset_fields = {
+        f"outputs.{node_id}": "",
+        f"outputs.{node_id}__start_frame": "",
+        f"outputs.{node_id}__end_frame": "",
+        f"execution.outputs.{node_id}": "",
+        f"execution.outputs.{node_id}__start_frame": "",
+        f"execution.outputs.{node_id}__end_frame": "",
+    }
+
+    await collection.update_one(
+        query,
+        {
+            "$unset": unset_fields,
+            "$set": {
+                "nodes": updated_nodes,
+                "updated_at": datetime.now(timezone.utc),
+            },
+        },
+    )
+
+    return {"success": True}
+
+
 @router.post("/{workflow_id}/run", response_model=RunWorkflowResponse)
 async def run_workflow(workflow_id: str, current_user: dict = Depends(get_current_user)):
     """Run the entire workflow by executing nodes in topological order."""

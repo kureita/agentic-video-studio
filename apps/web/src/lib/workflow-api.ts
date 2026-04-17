@@ -202,6 +202,12 @@ export const workflowApi = {
         ),
 
     /**
+     * Clear a node's persisted output and any derived frame outputs.
+     */
+    clearNodeOutput: (workflowId: string, nodeId: string) =>
+        api.delete<{ success: boolean }>(`/api/workflows/${workflowId}/nodes/${nodeId}/output`),
+
+    /**
      * Start async node execution (returns immediately)
      */
     runNodeAsync: (workflowId: string, nodeId: string, inputOverrides?: Record<string, unknown>) =>
