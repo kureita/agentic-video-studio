@@ -9,6 +9,7 @@ export const UploadNode = memo(({ id, selected }: NodeProps) => {
 
     return (
         <NodeWrapper
+            nodeId={id}
             title={`Upload #${useWorkflowStore((state) =>
                 state.nodes
                     .filter(n => n.type === 'upload')

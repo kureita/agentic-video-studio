@@ -262,6 +262,7 @@ export const EditorAgentNode = memo(({ id, selected, data }: NodeProps) => {
 
     return (
         <NodeWrapper
+            nodeId={id}
             title={`Editor Agent #${useWorkflowStore((state) =>
                 state.nodes
                     .filter(n => n.type === 'editorAgent')
@@ -324,10 +325,16 @@ export const EditorAgentNode = memo(({ id, selected, data }: NodeProps) => {
                         <div className="relative w-full h-full">
                             <video
                                 src={videoSrc!}
-                                className="w-full h-full object-cover pointer-events-none select-none nopan nowheel"
+                                className="w-full h-full object-cover select-none nodrag nopan nowheel"
+                                controls
                                 autoPlay
-                                loop
+                                preload="metadata"
+                                playsInline
                                 crossOrigin="anonymous"
+                                onPointerDown={(e) => e.stopPropagation()}
+                                onMouseDown={(e) => e.stopPropagation()}
+                                onClick={(e) => e.stopPropagation()}
+                                onDoubleClick={(e) => e.stopPropagation()}
                             />
 
                             {/* Action buttons overlay */}

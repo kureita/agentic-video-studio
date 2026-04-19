@@ -4,6 +4,10 @@ import { Copy, Trash2, Play, Type, Image as ImageIcon, Video, Music, Loader2, Er
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { usePublicView } from "@/lib/public-view-context";
+import {
+    getWorkflowConnectionColor,
+    getWorkflowConnectionSurfaceColor,
+} from "@/lib/workflow-connection-colors";
 
 interface NodeHandle {
     id: string;
@@ -23,6 +27,7 @@ interface NodeHandle {
 }
 
 interface NodeWrapperProps {
+    nodeId: string;
     children: React.ReactNode;
     title: string;
     icon: React.ReactNode;
@@ -51,6 +56,7 @@ const getHandleIcon = (type?: string) => {
 };
 
 export const NodeWrapper = memo(({
+    nodeId,
     children,
     title,
     selected,
@@ -72,6 +78,15 @@ export const NodeWrapper = memo(({
         : onRun;
     const gatedOnDelete = isPublicView ? undefined : onDelete;
     const gatedOnClear = isPublicView ? undefined : onClear;
+
+    const handleCopy = () => {
+        if (typeof window === "undefined") return;
+        window.dispatchEvent(
+            new CustomEvent("kureita:duplicate-node", {
+                detail: { nodeId },
+            })
+        );
+    };
 
     // ── Per-handle hover state (avoids CSS group-hover bleed between adjacent handles) ──
     const [activeHandle, setActiveHandle] = useState<string | null>(null);
@@ -126,14 +141,14 @@ export const NodeWrapper = memo(({
 
             {/* Action Bar (Visible on Selection) */}
             <div className={cn(
-                "absolute -top-10 right-0 flex items-center gap-1 bg-background/80 backdrop-blur-md border border-border/50 rounded-full shadow-xl p-0.5 transition-all duration-200 z-50 scale-90 origin-right",
+                "absolute -top-10 right-0 flex items-center gap-1 bg-background/80 backdrop-blur-md border border-border/50 rounded-full shadow-xl p-0.5 transition-all duration-200 z-50 scale-90 origin-right nodrag nopan",
                 selected && !isRunning && executionStatus !== "running" && executionStatus !== "queued" ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2 pointer-events-none"
             )}>
                 {gatedOnRun && (
                     <Button
                         variant="ghost"
                         size="icon"
-                        className="h-7 w-7 text-green-500 hover:text-green-600 hover:bg-green-500/10 rounded-full disabled:opacity-50"
+                        className="h-7 w-7 text-green-500 hover:text-green-600 hover:bg-green-500/10 rounded-full disabled:opacity-50 nodrag nopan"
                         onClick={gatedOnRun}
                         disabled={isRunning}
                     >
@@ -150,7 +165,7 @@ export const NodeWrapper = memo(({
                     <Button
                         variant="ghost"
                         size="icon"
-                        className="h-7 w-7 text-muted-foreground hover:text-amber-500 hover:bg-amber-500/10 rounded-full"
+                        className="h-7 w-7 text-muted-foreground hover:text-amber-500 hover:bg-amber-500/10 rounded-full nodrag nopan"
                         onClick={gatedOnClear}
                         title="Clear Output"
                     >
@@ -160,10 +175,19 @@ export const NodeWrapper = memo(({
 
                 {!isPublicView && (
                     <>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground rounded-full">
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-muted-foreground hover:text-foreground rounded-full nodrag nopan"
+                            onClick={(event) => {
+                                event.stopPropagation();
+                                handleCopy();
+                            }}
+                            title="Duplicate node"
+                        >
                             <Copy className="h-3.5 w-3.5" />
                         </Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive/70 hover:text-destructive hover:bg-destructive/10 rounded-full" onClick={gatedOnDelete}>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive/70 hover:text-destructive hover:bg-destructive/10 rounded-full nodrag nopan" onClick={gatedOnDelete}>
                             <Trash2 className="h-3.5 w-3.5" />
                         </Button>
                     </>
@@ -199,14 +223,24 @@ export const NodeWrapper = memo(({
             </div>
 
             {/* Input Handles - Bottom Left Bias */}
-            {inputs.map((input, index) => (
+            {inputs.map((input, index) => {
+                const handleColor = getWorkflowConnectionColor(input.type);
+                const handleSurface = getWorkflowConnectionSurfaceColor(input.type);
+
+                return (
                 <div key={input.id} className="absolute -left-[14px] nodrag" style={input.style || { top: `${inputBaseOffset - (inputs.length - 1 - index) * 15}%`, transform: 'translateY(-50%)' }}>
                     <div className="relative w-7 h-7 z-50 group/handle cursor-crosshair">
                         {/* Visual Ring & BG */}
-                        <div className="absolute inset-0 rounded-full border-2 border-border bg-background shadow-sm transition-colors group-hover/handle:border-primary pointer-events-none" />
+                        <div
+                            className="absolute inset-0 rounded-full border-2 bg-background shadow-sm transition-colors pointer-events-none"
+                            style={{ borderColor: handleColor, backgroundColor: handleSurface }}
+                        />
 
                         {/* Icon */}
-                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground group-hover/handle:text-primary transition-colors flex items-center justify-center">
+                        <div
+                            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none transition-colors flex items-center justify-center"
+                            style={{ color: handleColor }}
+                        >
                             {getHandleIcon(input.type)}
                         </div>
 
@@ -224,13 +258,16 @@ export const NodeWrapper = memo(({
                         </div>
                     </div>
                 </div>
-            ))}
+                );
+            })}
 
             {/* Output Handles - Top Right Bias */}
             {outputs.map((output, index) => {
                 const hasCard = !!(output.framePreview || (output.hasVideoOutput && output.onExtractFrames));
                 const isCardOpen = activeHandle === output.id || !!output.isExtractingFrames;
                 const isActive = activeHandle === output.id;
+                const handleColor = getWorkflowConnectionColor(output.type);
+                const handleSurface = getWorkflowConnectionSurfaceColor(output.type);
 
                 return (
                     <div
@@ -246,14 +283,19 @@ export const NodeWrapper = memo(({
                         >
                             {/* Visual ring */}
                             <div className={cn(
-                                "absolute inset-0 rounded-full border-2 bg-background shadow-sm transition-colors pointer-events-none",
-                                isActive ? "border-primary" : "border-border"
-                            )} />
+                                "absolute inset-0 rounded-full border-2 shadow-sm transition-colors pointer-events-none"
+                            )}
+                                style={{
+                                    borderColor: handleColor,
+                                    backgroundColor: handleSurface,
+                                    boxShadow: isActive ? `0 0 0 2px ${handleSurface}` : undefined,
+                                }}
+                            />
                             {/* Icon */}
-                            <div className={cn(
-                                "absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none transition-colors flex items-center justify-center",
-                                isActive ? "text-primary" : "text-muted-foreground"
-                            )}>
+                            <div
+                                className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none transition-colors flex items-center justify-center"
+                                style={{ color: handleColor }}
+                            >
                                 {getHandleIcon(output.type)}
                             </div>
                             {/* ReactFlow handle hit area */}

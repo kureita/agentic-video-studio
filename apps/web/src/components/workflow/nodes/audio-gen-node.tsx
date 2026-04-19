@@ -187,6 +187,7 @@ export const AudioGenNode = memo(({ id, selected, data }: NodeProps) => {
 
     return (
         <NodeWrapper
+            nodeId={id}
             title={`Audio Generator #${useWorkflowStore((state) =>
                 state.nodes
                     .filter(n => n.type === 'audioGen')

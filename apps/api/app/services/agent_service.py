@@ -3,6 +3,7 @@ import os
 import time
 import base64
 import mimetypes
+import re
 import subprocess
 import tempfile
 from typing import Dict, Any, List, Optional
@@ -24,6 +25,8 @@ from app.core.model_registry import (
 from app.services.chat_model_registry import CHAT_MODELS
 from app.services.firecrawl_service import FirecrawlService
 from app.services.storage_service import S3StorageService
+
+TEXT_REFERENCE_PATTERN = re.compile(r"@Text\s*#(\d+)", re.IGNORECASE)
 
 class AgentService:
     def __init__(self):
@@ -526,6 +529,115 @@ class AgentService:
             node["data"] = node_data
 
         return normalized_nodes, warnings
+
+    def _synchronize_text_reference_edges(
+        self,
+        nodes: List[Dict[str, Any]],
+        edges: List[Dict[str, Any]],
+    ) -> tuple[List[Dict[str, Any]], List[str]]:
+        """Ensure explicit text edges exist for any @Text #N prompt/instruction references."""
+        normalized_edges = deepcopy(edges)
+        warnings: List[str] = []
+
+        text_nodes = [node for node in nodes if node.get("type") == "text"]
+        text_node_ids = {str(node.get("id", "")) for node in text_nodes}
+        edge_ids = {
+            str(edge.get("id"))
+            for edge in normalized_edges
+            if edge.get("id") is not None
+        }
+
+        node_field_map = {
+            "imageGen": ("prompt", "text|prompt"),
+            "audioGen": ("prompt", "text|prompt"),
+            "videoGen": ("prompt", "text|text"),
+            "editorAgent": ("instruction", "text|text"),
+            "assistant": ("instruction", "text|text"),
+            "vision": ("instruction", "text|text"),
+        }
+
+        def _make_unique_edge_id(base_id: str) -> str:
+            candidate = base_id
+            counter = 2
+            while candidate in edge_ids:
+                candidate = f"{base_id}_{counter}"
+                counter += 1
+            edge_ids.add(candidate)
+            return candidate
+
+        for node in nodes:
+            node_type = str(node.get("type", ""))
+            field_config = node_field_map.get(node_type)
+            if not field_config:
+                continue
+
+            field_name, target_handle = field_config
+            node_data = node.get("data", {}) or {}
+            raw_value = node_data.get(field_name)
+            if not isinstance(raw_value, str):
+                continue
+
+            match = TEXT_REFERENCE_PATTERN.search(raw_value)
+            if not match:
+                continue
+
+            text_index = int(match.group(1)) - 1
+            if text_index < 0 or text_index >= len(text_nodes):
+                continue
+
+            expected_source_id = str(text_nodes[text_index].get("id", ""))
+            target_id = str(node.get("id", ""))
+            if not expected_source_id or not target_id:
+                continue
+
+            updated_edges: List[Dict[str, Any]] = []
+            found_expected_edge = False
+
+            for edge in normalized_edges:
+                edge_target = str(edge.get("target", ""))
+                edge_source = str(edge.get("source", ""))
+                edge_target_handle = str(edge.get("targetHandle") or edge.get("target_handle") or "")
+
+                is_text_edge_to_same_handle = (
+                    edge_target == target_id
+                    and edge_target_handle == target_handle
+                    and edge_source in text_node_ids
+                )
+
+                if not is_text_edge_to_same_handle:
+                    updated_edges.append(edge)
+                    continue
+
+                if edge_source == expected_source_id:
+                    edge["sourceHandle"] = edge.get("sourceHandle") or "text|text"
+                    edge["targetHandle"] = target_handle
+                    updated_edges.append(edge)
+                    found_expected_edge = True
+                    continue
+
+                warnings.append(
+                    f"Adjusted text edge for node '{target_id}' to match {match.group(0)}."
+                )
+
+            normalized_edges = updated_edges
+
+            if found_expected_edge:
+                continue
+
+            normalized_edges.append({
+                "id": _make_unique_edge_id(
+                    f"edge_{expected_source_id}_{target_id}_{target_handle.split('|')[-1]}"
+                ),
+                "source": expected_source_id,
+                "target": target_id,
+                "sourceHandle": "text|text",
+                "targetHandle": target_handle,
+            })
+            warnings.append(
+                f"Added missing text edge from '{expected_source_id}' to '{target_id}' for {match.group(0)}."
+            )
+
+        return normalized_edges, warnings
         
     async def generate_workflow(
         self,
@@ -907,6 +1019,9 @@ The video-motion `text` node MUST follow this exact structure:
 - For scenes after the first, include transition context at the start of SCENE ACTION.
 - This prompt must read like an animation/directing brief, not a still image caption.
 - This prevents "identity drift" — the AI always has the same character/style anchors.
+- The start-frame text node and video-motion text node MUST contain different text and have different labels. They are not interchangeable.
+- The start-frame text node MUST connect only to that scene's `imageGen` node. The video-motion text node MUST connect only to that scene's `videoGen` node.
+- Never reuse a start-frame text node as a video prompt, and never reuse a motion text node as a start-frame prompt.
 
 ## 8. ATTACHMENTS (User Uploads & Drag-and-Drop)
 **CRITICAL:** If the user attaches a file to their prompt, it will appear as `[Attached: filename.ext] (type) - URL: https://...` 
@@ -970,6 +1085,8 @@ the generator node's prompt/instruction field MUST reference the connected text 
 
 **Rules:**
 - If a text node is connected to a generator node, ALWAYS use `@Text #N` in the prompt/instruction.
+- `@Text #N` references are NEVER implicit. If a generator contains `@Text #N`, you MUST also create a matching edge from that exact text node to that exact generator node on its text input handle.
+- Before finalizing output, verify that every generator using `@Text #N` has a visible matching text edge. Do not leave orphaned text references.
 - If a scene has both `imageGen` and `videoGen`, create separate text nodes and separate `@Text #N` references for each.
 - Do NOT connect the same text node to both the scene's `imageGen` and `videoGen` when generating a start image for that scene.
 - Do NOT duplicate the text content directly in the generator's prompt field if a text node is connected.
@@ -992,24 +1109,28 @@ You must use a strict GRID coordinate system based on ROW and COLUMN indices.
 - **Horizontal Grid Unit (X spacing)**: 700px between columns.
 - **Vertical Grid Unit (Y spacing)**: 600px between rows.
 - **Node Width**: Nodes can be up to ~580px wide (16:9 imageGen/videoGen). **Minimum gap**: 120px.
+- **Global Direction Rule**: The workflow must read LEFT → RIGHT by default. Scene progression happens horizontally across increasing X positions, not vertically down the canvas, unless the user explicitly asks for a vertical layout.
 
 **Algorithm**:
-1. Assign each **Scene** or **Logical Step** to a unique `Row Index` (0, 1, 2...).
-2. Assign each **Node** within that step to a unique `Column Index` (0, 1, 2...).
-3. Calculate: `x = col_index * 700`, `y = row_index * 600`.
+1. Keep the main story lane on one shared row whenever possible so the workflow reads left-to-right.
+2. Assign each **Scene** to a consecutive horizontal block of columns on that shared row.
+3. Use extra rows only for references or support nodes above/below the related scene block.
+4. Calculate: `x = col_index * 700`, `y = row_index * 600`.
 
 **Standard Layout Map**:
-- **Row 0 (References)**: Character Refs, Location Refs. (x=0, x=700, x=1400...)
-- **Row 1 (Scene 1 with start frame + video)**: Start-Frame Text (x=0) -> Start Image (x=700) -> Motion Text (x=1400) -> Video (x=2100)
-- **Row 2 (Scene 2 with start frame + video)**: Start-Frame Text (x=0) -> Start Image (x=700) -> Motion Text (x=1400) -> Video (x=2100)
-- **If a scene only has one generator**: use only the needed nodes, still keeping 700px spacing.
-- ...
-- **Row N (Final)**: Editor / Compilation Node.
+- **Row 0 (References / optional support)**: Character refs, location refs, or uploads above the main lane.
+- **Row 1 (Main workflow lane)**:
+  - Scene 1 block: Start-Frame Text (x=0) -> Start Image (x=700) -> Motion Text (x=1400) -> Video (x=2100)
+  - Scene 2 block: Start-Frame Text (x=2800) -> Start Image (x=3500) -> Motion Text (x=4200) -> Video (x=4900)
+  - Scene 3 block: Start-Frame Text (x=5600) -> Start Image (x=6300) -> Motion Text (x=7000) -> Video (x=7700)
+- **Final edit block**: Place the editor node to the RIGHT of the last scene on the same main lane when possible.
+- **If a scene only has one generator**: keep it in that scene's horizontal block and continue the next scene further to the right.
 
 **CRITICAL**:
 - **NEVER** output two nodes with the same (x, y).
-- **ALWAYS** increment `row_index` for a new scene.
-- **ALWAYS** increment `col_index` for the next node in a sequence.
+- **Do NOT place Scene 2 below Scene 1** unless the user explicitly asks for a vertical layout.
+- **ALWAYS** increment scene progression by increasing `col_index` / X position.
+- **Use `row_index` changes for support/reference groupings only**, not as the default way to advance scenes.
 - **NEVER** use gaps smaller than 700px for X or 600px for Y.
 
 # Current Workflow State:
@@ -1399,9 +1520,14 @@ This thinking field should briefly describe:
                 result_nodes = current_nodes
                 result_edges = current_edges
             
+            text_edge_warnings: List[str] = []
             audio_warnings: List[str] = []
             model_warnings: List[str] = []
             if should_apply_workflow:
+                result_edges, text_edge_warnings = self._synchronize_text_reference_edges(
+                    result_nodes,
+                    result_edges,
+                )
                 normalized_audio_nodes, audio_warnings = self._normalize_audio_nodes_for_category(result_nodes)
                 normalized_nodes, model_warnings = self._normalize_video_nodes_for_capabilities(
                     normalized_audio_nodes,
@@ -1412,8 +1538,8 @@ This thinking field should briefly describe:
 
             message = result.get("message", "Workflow generated")
             suggested_name = result.get("suggested_name")
-            if model_warnings or audio_warnings:
-                message = f"{message} (Adjusted some nodes to valid model capabilities.)"
+            if model_warnings or audio_warnings or text_edge_warnings:
+                message = f"{message} (Adjusted some generated nodes/edges to match workflow rules.)"
             if attachments and effective_model.get("display_name") != requested_model.get("display_name"):
                 message = (
                     f"{message} (Used {effective_model.get('display_name')} for this turn so the attached media "

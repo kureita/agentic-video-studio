@@ -257,6 +257,32 @@ async def list_user_assets(
     ).sort("created_at", -1)
     all_assets = await cursor.to_list(length=2000)
 
+    workflow_ids = {
+        workflow_id
+        for workflow_id in (doc.get("workflow_id") for doc in all_assets)
+        if isinstance(workflow_id, str) and workflow_id
+    }
+    workflow_name_map: Dict[str, str] = {}
+
+    if workflow_ids:
+        workflow_object_ids = []
+        for workflow_id in workflow_ids:
+            try:
+                workflow_object_ids.append(ObjectId(workflow_id))
+            except Exception:
+                continue
+
+        if workflow_object_ids:
+            workflows_col = db["workflows"]
+            workflow_docs = await workflows_col.find(
+                {"_id": {"$in": workflow_object_ids}},
+                {"name": 1},
+            ).to_list(length=len(workflow_object_ids))
+            workflow_name_map = {
+                str(doc["_id"]): doc.get("name", "Untitled Workflow")
+                for doc in workflow_docs
+            }
+
     from app.services.storage_service import S3StorageService
     s3 = S3StorageService()
 
@@ -266,7 +292,10 @@ async def list_user_assets(
 
     for doc in all_assets:
         wf_id = doc.get("workflow_id", "unknown")
-        wf_name = doc.get("workflow_name", "Untitled Workflow")
+        wf_name = workflow_name_map.get(
+            wf_id,
+            doc.get("workflow_name", "Untitled Workflow"),
+        )
         url = doc.get("url", "")
 
         if wf_id not in workflow_groups:

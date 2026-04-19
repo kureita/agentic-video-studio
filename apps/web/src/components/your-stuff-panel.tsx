@@ -360,11 +360,13 @@ function CategoryFolder({
 
 function WorkflowFolder({
     workflow,
+    displayName,
     defaultOpen,
     isCurrent,
     onDeleteSuccess,
 }: {
     workflow: WorkflowAssets;
+    displayName?: string;
     defaultOpen: boolean;
     isCurrent: boolean;
     onDeleteSuccess?: () => void;
@@ -397,7 +399,7 @@ function WorkflowFolder({
                     : <FolderClosed className="w-4 h-4 text-amber-400/60 shrink-0" />
                 }
                 <span className="text-[13px] font-medium text-foreground/85 truncate flex-1">
-                    {workflow.workflow_name}
+                    {displayName || workflow.workflow_name}
                 </span>
                 {isCurrent && (
                     <span className="text-[9px] font-semibold uppercase tracking-wider text-primary/80 bg-primary/10 px-1.5 py-0.5 rounded shrink-0">
@@ -452,10 +454,12 @@ export function YourStuffPanel({
     isOpen,
     onClose,
     currentWorkflowId,
+    currentWorkflowName,
 }: {
     isOpen: boolean;
     onClose: () => void;
     currentWorkflowId?: string | null;
+    currentWorkflowName?: string | null;
 }) {
     const [data, setData] = useState<UserAssetsResponse | null>(null);
     const [isLoading, setIsLoading] = useState(false);
@@ -578,6 +582,11 @@ export function YourStuffPanel({
                                             <WorkflowFolder
                                                 key={ws.workflow_id}
                                                 workflow={ws}
+                                                displayName={
+                                                    ws.workflow_id === currentWorkflowId && currentWorkflowName
+                                                        ? currentWorkflowName
+                                                        : ws.workflow_name
+                                                }
                                                 defaultOpen={ws.workflow_id === currentWorkflowId}
                                                 isCurrent={ws.workflow_id === currentWorkflowId}
                                                 onDeleteSuccess={fetchAssets}

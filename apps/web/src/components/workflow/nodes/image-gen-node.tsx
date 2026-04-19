@@ -183,6 +183,7 @@ export const ImageGenNode = memo(({ id, selected, data }: NodeProps) => {
 
     return (
         <NodeWrapper
+            nodeId={id}
             title={`Image Generator #${useWorkflowStore((state) =>
                 state.nodes
                     .filter(n => n.type === 'imageGen')

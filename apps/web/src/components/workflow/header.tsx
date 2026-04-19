@@ -235,6 +235,7 @@ export function WorkflowHeader() {
             isOpen={isYourStuffOpen}
             onClose={() => setIsYourStuffOpen(false)}
             currentWorkflowId={id}
+            currentWorkflowName={name}
         />
         </>
     );

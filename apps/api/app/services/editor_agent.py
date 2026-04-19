@@ -185,6 +185,7 @@ Example:
 - Drop shadows on text: subtle only. Max: `0px 2px 8px rgba(0,0,0,0.5)`. Never harsh.
 
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 ### 5. ANIMATION & MOTION DESIGN
 - Animations should feel EFFORTLESS and CONFIDENT, never flashy or desperate.
 - USE ABUNDANT MOTION GRAPHICS. Elevate plain video clips with elegant text overlays, animated transitions, or branded graphical elements to keep the viewer constantly engaged.
@@ -196,12 +197,17 @@ Example:
 - Stagger multiple text elements by 8-15 frames for a polished editorial feel.
 - Exit animations: simple fade out over 5-8 frames. No complex exit choreography.
 =======
+=======
+>>>>>>> Stashed changes
 ### 5. ANIMATION & MOTION DESIGN (STRICT OPT-IN)
 - CRITICAL RULE: DO NOT apply any video scaling, panning, zooming, vignettes, flashes or complex transitions UNLESS the user explicitly asks for them.
 - Stitched videos MUST use a sequential HARD CUT (no opacity/transparency interpolations) unless a fade is explicitly requested.
 - If a fade cross-transition IS requested, you MUST overlap the absolute timing padding so that the background never flashes black.
 - Text entries: fade + subtle translateY (10-20px max) is allowed ONLY if text overlays are actually requested.
 - Animations should feel minimal, never flashy.
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 
 ### 6. COMPOSITION LAYOUT
@@ -753,6 +759,9 @@ Audio Tracks ({len(audio_tracks)} total):
 - ZERO emojis in any text overlay. Write professional copy only.
 - Choose brand-appropriate fonts from the typography guide. Do NOT default to Inter unless the brand is tech/SaaS.
 - STRICT OPT-IN EFFECTS: Do NOT add camera zooms, scale animations, vignettes, or opacity fades unless explicitly requested in the instruction. Use simple, sequential hard cuts for stitching.
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 - Embrace negative space. Less is more. Premium compositions breathe.
 {"- AUDIO: Set durationInFrames to AT LEAST " + str(max((t.get('duration_seconds', 0) for t in audio_tracks), default=0)) + " × fps to fit the audio. If the video clips fall short, YOU MUST ADD A HIGH-QUALITY MOTION GRAPHICS OUTRO to fill the void. This outro MUST be hyper-professional, clean, elegant, matched strictly to brand fonts, with ZERO emojis (use lucide-react icons)." if audio_tracks else ""}

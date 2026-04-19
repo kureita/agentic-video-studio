@@ -370,6 +370,7 @@ export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
 
     return (
         <NodeWrapper
+            nodeId={id}
             title={`Asset #${useWorkflowStore((state) =>
                 state.nodes
                     .filter(n => n.type === 'mediaUpload')

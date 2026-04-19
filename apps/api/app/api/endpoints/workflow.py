@@ -447,6 +447,17 @@ async def update_workflow(
     
     # Return updated workflow
     workflow = await collection.find_one({"_id": oid})
+
+    if request.name is not None:
+        try:
+            assets_collection = get_database()["user_assets"]
+            await assets_collection.update_many(
+                {"user_id": user_id, "workflow_id": workflow_id},
+                {"$set": {"workflow_name": workflow.get("name", "Untitled Workflow")}},
+            )
+        except Exception as asset_sync_err:
+            print(f"[Workflow] ⚠️ Failed to sync asset workflow names for {workflow_id}: {asset_sync_err}")
+
     serialized = presign_urls(serialize_workflow(workflow))
     
     print(f"[Workflow] Updated workflow: {workflow_id}")

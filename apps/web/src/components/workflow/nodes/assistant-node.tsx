@@ -94,6 +94,7 @@ export const AssistantNode = memo(({ id, selected, data }: NodeProps<AssistantNo
 
     return (
         <NodeWrapper
+            nodeId={id}
             title={`Media Assistant #${useWorkflowStore((state) =>
                 state.nodes
                     .filter((node) => node.type === "assistant" || node.type === "vision")

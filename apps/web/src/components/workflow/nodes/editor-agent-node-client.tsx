@@ -134,6 +134,7 @@ export const EditorAgentNodeClient = memo(({ id, selected, data }: NodeProps) =>
 
     return (
         <NodeWrapper
+            nodeId={id}
             title={`Editor Agent #${useWorkflowStore((state) =>
                 state.nodes
                     .filter(n => n.type === 'editorAgent')

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, MouseEvent, useRef, useState } from "react";
+import { useCallback, useEffect, MouseEvent, useMemo, useRef, useState } from "react";
 import {
     ReactFlow,
     Controls,
@@ -36,6 +36,10 @@ import { CommentNode } from "./nodes/comment-node";
 import { useWorkflowStore } from "@/lib/workflow-store";
 import { usePublicView } from "@/lib/public-view-context";
 import { inferMediaKind } from "@/lib/media-utils";
+import {
+    getWorkflowConnectionColor,
+    getWorkflowEdgeConnectionType,
+} from "@/lib/workflow-connection-colors";
 
 const nodeTypes = {
     text: TextNode,
@@ -55,6 +59,10 @@ import { useUndoRedo } from "@/hooks/use-undo-redo";
 
 interface FlowEditorProps {
     workflowId?: string;
+}
+
+interface DuplicateNodeEventDetail {
+    nodeId?: string;
 }
 
 // ============================================
@@ -430,6 +438,34 @@ function FlowEditorInner({ workflowId }: FlowEditorProps) {
         }
     }, [redo, nodes, edges, setNodes, setEdges]);
 
+    const handleDuplicateNode = useCallback((nodeId: string) => {
+        if (isReadOnly) return;
+
+        const sourceNode = nodes.find((node) => node.id === nodeId);
+        if (!sourceNode) return;
+
+        const duplicatedData = typeof structuredClone === "function"
+            ? structuredClone(sourceNode.data ?? {})
+            : { ...(sourceNode.data ?? {}) };
+
+        const duplicatedNode: Node = {
+            ...sourceNode,
+            id: `${sourceNode.type || "node"}_${Math.random().toString(36).substring(2, 9)}`,
+            position: {
+                x: sourceNode.position.x + 36,
+                y: sourceNode.position.y + 36,
+            },
+            data: duplicatedData,
+            selected: true,
+        };
+
+        takeSnapshot(nodes, edges);
+        setNodes([
+            ...nodes.map((node) => ({ ...node, selected: false })),
+            duplicatedNode,
+        ]);
+    }, [isReadOnly, nodes, edges, setNodes, takeSnapshot]);
+
     // Keyboard shortcuts for undo/redo
     useEffect(() => {
         const handler = (e: KeyboardEvent) => {
@@ -449,6 +485,18 @@ function FlowEditorInner({ workflowId }: FlowEditorProps) {
         window.addEventListener("keydown", handler);
         return () => window.removeEventListener("keydown", handler);
     }, [handleUndo, handleRedo]);
+
+    useEffect(() => {
+        const handler = (event: Event) => {
+            const customEvent = event as CustomEvent<DuplicateNodeEventDetail>;
+            const nodeId = customEvent.detail?.nodeId;
+            if (!nodeId) return;
+            handleDuplicateNode(nodeId);
+        };
+
+        window.addEventListener("kureita:duplicate-node", handler as EventListener);
+        return () => window.removeEventListener("kureita:duplicate-node", handler as EventListener);
+    }, [handleDuplicateNode]);
 
     // Allow external callers (agent sidebar) to request a fit-view after applying workflow updates.
     useEffect(() => {
@@ -471,6 +519,27 @@ function FlowEditorInner({ workflowId }: FlowEditorProps) {
         window.addEventListener("kureita:fit-workflow-view", handler as EventListener);
         return () => window.removeEventListener("kureita:fit-workflow-view", handler as EventListener);
     }, [reactFlowInstance, workflowId]);
+
+    const styledEdges = useMemo(
+        () =>
+            edges.map((edge) => {
+                const connectionType = getWorkflowEdgeConnectionType(edge);
+                const stroke = getWorkflowConnectionColor(connectionType);
+
+                return {
+                    ...edge,
+                    animated: false,
+                    style: {
+                        ...(edge.style || {}),
+                        stroke,
+                        strokeWidth: 2.2,
+                        strokeDasharray: "none",
+                        cursor: activeTool === "cut" ? "crosshair" : "pointer",
+                    },
+                };
+            }),
+        [edges, activeTool]
+    );
 
     // Don't render ReactFlow until initialized to prevent race conditions
     if (!isInitialized) {
@@ -510,7 +579,7 @@ function FlowEditorInner({ workflowId }: FlowEditorProps) {
 
             <ReactFlow
                 nodes={nodesWithOutputs}
-                edges={edges}
+                edges={styledEdges}
                 onNodesChange={onNodesChange}
                 onEdgesChange={onEdgesChange}
                 onConnect={onConnect}
@@ -555,10 +624,10 @@ function FlowEditorInner({ workflowId }: FlowEditorProps) {
                     onPaneMouseDown(event as unknown as MouseEvent);
                 }}
                 defaultEdgeOptions={{
-                    animated: true,
+                    animated: false,
                     style: {
-                        stroke: 'var(--primary)',
-                        strokeWidth: 2,
+                        strokeWidth: 2.2,
+                        strokeDasharray: "none",
                         cursor: activeTool === 'cut' ? 'crosshair' : 'pointer',
                     },
                 }}
