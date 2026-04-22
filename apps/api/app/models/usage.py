@@ -40,7 +40,7 @@ class UsageLog(BaseModel):
     # Model identification
     model_id: Optional[str] = None     # Registry model ID (e.g. "gpt-image-1-5")
     model_name: Optional[str] = None   # Human-readable name (e.g. "GPT Image 1.5")
-    provider: Optional[str] = None     # Provider name (e.g. "OpenAI", "Runware")
+    provider: Optional[str] = None     # Provider name (e.g. "OpenAI", "fal.ai")
 
     metadata: Optional[Dict[str, Any]] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

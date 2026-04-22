@@ -17,10 +17,10 @@ from app.core.model_registry import (
     AUDIO_MODELS,
     IMAGE_MODELS,
     VIDEO_MODELS,
-    get_model_by_air_id,
+    get_model_by_endpoint_id,
     get_model_by_id,
     get_model_by_name,
-    resolve_air_id,
+    resolve_endpoint_id,
 )
 from app.services.chat_model_registry import CHAT_MODELS
 from app.services.firecrawl_service import FirecrawlService
@@ -44,8 +44,8 @@ class AgentService:
             )
             
         self.firecrawl_service = FirecrawlService()
-        self._default_video_model_id = "kling-video-3-standard"
-        self._default_video_air_id = "klingai:kling-video@3-standard"
+        self._default_video_model_id = "kling-video-v3-standard"
+        self._default_video_endpoint = "fal-ai/kling-video/v3/standard/text-to-video"
         self._chat_models_cache: Optional[List[Dict[str, Any]]] = None
         self._chat_models_cache_ts: float = 0.0
 
@@ -321,16 +321,16 @@ class AgentService:
         if by_name and by_name.get("type") == "video":
             return by_name
 
-        air_id = resolve_air_id(
+        endpoint_id = resolve_endpoint_id(
             model_input=model_input,
-            fallback_air_id=self._default_video_air_id,
+            fallback_endpoint_id=self._default_video_endpoint,
             model_type="video",
         )
-        by_air = get_model_by_air_id(air_id)
-        if by_air and by_air.get("type") == "video":
-            return by_air
+        by_ep = get_model_by_endpoint_id(endpoint_id)
+        if by_ep and by_ep.get("type") == "video":
+            return by_ep
 
-        return get_model_by_air_id(self._default_video_air_id)
+        return get_model_by_endpoint_id(self._default_video_endpoint)
 
     def _pick_best_video_model(
         self,
@@ -356,7 +356,7 @@ class AgentService:
 
         def rank(entry: Dict[str, Any]) -> int:
             tier = str(entry.get("tier", "budget")).lower()
-            return {"premium": 0, "mid": 1, "budget": 2}.get(tier, 3)
+            return {"pro": 0, "premium": 0, "mid": 1, "cost": 2, "budget": 2}.get(tier, 3)
 
         candidates.sort(key=rank)
         return candidates[0]
@@ -373,10 +373,14 @@ class AgentService:
         if by_name and by_name.get("type") == "audio":
             return by_name
 
-        air_id = resolve_air_id(model_input=model_input, fallback_air_id="minimax:speech@2.8", model_type="audio")
-        by_air = get_model_by_air_id(air_id)
-        if by_air and by_air.get("type") == "audio":
-            return by_air
+        endpoint_id = resolve_endpoint_id(
+            model_input=model_input,
+            fallback_endpoint_id="fal-ai/minimax/speech-2.8-turbo",
+            model_type="audio",
+        )
+        by_ep = get_model_by_endpoint_id(endpoint_id)
+        if by_ep and by_ep.get("type") == "audio":
+            return by_ep
         return None
 
     def _pick_best_audio_model(self, category: str) -> Optional[Dict[str, Any]]:
@@ -389,7 +393,7 @@ class AgentService:
 
         def rank(entry: Dict[str, Any]) -> int:
             tier = str(entry.get("tier", "budget")).lower()
-            return {"premium": 0, "mid": 1, "budget": 2}.get(tier, 3)
+            return {"pro": 0, "premium": 0, "mid": 1, "cost": 2, "budget": 2}.get(tier, 3)
 
         candidates.sort(key=rank)
         return candidates[0]
@@ -763,7 +767,7 @@ Your #1 priority is VISUAL CONSISTENCY — every character, background, and styl
    - Outputs: "text|text" (type: text)
    - Data: {{ "label": "Scene X Start Frame Prompt" or "Scene X Motion Prompt", "text": "The actual prompt text here" }}
 
-2. **imageGen** - Image Generator (Multiple models via Runware)
+2. **imageGen** - Image Generator (Multiple models via fal.ai)
    - Inputs: "text|prompt" (type: text), "image|image" (type: image, optional reference image)
    - Outputs: "image|image" (type: image)
    - Data: {{ "label": "Start Frame Scene X", "prompt": "Description", "ratio": "16:9", "model": "flux-2-dev" }}
@@ -776,7 +780,7 @@ Your #1 priority is VISUAL CONSISTENCY — every character, background, and styl
    - **Models that do NOT support ref images (text-only)**: {t2i_only_image_model_names}. Do NOT connect a reference image to these — it will fail.
    - **Model Notes**: "flux-2-dev" cheapest ($0.005). "gpt-image-1" best for editing. "kling-image-o3" for character consistency. "flux-2-max" highest quality. "nano-banana-2" great quality + fast.
 
-3. **videoGen** - Video Generator (Multiple models via Runware)
+3. **videoGen** - Video Generator (Multiple models via fal.ai)
    - Inputs: "text|text" (type: text), "image|start_image" (type: image), "image|end_image" (type: image, optional), "audio|audio" (type: audio, optional)
    - Outputs: "video|video" (type: video), "image|start_frame" (type: image, first frame), "image|end_frame" (type: image, last frame)
    - Data: {{ "label": "Video Scene X", "prompt": "Motion description", "duration": "6s", "ratio": "9:16", "model": "kling-video-3-standard", "generateAudio": true, "inputMode": "t2v" }}

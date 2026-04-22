@@ -9,10 +9,10 @@ from app.services.editor_agent import EditorAgent
 from app.services.chat_model_registry import CHAT_MODELS, get_chat_model_by_display_name, get_chat_model_by_openrouter_id
 from app.core.model_registry import (
     VIDEO_MODELS,
-    get_model_by_air_id,
+    get_model_by_endpoint_id,
     get_model_by_id,
     get_model_by_name,
-    resolve_air_id,
+    resolve_endpoint_id,
 )
 
 
@@ -24,8 +24,8 @@ class NodeRunner:
         self.video_generator = VideoGenerator()
         self.audio_generator = AudioGenerator()
         self.editor_agent = EditorAgent()
-        self._default_video_model_id = "kling-video-3-standard"
-        self._default_video_air_id = "klingai:kling-video@3-standard"
+        self._default_video_model_id = "kling-video-v3-standard"
+        self._default_video_endpoint = "fal-ai/kling-video/v3/standard/text-to-video"
 
     async def run_node(
         self,
@@ -439,12 +439,21 @@ class NodeRunner:
             )
             
             if result.get("success"):
+                if result.get("status") == "pending_fal":
+                    return {
+                        "success": True,
+                        "status": "pending_fal",
+                        "request_id": result.get("request_id"),
+                        "endpoint_id": result.get("endpoint_id"),
+                        "model": result.get("model", model),
+                        "provider": result.get("provider", "fal.ai"),
+                    }
                 return {
                     "success": True,
                     "output": result.get("image_url"),
                     "cost": result.get("cost", 0.0),
                     "model": result.get("model", model),
-                    "provider": result.get("provider", "Runware"),
+                    "provider": result.get("provider", "fal.ai"),
                 }
             else:
                 return {
@@ -523,12 +532,21 @@ class NodeRunner:
                 )
             
             if result.get("success"):
+                if result.get("status") == "pending_fal":
+                    return {
+                        "success": True,
+                        "status": "pending_fal",
+                        "request_id": result.get("request_id"),
+                        "endpoint_id": result.get("endpoint_id"),
+                        "model": result.get("model", data.get("model", audio_type)),
+                        "provider": result.get("provider", "fal.ai"),
+                    }
                 return {
                     "success": True,
                     "output": result.get("audio_url"),
                     "cost": result.get("cost", 0.0),
                     "model": result.get("model", data.get("model", audio_type)),
-                    "provider": result.get("provider", "Runware"),
+                    "provider": result.get("provider", "fal.ai"),
                 }
             else:
                 return {
@@ -914,6 +932,24 @@ class NodeRunner:
                     )
             
             if result.get("success"):
+                if result.get("status") == "pending_fal":
+                    # Webhook-mode video jobs finish asynchronously — frame extraction
+                    # is deferred until the webhook callback finalizes the task.
+                    response: Dict[str, Any] = {
+                        "success": True,
+                        "status": "pending_fal",
+                        "request_id": result.get("request_id"),
+                        "endpoint_id": result.get("endpoint_id"),
+                        "model": result.get("model", model_str),
+                        "provider": result.get("provider", "fal.ai"),
+                    }
+                    warnings: List[str] = []
+                    if model_warning:
+                        warnings.append(model_warning)
+                    warnings.extend(warning_notes)
+                    if warnings:
+                        response["warning"] = " ".join(warnings)
+                    return response
                 video_url = result.get("video_url")
                 
                 # Proactively extract start & end frames so connected imageGen nodes
@@ -938,7 +974,7 @@ class NodeRunner:
                     "end_frame": end_frame,
                     "cost": result.get("cost", 0.0),
                     "model": result.get("model", model_str),
-                    "provider": result.get("provider", "Runware"),
+                    "provider": result.get("provider", "fal.ai"),
                 }
                 warnings: List[str] = []
                 if model_warning:
@@ -961,7 +997,7 @@ class NodeRunner:
             }
 
     def _resolve_video_model_entry(self, model_input: str) -> Optional[Dict[str, Any]]:
-        """Resolve a video model entry from id, display name, or AIR id."""
+        """Resolve a video model entry from id, display name, or fal endpoint id."""
         if not model_input:
             return get_model_by_id(self._default_video_model_id)
 
@@ -973,16 +1009,16 @@ class NodeRunner:
         if by_name and by_name.get("type") == "video":
             return by_name
 
-        air_id = resolve_air_id(
+        endpoint_id = resolve_endpoint_id(
             model_input=model_input,
-            fallback_air_id=self._default_video_air_id,
+            fallback_endpoint_id=self._default_video_endpoint,
             model_type="video",
         )
-        by_air = get_model_by_air_id(air_id)
-        if by_air and by_air.get("type") == "video":
-            return by_air
+        by_ep = get_model_by_endpoint_id(endpoint_id)
+        if by_ep and by_ep.get("type") == "video":
+            return by_ep
 
-        return get_model_by_air_id(self._default_video_air_id)
+        return get_model_by_endpoint_id(self._default_video_endpoint)
 
     def _pick_best_video_model(
         self,
@@ -997,9 +1033,6 @@ class NodeRunner:
             caps = {c.lower() for c in entry.get("capabilities", [])}
             return (
                 (not need_i2v or "i2v" in caps)
-                and (not need_elements or "elements" in caps)
-                and (not need_reference or "reference" in caps)
-                and (not need_v2v or "v2v" in caps)
                 and (not need_audio or "audio" in caps)
             )
 
@@ -1008,9 +1041,8 @@ class NodeRunner:
             return get_model_by_id(self._default_video_model_id) or VIDEO_MODELS[0]
 
         def rank(entry: Dict[str, Any]) -> int:
-            tier = str(entry.get("tier", "budget")).lower()
-            tier_rank = {"premium": 0, "mid": 1, "budget": 2}.get(tier, 3)
-            return tier_rank
+            tier = str(entry.get("tier", "cost")).lower()
+            return {"pro": 0, "premium": 0, "mid": 1, "cost": 2, "budget": 2}.get(tier, 3)
 
         candidates.sort(key=rank)
         return candidates[0]
@@ -1037,42 +1069,24 @@ class NodeRunner:
 
         caps = {c.lower() for c in entry.get("capabilities", [])}
         need_i2v = has_start_image
-        need_elements = wants_elements
-        need_reference = wants_reference
-        need_v2v = wants_v2v
         need_audio = wants_native_audio
 
         supports_i2v = "i2v" in caps
-        supports_elements = "elements" in caps
-        supports_reference = "reference" in caps
-        supports_v2v = "v2v" in caps
         supports_audio = "audio" in caps
 
-        if (
-            (need_i2v and not supports_i2v)
-            or (need_elements and not supports_elements)
-            or (need_reference and not supports_reference)
-            or (need_v2v and not supports_v2v)
-            or (need_audio and not supports_audio)
-        ):
+        if (need_i2v and not supports_i2v) or (need_audio and not supports_audio):
             reason_bits: List[str] = []
             if need_i2v and not supports_i2v:
                 reason_bits.append("image-to-video")
-            if need_elements and not supports_elements:
-                reason_bits.append("elements")
-            if need_reference and not supports_reference:
-                reason_bits.append("reference images")
-            if need_v2v and not supports_v2v:
-                reason_bits.append("video extension/reference video")
             if need_audio and not supports_audio:
                 reason_bits.append("native audio")
             reason = " + ".join(reason_bits) if reason_bits else "requested capabilities"
 
             replacement = self._pick_best_video_model(
                 need_i2v=need_i2v,
-                need_elements=need_elements,
-                need_reference=need_reference,
-                need_v2v=need_v2v,
+                need_elements=False,
+                need_reference=False,
+                need_v2v=False,
                 need_audio=need_audio,
             )
             replacement_name = str(replacement.get("name") or replacement.get("id") or self._default_video_model_id)

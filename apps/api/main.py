@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
+import logging
 import tempfile
 import os
 
@@ -9,6 +10,21 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import Response
 from pymongo.errors import PyMongoError
+
+# Configure root logging so Python `logging.getLogger(__name__)` calls
+# (used across FalService, FalPricingService, fal webhook, verifier, etc.)
+# are captured by CloudWatch at INFO level or higher. Override via LOG_LEVEL.
+_log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(
+    level=getattr(logging, _log_level, logging.INFO),
+    format="%(asctime)s %(levelname)s %(name)s - %(message)s",
+    force=True,
+)
+# Tame chatty third-party libs
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("botocore").setLevel(logging.WARNING)
+logging.getLogger("urllib3").setLevel(logging.WARNING)
 
 from app.api.routes import router as api_router
 from app.core.config import settings

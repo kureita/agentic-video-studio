@@ -57,7 +57,7 @@ class BillingService:
             cost_usd: Actual cost from provider API response
             model_id: Registry model ID (e.g. "gpt-image-1-5")
             model_name: Human-readable model name (e.g. "GPT Image 1.5")
-            provider: Provider name (e.g. "OpenAI", "Runware")
+            provider: Provider name (e.g. "OpenAI", "fal.ai")
             tokens_used: Token count for LLM actions
             metadata: Additional metadata to log
             

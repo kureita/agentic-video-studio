@@ -11,10 +11,11 @@ from bson import ObjectId
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
 from pydantic import BaseModel
 
-from app.core.database import get_database, get_workflow_jobs_collection
+from app.core.database import get_database, get_workflow_jobs_collection, get_fal_jobs_collection
 from app.core.auth import get_current_user
 from app.services.node_runner import NodeRunner
 from app.services.billing import BillingService
+from app.services.fal_context import set_context, reset_context
 from app.models.usage import ActionType
 from app.api.endpoints.user_assets import _is_media_url
 from app.models.workflow_job import (
@@ -575,7 +576,7 @@ async def run_node(
                 action=action_type_map[node_type],
                 cost_usd=cost,
                 model_name=result.get("model", node_type),
-                provider=result.get("provider", "Runware"),
+                provider=result.get("provider", "fal.ai"),
                 metadata=meta,
             )
         
@@ -856,7 +857,7 @@ async def run_workflow(workflow_id: str, current_user: dict = Depends(get_curren
                         action=action_type_map[node_type],
                         cost_usd=cost,
                         model_name=result.get("model", node_type),
-                        provider=result.get("provider", "Runware"),
+                        provider=result.get("provider", "fal.ai"),
                         metadata=meta,
                     )
                     print(f"[Workflow] ✅ Billed ${cost:.4f} for {node_type}")
@@ -1090,6 +1091,18 @@ async def _execute_node_async(workflow_id: str, node_id: str, run_id: str, input
         }}
     )
     
+    # Set fal webhook context so fal-backed generators can submit async and defer
+    # completion to the webhook handler instead of sync-draining the queue.
+    # (Without this ctx, FalService takes the "sync-drain" path which fails with
+    # "fal job stuck in IN_QUEUE" whenever fal doesn't complete in <~1s.)
+    ctx_token = set_context({
+        "run_id": run_id,
+        "node_id": node_id,
+        "node_type": node_type or "",
+        "user_id": str(user_id) if user_id else "",
+        "workflow_id": workflow_id,
+    })
+
     try:
         result = await runner.run_node(
             node=target_node,
@@ -1102,6 +1115,24 @@ async def _execute_node_async(workflow_id: str, node_id: str, run_id: str, input
         
         completed_at = datetime.now(timezone.utc).isoformat()
         
+        # ── Webhook path: job enqueued on fal; keep node "running" until webhook finalizes it.
+        if result.get("success") and result.get("status") == "pending_fal":
+            await collection.update_one(
+                {"_id": oid},
+                {"$set": {
+                    f"execution.node_states.{node_id}.status": "running",
+                    f"execution.node_states.{node_id}.fal_request_id": result.get("request_id"),
+                    f"execution.node_states.{node_id}.fal_endpoint_id": result.get("endpoint_id"),
+                    "execution.status": "running",
+                    "updated_at": datetime.now(timezone.utc),
+                }}
+            )
+            print(
+                f"[NodeAsync] Node {node_id} deferred to webhook "
+                f"(request_id={result.get('request_id')})"
+            )
+            return
+
         if result.get("success"):
             # Charge based on actual API cost (after execution)
             cost = result.get("cost", 0.0)
@@ -1128,7 +1159,7 @@ async def _execute_node_async(workflow_id: str, node_id: str, run_id: str, input
                         action=action_type_map[node_type],
                         cost_usd=cost,
                         model_name=result.get("model", node_type),
-                        provider=result.get("provider", "Runware"),
+                        provider=result.get("provider", "fal.ai"),
                         metadata=meta,
                     )
                     print(f"[NodeAsync] ✅ Billed ${cost:.4f} for {node_type}")
@@ -1209,6 +1240,8 @@ async def _execute_node_async(workflow_id: str, node_id: str, run_id: str, input
             }}
         )
         print(f"[NodeAsync] Node {node_id} exception: {e}")
+    finally:
+        reset_context(ctx_token)
 
 async def _execute_workflow_async(workflow_id: str, run_id: str):
     """
@@ -1321,7 +1354,7 @@ async def _execute_workflow_async(workflow_id: str, run_id: str):
                             action=action_type_map[node_type],
                             cost_usd=cost,
                             model_name=result.get("model", node_type),
-                            provider=result.get("provider", "Runware"),
+                            provider=result.get("provider", "fal.ai"),
                             metadata=meta,
                         )
                         print(f"[WorkflowAsync] ✅ Billed ${cost:.4f} for {node_type}")
@@ -1569,6 +1602,12 @@ async def get_run_status(workflow_id: str, current_user: dict = Depends(get_curr
     if not execution:
         raise HTTPException(status_code=404, detail="No active run found. Start one with POST /run-async")
     
+    # Self-heal single-node runs whose webhook was dropped: for any running node
+    # with a pending fal request_id, opportunistically poll fal and finalize if done.
+    await _sweep_stale_node_run_states(workflow_id=str(oid), execution=execution)
+    workflow = await collection.find_one({"_id": oid}) or workflow
+    execution = workflow.get("execution", {}) or execution
+
     # Build node states from stored data
     raw_states = execution.get("node_states", {})
     node_states = {}
@@ -2063,12 +2102,152 @@ async def get_active_job(workflow_id: str, current_user: dict = Depends(get_curr
 
 @router.get("/{workflow_id}/jobs/{job_id}/status", response_model=JobStatusResponse)
 async def get_job_status(workflow_id: str, job_id: str, current_user: dict = Depends(get_current_user)):
-    """Poll job progress."""
+    """Poll job progress.
+
+    Also acts as a missed-webhook sweeper: if any task is stuck in `waiting_webhook`
+    for > 90s, we opportunistically poll fal.ai for status and finalize the task
+    locally. This self-heals jobs when a webhook is dropped without requiring a
+    dedicated scheduler.
+    """
     jobs_collection = get_workflow_jobs_collection()
     job = await jobs_collection.find_one({"id": job_id, "workflow_id": workflow_id})
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+
+    await _sweep_stale_webhook_tasks(job)
+    job = await jobs_collection.find_one({"id": job_id, "workflow_id": workflow_id}) or job
     return _serialize_job_status(job)
+
+
+async def _sweep_stale_webhook_tasks(job: dict) -> None:
+    """Opportunistically poll fal.ai for any task stuck in waiting_webhook > 90s."""
+    tasks = job.get("tasks") or []
+    stale_cutoff_s = 90
+    now = datetime.now(timezone.utc)
+
+    stale_request_ids: List[str] = []
+    for task in tasks:
+        if task.get("status") != "waiting_webhook":
+            continue
+        started_at_str = task.get("started_at")
+        try:
+            started_at = datetime.fromisoformat(started_at_str) if started_at_str else None
+        except Exception:
+            started_at = None
+        if started_at and started_at.tzinfo is None:
+            started_at = started_at.replace(tzinfo=timezone.utc)
+        if not started_at or (now - started_at).total_seconds() < stale_cutoff_s:
+            continue
+        rid = task.get("fal_request_id")
+        if rid:
+            stale_request_ids.append(rid)
+
+    if not stale_request_ids:
+        return
+
+    print(
+        f"[Sweeper] job={job.get('id')} found {len(stale_request_ids)} "
+        f"stale waiting_webhook task(s) — polling fal"
+    )
+
+    fal_jobs = get_fal_jobs_collection()
+    from app.services.fal_service import FalService
+    from app.api.endpoints.fal_webhook import process_fal_callback
+
+    fal_service = FalService()
+    for rid in stale_request_ids:
+        fal_job = await fal_jobs.find_one({"request_id": rid})
+        if not fal_job or fal_job.get("status") in ("completed", "failed"):
+            continue
+        endpoint = fal_job.get("endpoint_id")
+        if not endpoint:
+            continue
+        try:
+            poll = await fal_service.fetch_result(endpoint, rid)
+        except Exception as e:
+            print(f"[Sweeper] fal poll failed for {rid}: {e}")
+            continue
+        if poll["status"] == "COMPLETED":
+            print(f"[Sweeper] self-healing request_id={rid}")
+            await process_fal_callback(
+                request_id=rid,
+                status="OK",
+                result=poll.get("output"),
+                error_msg=None,
+            )
+        elif poll["status"] == "UNKNOWN" and poll.get("error"):
+            # fal reports an unrecoverable error for this request.
+            await process_fal_callback(
+                request_id=rid,
+                status="ERROR",
+                result=None,
+                error_msg=poll.get("error"),
+            )
+
+async def _sweep_stale_node_run_states(*, workflow_id: str, execution: dict) -> None:
+    """Poll fal for any single-node run stuck in webhook-pending state > 90s.
+
+    Mirrors `_sweep_stale_webhook_tasks` but for single-node async runs, which
+    store `fal_request_id`/`fal_endpoint_id` on `execution.node_states.{node_id}`
+    instead of on a `workflow_jobs` task.
+    """
+    raw_states = execution.get("node_states", {}) or {}
+    stale_cutoff_s = 90
+    now = datetime.now(timezone.utc)
+
+    candidates: List[tuple[str, str, str]] = []  # (node_id, request_id, endpoint_id)
+    for nid, state in raw_states.items():
+        if state.get("status") != "running":
+            continue
+        rid = state.get("fal_request_id")
+        endpoint = state.get("fal_endpoint_id")
+        if not rid or not endpoint:
+            continue
+        started_at_str = state.get("started_at")
+        try:
+            started_at = datetime.fromisoformat(started_at_str) if started_at_str else None
+        except Exception:
+            started_at = None
+        if started_at and started_at.tzinfo is None:
+            started_at = started_at.replace(tzinfo=timezone.utc)
+        if not started_at or (now - started_at).total_seconds() < stale_cutoff_s:
+            continue
+        candidates.append((nid, rid, endpoint))
+
+    if not candidates:
+        return
+
+    print(
+        f"[NodeSweeper] workflow={workflow_id} found {len(candidates)} stale "
+        f"single-node run(s) — polling fal"
+    )
+
+    from app.services.fal_service import FalService
+    from app.api.endpoints.fal_webhook import process_fal_callback
+
+    fal_service = FalService()
+    fal_jobs = get_fal_jobs_collection()
+    for _node_id, rid, endpoint in candidates:
+        fal_job = await fal_jobs.find_one({"request_id": rid})
+        if fal_job and fal_job.get("status") in ("completed", "failed"):
+            continue
+        try:
+            poll = await fal_service.fetch_result(endpoint, rid)
+        except Exception as e:
+            print(f"[NodeSweeper] fal poll failed for {rid}: {e}")
+            continue
+        if poll["status"] == "COMPLETED":
+            print(f"[NodeSweeper] self-healing request_id={rid}")
+            await process_fal_callback(
+                request_id=rid, status="OK",
+                result=poll.get("output"), error_msg=None,
+            )
+        elif poll["status"] == "UNKNOWN" and poll.get("error"):
+            await process_fal_callback(
+                request_id=rid, status="ERROR",
+                result=None, error_msg=poll.get("error"),
+            )
+
 
 @router.post("/{workflow_id}/jobs/{job_id}/cancel")
 async def cancel_job(workflow_id: str, job_id: str, current_user: dict = Depends(get_current_user)):
@@ -2308,6 +2487,14 @@ async def _process_job(job_id: str):
         "editorAgent": ActionType.RENDER,
     }
 
+    ctx_token = set_context({
+        "job_id": job_id,
+        "task_index": task_index,
+        "node_id": node_id,
+        "node_type": node_type,
+        "user_id": str(user_id) if user_id else "",
+        "workflow_id": workflow_id,
+    })
     try:
         result = await runner.run_node(
             node=target_node,
@@ -2317,6 +2504,21 @@ async def _process_job(job_id: str):
         )
 
         completed_at = datetime.now(timezone.utc).isoformat()
+
+        # ── Webhook path: job enqueued on fal, finalize in webhook handler ──
+        if result.get("success") and result.get("status") == "pending_fal":
+            await jobs_collection.update_one(
+                {"id": job_id},
+                {"$set": {
+                    f"tasks.{task_index}.status": "waiting_webhook",
+                    f"tasks.{task_index}.fal_request_id": result.get("request_id"),
+                    f"tasks.{task_index}.fal_endpoint_id": result.get("endpoint_id"),
+                    "heartbeat_at": datetime.now(timezone.utc),
+                    "updated_at": datetime.now(timezone.utc),
+                }},
+            )
+            print(f"[RunAll] Task {node_id} deferred to webhook (request_id={result.get('request_id')})")
+            return
 
         if result.get("success"):
             # ── Billing ──
@@ -2338,7 +2540,7 @@ async def _process_job(job_id: str):
                         action=action_type_map[node_type],
                         cost_usd=cost,
                         model_name=result.get("model", node_type),
-                        provider=result.get("provider", "Runware"),
+                        provider=result.get("provider", "fal.ai"),
                         metadata=meta,
                     )
                     print(f"[RunAll] Billed ${cost:.4f} for {node_type}")
@@ -2479,6 +2681,8 @@ async def _process_job(job_id: str):
                 )
                 print(f"[RunAll] Job {job_id} stopped due to exception")
                 return
+    finally:
+        reset_context(ctx_token)
 
     # ── Chain: invoke next task ──
     await _invoke_job_processor_lambda(job_id)

@@ -23,6 +23,8 @@ Globals:
         # GOOGLE_AI_KEY: ""
         # ELEVENLABS_API_KEY: ""
         # OPENAI_API_KEY: ""
+        # FAL_API_KEY: ""
+        # FAL_WEBHOOK_PUBLIC_URL: "https://app-api.kureita.com"
 
 Parameters:
   DomainName:

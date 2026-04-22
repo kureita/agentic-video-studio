@@ -211,7 +211,7 @@ async def generate_video_clip(
             action=ActionType.VIDEO_GEN,
             cost_usd=cost,
             model_name=result.get("model", "Video"),
-            provider="Runware",
+            provider="fal.ai",
             metadata={"prompt": request.prompt[:50] + "..." if len(request.prompt) > 50 else request.prompt},
         )
     
@@ -260,7 +260,7 @@ async def generate_audio(
             action=ActionType.AUDIO_GEN,
             cost_usd=cost,
             model_name=result.get("model", "Audio"),
-            provider="Runware",
+            provider="fal.ai",
             metadata={"text": request.text[:50] + "..." if len(request.text) > 50 else request.text},
         )
     

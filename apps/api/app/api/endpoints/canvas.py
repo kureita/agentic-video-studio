@@ -640,7 +640,7 @@ async def generate_images(
                 action=ActionType.IMAGE_GEN,
                 cost_usd=total_cost,
                 model_name="Image Generation",
-                provider="Runware",
+                provider="fal.ai",
                 metadata={"project_id": project_id, "scene_count": len(scenes)},
             )
         
@@ -714,7 +714,7 @@ async def regenerate_image(
                 action=ActionType.IMAGE_GEN,
                 cost_usd=cost,
                 model_name=result.get("model", "Image"),
-                provider="Runware",
+                provider="fal.ai",
                 metadata={"project_id": project_id, "scene_id": scene_id, "prompt": prompt[:50]},
             )
         
@@ -830,7 +830,7 @@ async def generate_videos(
                 action=ActionType.VIDEO_GEN,
                 cost_usd=total_cost,
                 model_name="Video Generation",
-                provider="Runware",
+                provider="fal.ai",
                 metadata={"project_id": project_id, "scene_count": len(scenes)},
             )
         
@@ -913,7 +913,7 @@ async def regenerate_video(
                 action=ActionType.VIDEO_GEN,
                 cost_usd=cost,
                 model_name=result.get("model", "Video"),
-                provider="Runware",
+                provider="fal.ai",
                 metadata={"project_id": project_id, "scene_id": scene_id},
             )
         

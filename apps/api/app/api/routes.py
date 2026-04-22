@@ -3,12 +3,14 @@ from fastapi import APIRouter, Depends
 from app.api.endpoints import projects, scrape, generate, canvas, workflow, agent, assets, billing, user_assets
 from app.api.endpoints import public_workflow
 from app.api.endpoints import dodo_webhook
+from app.api.endpoints import fal_webhook
 from app.core.auth import get_current_user
 
 # ── Public (unauthenticated) router for read-only public access ───────────────
 public_router = APIRouter()
 public_router.include_router(public_workflow.router, prefix="/public", tags=["public"])
 public_router.include_router(dodo_webhook.router, prefix="/billing", tags=["public-billing"])
+public_router.include_router(fal_webhook.router, tags=["public-fal-webhook"])
 
 # ── Internal (unauthenticated) router for Lambda-to-Lambda endpoints ──────────
 # These endpoints use their own invoke_secret verification instead of JWT auth.

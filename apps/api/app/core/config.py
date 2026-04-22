@@ -51,20 +51,21 @@ class Settings(BaseSettings):
     google_api_key: str = ""  # Alternative to GEMINI_API_KEY
     anthropic_api_key: str = ""
     openrouter_api_key: str = ""
-    use_mock_veo: bool = True  # Set to False to use real Veo API
-    runware_api_key: str = ""  # For unified image/video/audio generation
-    kling_access_key: str = ""
-    kling_secret_key: str = ""
-    byteplus_access_key: str = ""
-    byteplus_secret_key: str = ""
+    use_mock_veo: bool = True  # Set to False to use real fal API
+
+    # fal.ai (unified image/video/audio generation)
+    fal_api_key: str = ""
+    # Public URL where fal should deliver webhooks (e.g. https://app-api.kureita.com).
+    # Leave empty in local dev to auto-fall back to synchronous subscribe mode.
+    fal_webhook_public_url: str = ""
 
     @property
     def google_ai_key(self) -> str:
         """Get the Google API key (prefers GEMINI_API_KEY, falls back to GOOGLE_API_KEY)."""
         return self.gemini_api_key or self.google_api_key
 
-    # Media Generation (Optional - Veo 3.1 includes native audio)
-    elevenlabs_api_key: str = ""  # Optional: for custom voiceovers
+    # Media Generation (Optional - Veo 3.1 includes native audio on fal)
+    elevenlabs_api_key: str = ""  # Optional: legacy / direct ElevenLabs use
     elevenlabs_voice_id: str = "21m00Tcm4TlvDq8ikWAM"
 
     # AWS (S3, SES, and other AWS services)

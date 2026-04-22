@@ -29,6 +29,12 @@ async def connect_to_mongo():
             # user_assets: compound index for fast user-scoped queries + dedup
             await db.user_assets.create_index([("user_id", 1), ("url", 1)])
             await db.user_assets.create_index([("user_id", 1), ("created_at", -1)])
+            # fal_jobs: webhook correlation + TTL cleanup (24h after submit)
+            await db.fal_jobs.create_index("request_id", unique=True)
+            await db.fal_jobs.create_index([("status", 1), ("submitted_at", 1)])
+            await db.fal_jobs.create_index("submitted_at", expireAfterSeconds=24 * 60 * 60)
+            # fal_pricing: endpoint-keyed cache of live pricing
+            await db.fal_pricing.create_index("endpoint_id", unique=True)
             print("✓ Connected to MongoDB")
             return True
         else:
@@ -101,3 +107,15 @@ def get_workflow_jobs_collection():
     """Get the workflow_jobs collection for Run All job orchestration."""
     db = get_database()
     return db.workflow_jobs
+
+
+def get_fal_jobs_collection():
+    """Get the fal_jobs collection — tracks in-flight fal.ai requests awaiting webhook."""
+    db = get_database()
+    return db.fal_jobs
+
+
+def get_fal_pricing_collection():
+    """Get the fal_pricing collection — endpoint-keyed cache of live fal pricing."""
+    db = get_database()
+    return db.fal_pricing
