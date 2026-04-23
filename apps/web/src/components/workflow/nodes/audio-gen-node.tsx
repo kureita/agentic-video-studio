@@ -30,6 +30,37 @@ const PLACEHOLDER_MAP: Record<AudioType, string> = {
     sfx: "Describe the sound effect — whoosh, impact, ambience, foley...",
 };
 
+// Voice options per TTS model. The frontend sends the selected label verbatim;
+// the backend maps ElevenLabs-style names to the MiniMax voice_ids internally.
+const ELEVEN_VOICES: string[] = [
+    "Rachel", "Adam", "Antoni", "Arnold", "Bella", "Domi", "Elli", "Josh", "Sam",
+];
+const MINIMAX_VOICES: string[] = [
+    "English_Upbeat_Woman",
+    "English_CalmWoman",
+    "English_radiant_girl",
+    "English_compelling_lady1",
+    "English_Wiselady",
+    "English_magnetic_voiced_man",
+    "English_Trustworth_Man",
+    "English_ManWithDeepVoice",
+    "English_Steadymentor",
+    "English_Diligent_Man",
+];
+
+const getVoiceOptionsForModel = (modelId?: string): string[] => {
+    if (!modelId) return ELEVEN_VOICES;
+    const id = modelId.toLowerCase();
+    if (id.includes("minimax")) return MINIMAX_VOICES;
+    if (id.includes("eleven")) return ELEVEN_VOICES;
+    return ELEVEN_VOICES;
+};
+
+const getDefaultVoiceForModel = (modelId?: string): string => {
+    const voices = getVoiceOptionsForModel(modelId);
+    return voices[0];
+};
+
 export const AudioGenNode = memo(({ id, selected, data }: NodeProps) => {
     const { deleteElements, updateNodeData } = useReactFlow();
     const { runNode, clearNodeOutput, outputs, runningNodeId, setNodes } = useWorkflowStore();
@@ -71,6 +102,20 @@ export const AudioGenNode = memo(({ id, selected, data }: NodeProps) => {
             updateNodeData(id, { model: fallbackModelId });
         }
     }, [audioModels, currentModelEntry, id, updateNodeData, setNodes]);
+
+    // Voice options depend on the currently selected TTS model. When the model
+    // changes, reset `voice` if the stored one isn't valid for the new model.
+    const voiceOptions = React.useMemo(
+        () => getVoiceOptionsForModel(currentModelId),
+        [currentModelId]
+    );
+    React.useEffect(() => {
+        if (audioType !== "speech") return;
+        const currentVoice = typeof data.voice === "string" ? data.voice : undefined;
+        if (!currentVoice || !voiceOptions.includes(currentVoice)) {
+            updateNodeData(id, { voice: getDefaultVoiceForModel(currentModelId) });
+        }
+    }, [audioType, voiceOptions, currentModelId, data.voice, id, updateNodeData]);
 
 
     const isRunning = runningNodeId === id;
@@ -444,7 +489,9 @@ export const AudioGenNode = memo(({ id, selected, data }: NodeProps) => {
                                 >
                                     <div className="flex items-center gap-1.5 overflow-hidden">
                                         <Mic className="w-3 h-3 text-white/70 flex-shrink-0" />
-                                        <span className="text-[10px] font-medium truncate">{typeof data.voice === 'string' ? data.voice : "Rachel"}</span>
+                                        <span className="text-[10px] font-medium truncate">
+                                            {typeof data.voice === 'string' ? data.voice : voiceOptions[0]}
+                                        </span>
                                     </div>
                                     <ChevronDown className="w-2.5 h-2.5 text-white/50 flex-shrink-0" />
                                 </button>
@@ -456,30 +503,31 @@ export const AudioGenNode = memo(({ id, selected, data }: NodeProps) => {
                                             animate={{ opacity: 1, y: 0, scale: 1 }}
                                             exit={{ opacity: 0, y: 4, scale: 0.96 }}
                                             transition={{ duration: 0.12 }}
-                                            className="absolute bottom-full left-0 mb-2 w-32 bg-black/90 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50 pointer-events-auto flex flex-col"
+                                            className="absolute bottom-full left-0 mb-2 w-56 bg-black/90 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50 pointer-events-auto flex flex-col"
                                         >
                                             <div className="px-3 py-2 text-[10px] font-semibold text-white/50 uppercase tracking-wider border-b border-white/10 bg-black/40">
-                                                Voice
+                                                Voice · {currentModelEntry?.name || "Model"}
                                             </div>
-                                            <div className="max-h-[160px] overflow-y-auto flex flex-col p-1 nodrag nowheel">
-                                                {["Rachel", "Adam", "Antoni", "Arnold", "Bella", "Domi", "Elli", "Josh", "Sam"].map((v) => (
-                                                    <button
-                                                        key={v}
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            updateNodeData(id, { voice: v });
-                                                            setShowVoiceMenu(false);
-                                                        }}
-                                                        className={cn(
-                                                            "w-full text-left px-2.5 py-1.5 text-[11px] rounded-lg hover:bg-white/10 cursor-pointer transition-colors",
-                                                            (typeof data.voice === 'string' ? data.voice : "Rachel") === v && "bg-white/15 text-white font-medium"
-                                                        )}
-                                                    >
-                                                        <span className={cn((typeof data.voice === 'string' ? data.voice : "Rachel") !== v && "text-white/80")}>
-                                                            {v}
-                                                        </span>
-                                                    </button>
-                                                ))}
+                                            <div className="max-h-[220px] overflow-y-auto flex flex-col p-1 nodrag nowheel">
+                                                {voiceOptions.map((v) => {
+                                                    const selected = (typeof data.voice === 'string' ? data.voice : voiceOptions[0]) === v;
+                                                    return (
+                                                        <button
+                                                            key={v}
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                updateNodeData(id, { voice: v });
+                                                                setShowVoiceMenu(false);
+                                                            }}
+                                                            className={cn(
+                                                                "w-full text-left px-2.5 py-1.5 text-[11px] rounded-lg hover:bg-white/10 cursor-pointer transition-colors",
+                                                                selected && "bg-white/15 text-white font-medium"
+                                                            )}
+                                                        >
+                                                            <span className={cn(!selected && "text-white/80")}>{v}</span>
+                                                        </button>
+                                                    );
+                                                })}
                                             </div>
                                         </motion.div>
                                     )}

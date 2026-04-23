@@ -21,6 +21,7 @@ LINEUP  (16 image/video + 5 audio = 21 fal endpoints)
   Google     veo3.1                     veo3.1/fast
   OpenAI     sora-2/.../pro             sora-2
   Kling      kling-video/v3/pro         kling-video/v3/standard
+  Kling      kling-video/v2.1-master/motion-control (motion)
   Bytedance  seedance-2.0               seedance-2.0/fast
 
   Audio
@@ -29,7 +30,9 @@ LINEUP  (16 image/video + 5 audio = 21 fal endpoints)
   TTS (cost)     minimax/speech-2.8-turbo
   Music          elevenlabs/music
   SFX            elevenlabs/sound-effects/v2
-  Lipsync        kling-video/lipsync/audio-to-video
+  Lipsync (pro)  kling-video/lipsync/audio-to-video
+  Lipsync (alt)  sync-lipsync/v2
+  Lipsync (cost) latentsync
 ──────────────────────────────────────────────────────────────────────────────
 """
 
@@ -196,7 +199,7 @@ IMAGE_MODELS: List[Dict[str, Any]] = [
 
 
 # ---------------------------------------------------------------------------
-# Video models (8 — each with t2v + i2v endpoints)
+# Video models (9 — each with t2v + i2v endpoints, plus Kling motion control)
 # ---------------------------------------------------------------------------
 VIDEO_MODELS: List[Dict[str, Any]] = [
     # ── Google ─────────────────────────────────────────────────
@@ -212,7 +215,12 @@ VIDEO_MODELS: List[Dict[str, Any]] = [
             "i2v": "fal-ai/veo3.1/image-to-video",
         },
         "capabilities": ["t2v", "i2v", "audio"],
+        "input_modes": ["t2v", "i2v"],
+        "frame_images_max": 2,
+        "native_audio_default": True,
         "configs": [
+            {"id": "720p-4s",  "label": "720p / 4s",  "resolution": "720p",  "duration": 4, "aspect_ratios": ["16:9", "9:16"], "est_price_usd": 1.60},
+            {"id": "720p-6s",  "label": "720p / 6s",  "resolution": "720p",  "duration": 6, "aspect_ratios": ["16:9", "9:16"], "est_price_usd": 2.40},
             {"id": "720p-8s",  "label": "720p / 8s",  "resolution": "720p",  "duration": 8, "aspect_ratios": ["16:9", "9:16"], "est_price_usd": 3.20},
             {"id": "1080p-8s", "label": "1080p / 8s", "resolution": "1080p", "duration": 8, "aspect_ratios": ["16:9", "9:16"], "est_price_usd": 4.00},
         ],
@@ -231,9 +239,13 @@ VIDEO_MODELS: List[Dict[str, Any]] = [
             "i2v": "fal-ai/veo3.1/fast/image-to-video",
         },
         "capabilities": ["t2v", "i2v", "audio"],
+        "input_modes": ["t2v", "i2v"],
+        "frame_images_max": 2,
+        "native_audio_default": True,
         "configs": [
-            {"id": "720p-8s", "label": "720p / 8s", "resolution": "720p", "duration": 8, "aspect_ratios": ["16:9", "9:16"], "est_price_usd": 1.60},
             {"id": "720p-4s", "label": "720p / 4s", "resolution": "720p", "duration": 4, "aspect_ratios": ["16:9", "9:16"], "est_price_usd": 0.80},
+            {"id": "720p-6s", "label": "720p / 6s", "resolution": "720p", "duration": 6, "aspect_ratios": ["16:9", "9:16"], "est_price_usd": 1.20},
+            {"id": "720p-8s", "label": "720p / 8s", "resolution": "720p", "duration": 8, "aspect_ratios": ["16:9", "9:16"], "est_price_usd": 1.60},
         ],
         "default_config_id": "720p-8s",
         "fallback_price": {"per_run": 1.60},
@@ -251,9 +263,15 @@ VIDEO_MODELS: List[Dict[str, Any]] = [
             "i2v": "fal-ai/sora-2/image-to-video/pro",
         },
         "capabilities": ["t2v", "i2v", "audio"],
+        "input_modes": ["t2v", "i2v"],
+        "frame_images_max": 1,
+        "native_audio_default": True,
         "configs": [
-            {"id": "720p-8s",  "label": "720p / 8s",  "resolution": "720p",  "duration": 8,  "aspect_ratios": ["16:9", "9:16"], "est_price_usd": 2.40},
-            {"id": "1080p-8s", "label": "1080p / 8s", "resolution": "1080p", "duration": 8,  "aspect_ratios": ["16:9", "9:16"], "est_price_usd": 4.00},
+            {"id": "720p-4s",   "label": "720p / 4s",   "resolution": "720p",  "duration": 4,  "aspect_ratios": ["16:9", "9:16"], "est_price_usd": 1.20},
+            {"id": "720p-8s",   "label": "720p / 8s",   "resolution": "720p",  "duration": 8,  "aspect_ratios": ["16:9", "9:16"], "est_price_usd": 2.40},
+            {"id": "720p-12s",  "label": "720p / 12s",  "resolution": "720p",  "duration": 12, "aspect_ratios": ["16:9", "9:16"], "est_price_usd": 3.60},
+            {"id": "1080p-8s",  "label": "1080p / 8s",  "resolution": "1080p", "duration": 8,  "aspect_ratios": ["16:9", "9:16"], "est_price_usd": 4.00},
+            {"id": "1080p-12s", "label": "1080p / 12s", "resolution": "1080p", "duration": 12, "aspect_ratios": ["16:9", "9:16"], "est_price_usd": 6.00},
         ],
         "default_config_id": "720p-8s",
         "fallback_price": {"per_run": 2.40},
@@ -270,14 +288,20 @@ VIDEO_MODELS: List[Dict[str, Any]] = [
             "i2v": "fal-ai/sora-2/image-to-video",
         },
         "capabilities": ["t2v", "i2v", "audio"],
+        "input_modes": ["t2v", "i2v"],
+        "frame_images_max": 1,
+        "native_audio_default": True,
         "configs": [
-            {"id": "720p-8s",  "label": "720p / 8s",  "resolution": "720p",  "duration": 8, "aspect_ratios": ["16:9", "9:16"], "est_price_usd": 1.20},
-            {"id": "720p-4s",  "label": "720p / 4s",  "resolution": "720p",  "duration": 4, "aspect_ratios": ["16:9", "9:16"], "est_price_usd": 0.60},
+            {"id": "720p-4s",   "label": "720p / 4s",   "resolution": "720p", "duration": 4,  "aspect_ratios": ["16:9", "9:16"], "est_price_usd": 0.60},
+            {"id": "720p-8s",   "label": "720p / 8s",   "resolution": "720p", "duration": 8,  "aspect_ratios": ["16:9", "9:16"], "est_price_usd": 1.20},
+            {"id": "720p-12s",  "label": "720p / 12s",  "resolution": "720p", "duration": 12, "aspect_ratios": ["16:9", "9:16"], "est_price_usd": 1.80},
         ],
         "default_config_id": "720p-8s",
         "fallback_price": {"per_run": 1.20},
     },
     # ── Kling ──────────────────────────────────────────────────
+    # Kling v3 Pro exposes text-to-video, image-to-video (start/end),
+    # elements (multi subject reference), and video extend.
     {
         "id": "kling-video-v3-pro",
         "name": "Kling Video v3 Pro",
@@ -288,8 +312,21 @@ VIDEO_MODELS: List[Dict[str, Any]] = [
         "endpoints": {
             "t2v": "fal-ai/kling-video/v3/pro/text-to-video",
             "i2v": "fal-ai/kling-video/v3/pro/image-to-video",
+            "elements": "fal-ai/kling-video/v2/pro/elements",
+            "v2v": "fal-ai/kling-video/v1.6/pro/video-extend",
+            "reference": "fal-ai/kling-video/v3/pro/image-to-video",
         },
-        "capabilities": ["t2v", "i2v", "audio"],
+        "capabilities": ["t2v", "i2v", "reference", "elements", "v2v", "audio"],
+        "input_modes": ["t2v", "i2v", "reference", "elements", "v2v"],
+        "frame_images_max": 2,
+        "reference_images_min": 1,
+        "reference_images_max": 4,
+        "elements_min": 1,
+        "elements_max": 4,
+        "native_audio_default": True,
+        "duration_min": 3,
+        "duration_max": 15,
+        "duration_step": 1,
         "configs": [
             {"id": "1080p-5s",  "label": "1080p / 5s",  "resolution": "1080p", "duration": 5,  "aspect_ratios": ["16:9", "9:16", "1:1"], "est_price_usd": 1.40},
             {"id": "1080p-10s", "label": "1080p / 10s", "resolution": "1080p", "duration": 10, "aspect_ratios": ["16:9", "9:16", "1:1"], "est_price_usd": 2.80},
@@ -307,14 +344,49 @@ VIDEO_MODELS: List[Dict[str, Any]] = [
         "endpoints": {
             "t2v": "fal-ai/kling-video/v3/standard/text-to-video",
             "i2v": "fal-ai/kling-video/v3/standard/image-to-video",
+            "elements": "fal-ai/kling-video/v2/standard/elements",
+            "v2v": "fal-ai/kling-video/v1.6/standard/video-extend",
+            "reference": "fal-ai/kling-video/v3/standard/image-to-video",
         },
-        "capabilities": ["t2v", "i2v", "audio"],
+        "capabilities": ["t2v", "i2v", "reference", "elements", "v2v", "audio"],
+        "input_modes": ["t2v", "i2v", "reference", "elements", "v2v"],
+        "frame_images_max": 2,
+        "reference_images_min": 1,
+        "reference_images_max": 4,
+        "elements_min": 1,
+        "elements_max": 4,
+        "native_audio_default": True,
+        "duration_min": 3,
+        "duration_max": 15,
+        "duration_step": 1,
         "configs": [
             {"id": "720p-5s",  "label": "720p / 5s",  "resolution": "720p", "duration": 5,  "aspect_ratios": ["16:9", "9:16", "1:1"], "est_price_usd": 0.35},
             {"id": "720p-10s", "label": "720p / 10s", "resolution": "720p", "duration": 10, "aspect_ratios": ["16:9", "9:16", "1:1"], "est_price_usd": 0.70},
         ],
         "default_config_id": "720p-5s",
         "fallback_price": {"per_run": 0.35},
+    },
+    # Kling Motion Control (specialized camera/motion control)
+    {
+        "id": "kling-motion-control",
+        "name": "Kling Motion Control",
+        "provider": "KlingAI",
+        "type": "video",
+        "tier": "pro",
+        "model_endpoint_id": "fal-ai/kling-video/v2.1-master/motion-control",
+        "endpoints": {
+            "i2v": "fal-ai/kling-video/v2.1-master/motion-control",
+        },
+        "capabilities": ["i2v"],
+        "input_modes": ["i2v"],
+        "frame_images_max": 1,
+        "native_audio_default": False,
+        "configs": [
+            {"id": "720p-5s",  "label": "720p / 5s",  "resolution": "720p", "duration": 5,  "aspect_ratios": ["16:9", "9:16", "1:1"], "est_price_usd": 0.90},
+            {"id": "720p-10s", "label": "720p / 10s", "resolution": "720p", "duration": 10, "aspect_ratios": ["16:9", "9:16", "1:1"], "est_price_usd": 1.80},
+        ],
+        "default_config_id": "720p-5s",
+        "fallback_price": {"per_run": 0.90},
     },
     # ── ByteDance Seedance ─────────────────────────────────────
     {
@@ -327,8 +399,17 @@ VIDEO_MODELS: List[Dict[str, Any]] = [
         "endpoints": {
             "t2v": "bytedance/seedance-2.0/text-to-video",
             "i2v": "bytedance/seedance-2.0/image-to-video",
+            "reference": "bytedance/seedance-2.0/reference-to-video",
         },
-        "capabilities": ["t2v", "i2v", "audio"],
+        "capabilities": ["t2v", "i2v", "reference", "audio"],
+        "input_modes": ["t2v", "i2v", "reference"],
+        "frame_images_max": 2,
+        "reference_images_min": 1,
+        "reference_images_max": 3,
+        "native_audio_default": True,
+        "duration_min": 3,
+        "duration_max": 12,
+        "duration_step": 1,
         "configs": [
             {"id": "1080p-5s",  "label": "1080p / 5s",  "resolution": "1080p", "duration": 5,  "aspect_ratios": ["16:9", "9:16"], "est_price_usd": 1.00},
             {"id": "1080p-10s", "label": "1080p / 10s", "resolution": "1080p", "duration": 10, "aspect_ratios": ["16:9", "9:16"], "est_price_usd": 2.00},
@@ -346,8 +427,17 @@ VIDEO_MODELS: List[Dict[str, Any]] = [
         "endpoints": {
             "t2v": "bytedance/seedance-2.0/fast/text-to-video",
             "i2v": "bytedance/seedance-2.0/fast/image-to-video",
+            "reference": "bytedance/seedance-2.0/fast/reference-to-video",
         },
-        "capabilities": ["t2v", "i2v", "audio"],
+        "capabilities": ["t2v", "i2v", "reference", "audio"],
+        "input_modes": ["t2v", "i2v", "reference"],
+        "frame_images_max": 2,
+        "reference_images_min": 1,
+        "reference_images_max": 3,
+        "native_audio_default": True,
+        "duration_min": 3,
+        "duration_max": 12,
+        "duration_step": 1,
         "configs": [
             {"id": "720p-5s",  "label": "720p / 5s",  "resolution": "720p", "duration": 5,  "aspect_ratios": ["16:9", "9:16"], "est_price_usd": 0.35},
             {"id": "720p-10s", "label": "720p / 10s", "resolution": "720p", "duration": 10, "aspect_ratios": ["16:9", "9:16"], "est_price_usd": 0.70},
@@ -448,6 +538,38 @@ AUDIO_MODELS: List[Dict[str, Any]] = [
         ],
         "default_config_id": "default",
         "fallback_price": {"per_run": 0.60},
+    },
+    {
+        "id": "sync-lipsync-v2",
+        "name": "Sync LipSync v2",
+        "provider": "Sync",
+        "type": "audio",
+        "category": "lipsync",
+        "tier": "mid",
+        "model_endpoint_id": "fal-ai/sync-lipsync/v2",
+        "endpoints": {"lipsync": "fal-ai/sync-lipsync/v2"},
+        "capabilities": ["lipsync"],
+        "configs": [
+            {"id": "default", "label": "Per generation", "est_price_usd": 0.30},
+        ],
+        "default_config_id": "default",
+        "fallback_price": {"per_run": 0.30},
+    },
+    {
+        "id": "latentsync",
+        "name": "LatentSync",
+        "provider": "ByteDance",
+        "type": "audio",
+        "category": "lipsync",
+        "tier": "cost",
+        "model_endpoint_id": "fal-ai/latentsync",
+        "endpoints": {"lipsync": "fal-ai/latentsync"},
+        "capabilities": ["lipsync"],
+        "configs": [
+            {"id": "default", "label": "Per generation", "est_price_usd": 0.15},
+        ],
+        "default_config_id": "default",
+        "fallback_price": {"per_run": 0.15},
     },
 ]
 

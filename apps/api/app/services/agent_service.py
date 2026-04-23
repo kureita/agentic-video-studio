@@ -421,11 +421,16 @@ class AgentService:
             if (not entry) or selected_category != expected_category or bool((entry or {}).get("coming_soon", False)):
                 replacement = self._pick_best_audio_model(expected_category)
                 if replacement:
-                    replacement_name = str(replacement.get("name") or replacement.get("id") or "")
-                    node_data["model"] = replacement_name
+                    replacement_id = str(replacement.get("id") or replacement.get("name") or "")
+                    node_data["model"] = replacement_id
                     warnings.append(
-                        f"Node '{node.get('id', 'unknown')}' audio model adjusted to '{replacement_name}' for audioType '{audio_type}'."
+                        f"Node '{node.get('id', 'unknown')}' audio model adjusted to '{replacement_id}' for audioType '{audio_type}'."
                     )
+            elif entry:
+                # Canonicalize model field to its stable id so the frontend menu matches.
+                canonical_id = str(entry.get("id") or "")
+                if canonical_id and node_data.get("model") != canonical_id:
+                    node_data["model"] = canonical_id
             node["data"] = node_data
 
         return normalized_nodes, warnings
@@ -515,11 +520,16 @@ class AgentService:
                     need_elements=need_elements,
                     need_v2v=need_v2v,
                 )
-                replacement_name = str(replacement.get("name") or replacement.get("id") or self._default_video_model_id)
-                node_data["model"] = replacement_name
+                replacement_id = str(replacement.get("id") or self._default_video_model_id)
+                node_data["model"] = replacement_id
                 warnings.append(
-                    f"Node '{node.get('id', 'unknown')}' model adjusted to '{replacement_name}' for capability compatibility."
+                    f"Node '{node.get('id', 'unknown')}' model adjusted to '{replacement_id}' for capability compatibility."
                 )
+            else:
+                # Canonicalize model field to its stable id so the frontend menu matches.
+                canonical_id = str(entry.get("id") or "")
+                if canonical_id and node_data.get("model") != canonical_id:
+                    node_data["model"] = canonical_id
 
             # If a replacement still cannot satisfy audio, force-disable generateAudio.
             final_entry = self._resolve_video_model_entry(str(node_data.get("model", requested_model)))
@@ -533,6 +543,100 @@ class AgentService:
             node["data"] = node_data
 
         return normalized_nodes, warnings
+
+    def _canonicalize_image_model_ids(self, nodes: List[Dict[str, Any]]) -> tuple[List[Dict[str, Any]], List[str]]:
+        """Canonicalize imageGen 'model' fields to stable ids so the UI can find them."""
+        normalized = deepcopy(nodes)
+        warnings: List[str] = []
+        for node in normalized:
+            if node.get("type") != "imageGen":
+                continue
+            node_data = node.get("data", {}) or {}
+            if not isinstance(node_data, dict):
+                continue
+            requested = str(node_data.get("model") or "").strip()
+            if not requested:
+                continue
+            entry = get_model_by_id(requested)
+            if not entry or entry.get("type") != "image":
+                entry = get_model_by_name(requested)
+            if entry and entry.get("type") == "image":
+                canonical_id = str(entry.get("id") or "")
+                if canonical_id and node_data.get("model") != canonical_id:
+                    node_data["model"] = canonical_id
+                    node["data"] = node_data
+        return normalized, warnings
+
+    def _prune_orphan_nodes(
+        self,
+        nodes: List[Dict[str, Any]],
+        edges: List[Dict[str, Any]],
+    ) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[str]]:
+        """Remove nodes the chat agent emitted that aren't wired into the workflow.
+
+        A node is considered an orphan and dropped if it has **no** incoming and
+        **no** outgoing edges. Comment nodes are always kept (they're annotations).
+        mediaUpload nodes are kept if their data.output is a real URL (user may
+        add wiring after reviewing).
+        """
+        if not nodes:
+            return nodes, edges, []
+
+        incoming_by_node: Dict[str, int] = {}
+        outgoing_by_node: Dict[str, int] = {}
+        for edge in edges or []:
+            src = str(edge.get("source", "") or "")
+            tgt = str(edge.get("target", "") or "")
+            if src:
+                outgoing_by_node[src] = outgoing_by_node.get(src, 0) + 1
+            if tgt:
+                incoming_by_node[tgt] = incoming_by_node.get(tgt, 0) + 1
+
+        warnings: List[str] = []
+        kept: List[Dict[str, Any]] = []
+        dropped_ids: set[str] = set()
+
+        for node in nodes:
+            node_id = str(node.get("id", ""))
+            node_type = str(node.get("type", ""))
+            has_in = incoming_by_node.get(node_id, 0) > 0
+            has_out = outgoing_by_node.get(node_id, 0) > 0
+
+            if has_in or has_out:
+                kept.append(node)
+                continue
+
+            if node_type == "comment":
+                kept.append(node)
+                continue
+
+            if node_type == "mediaUpload":
+                # Keep if it has a concrete output url (user-provided asset).
+                output_val = (node.get("data") or {}).get("output")
+                if isinstance(output_val, str) and output_val.strip():
+                    kept.append(node)
+                    continue
+
+            # Single-node workflows are legitimate — keep the only node.
+            if len(nodes) == 1:
+                kept.append(node)
+                continue
+
+            dropped_ids.add(node_id)
+            warnings.append(
+                f"Removed orphan node '{node_id}' (type={node_type}) with no connections."
+            )
+
+        if not dropped_ids:
+            return nodes, edges, warnings
+
+        pruned_edges = [
+            edge
+            for edge in (edges or [])
+            if str(edge.get("source", "") or "") not in dropped_ids
+            and str(edge.get("target", "") or "") not in dropped_ids
+        ]
+        return kept, pruned_edges, warnings
 
     def _synchronize_text_reference_edges(
         self,
@@ -699,36 +803,69 @@ class AgentService:
         image_model_names = ", ".join(image_model_parts)
         i2i_image_model_names = ", ".join(i2i_image_models) or "none"
         t2i_only_image_model_names = ", ".join(t2i_only_image_models) or "none"
-        video_model_names = ", ".join(f'"{m.get("name", m.get("id", "Unknown"))}"' for m in VIDEO_MODELS)
+        def _fmt_model(m: Dict[str, Any]) -> str:
+            mid = m.get("id", "unknown")
+            mname = m.get("name", mid)
+            caps = {c.lower() for c in m.get("capabilities", [])}
+            extra = []
+            if "i2v" in caps:
+                extra.append("i2v")
+            if "reference" in caps:
+                extra.append("ref")
+            if "elements" in caps:
+                extra.append("elements")
+            if "v2v" in caps:
+                extra.append("v2v")
+            if "audio" in caps:
+                extra.append("audio")
+            tag = f" [{'/'.join(extra)}]" if extra else ""
+            return f'"{mname}" (id: "{mid}"){tag}'
+
+        video_model_names = ", ".join(_fmt_model(m) for m in VIDEO_MODELS)
         tts_model_names = ", ".join(
-            f'"{m.get("name", m.get("id", "Unknown"))}"'
+            f'"{m.get("name", m.get("id", "Unknown"))}" (id: "{m.get("id", "")}")'
             for m in AUDIO_MODELS
             if str(m.get("category", "")).lower() == "tts"
         )
         music_model_names = ", ".join(
-            f'"{m.get("name", m.get("id", "Unknown"))}"'
+            f'"{m.get("name", m.get("id", "Unknown"))}" (id: "{m.get("id", "")}")'
             for m in AUDIO_MODELS
             if str(m.get("category", "")).lower() == "music"
         )
         sfx_model_names = ", ".join(
-            f'"{m.get("name", m.get("id", "Unknown"))}"'
+            f'"{m.get("name", m.get("id", "Unknown"))}" (id: "{m.get("id", "")}")'
             for m in AUDIO_MODELS
             if str(m.get("category", "")).lower() == "sfx"
         )
         i2v_model_names = ", ".join(
-            f'"{m.get("name", m.get("id", "Unknown"))}"'
+            f'"{m.get("id", "")}"'
             for m in VIDEO_MODELS
             if "i2v" in {c.lower() for c in m.get("capabilities", [])}
         )
         native_audio_model_names = ", ".join(
-            f'"{m.get("name", m.get("id", "Unknown"))}"'
+            f'"{m.get("id", "")}"'
             for m in VIDEO_MODELS
             if "audio" in {c.lower() for c in m.get("capabilities", [])}
         )
         i2v_audio_model_names = ", ".join(
-            f'"{m.get("name", m.get("id", "Unknown"))}"'
+            f'"{m.get("id", "")}"'
             for m in VIDEO_MODELS
             if {"i2v", "audio"}.issubset({c.lower() for c in m.get("capabilities", [])})
+        )
+        reference_model_names = ", ".join(
+            f'"{m.get("id", "")}"'
+            for m in VIDEO_MODELS
+            if "reference" in {c.lower() for c in m.get("capabilities", [])}
+        )
+        elements_model_names = ", ".join(
+            f'"{m.get("id", "")}"'
+            for m in VIDEO_MODELS
+            if "elements" in {c.lower() for c in m.get("capabilities", [])}
+        )
+        v2v_model_names = ", ".join(
+            f'"{m.get("id", "")}"'
+            for m in VIDEO_MODELS
+            if "v2v" in {c.lower() for c in m.get("capabilities", [])}
         )
 
         duration_parts = []
@@ -781,16 +918,21 @@ Your #1 priority is VISUAL CONSISTENCY — every character, background, and styl
    - **Model Notes**: "flux-2-dev" cheapest ($0.005). "gpt-image-1" best for editing. "kling-image-o3" for character consistency. "flux-2-max" highest quality. "nano-banana-2" great quality + fast.
 
 3. **videoGen** - Video Generator (Multiple models via fal.ai)
-   - Inputs: "text|text" (type: text), "image|start_image" (type: image), "image|end_image" (type: image, optional), "audio|audio" (type: audio, optional)
+   - Inputs: "text|text" (type: text), "image|start_image" (type: image), "image|end_image" (type: image, optional), "image|reference_image" / "image|reference_images" (type: image, for reference mode), "video|reference_video" (type: video, for v2v mode), "image|elements_image" (type: image, elements), "video|elements_video" (type: video, elements), "audio|elements_audio" (type: audio, elements)
    - Outputs: "video|video" (type: video), "image|start_frame" (type: image, first frame), "image|end_frame" (type: image, last frame)
-   - Data: {{ "label": "Video Scene X", "prompt": "Motion description", "duration": "6s", "ratio": "9:16", "model": "kling-video-3-standard", "generateAudio": true, "inputMode": "t2v" }}
+   - Data: {{ "label": "Video Scene X", "prompt": "Motion description", "duration": "5s", "ratio": "9:16", "model": "kling-video-v3-standard", "generateAudio": true, "inputMode": "t2v" }}
    - **Prompt Type**: Write this as a MOTION prompt. If `start_image` is connected, assume the clip starts from that exact frame, then describe what changes over time: subject movement, camera movement, timing, performance, atmosphere shifts, and the ending beat.
    - **Available Models**: {video_model_names}
+   - **CRITICAL**: The `"model"` field MUST be the stable **id** (lowercase, hyphenated — e.g. `"kling-video-v3-pro"`, `"veo-3-1"`, `"sora-2-pro"`, `"seedance-2-0"`, `"kling-motion-control"`). NEVER use the display name (e.g. `"Kling Video v3 Pro"`) — that will fail UI matching. NEVER invent new ids (no `"kling-video-3-pro"` — note it is `v3`, not `3`).
    - **Duration Constraints**: {duration_constraints_text}
    - **Model Selection Rules (CRITICAL)**:
-     - If `start_image` is connected, prefer models with I2V support: {i2v_model_names}.
-     - If native video audio is explicitly requested, prefer models with native-audio capability: {native_audio_model_names}.
-     - If both image-to-video AND native audio are needed in the same video node, choose from: {i2v_audio_model_names}.
+     - If `start_image` (i2v) is needed, pick from: {i2v_model_names}.
+     - If native-audio is requested, pick from: {native_audio_model_names}.
+     - If both i2v + native audio are needed, pick from: {i2v_audio_model_names}.
+     - If reference images are needed (multi-subject / consistency), pick from: {reference_model_names}.
+     - If elements mode is needed, pick from: {elements_model_names}.
+     - If v2v (video extend) is needed, pick from: {v2v_model_names}.
+     - For cinematic camera control, use `"kling-motion-control"` (accepts a single start image).
    - **Input Mode Rules (CRITICAL)**:
      - Use `inputMode: "t2v"` when no media handles are connected.
      - Use `inputMode: "i2v"` only when `start_image` (or start/end frames) is connected.
@@ -805,17 +947,20 @@ Your #1 priority is VISUAL CONSISTENCY — every character, background, and styl
 4. **audioGen** - Audio Generator (Speech, Music, SFX)
    - Inputs: "text|prompt" (type: text, optional — for TTS script or music/SFX description)
    - Outputs: "audio|audio" (type: audio)
-   - Data: {{ "label": "Audio: [Name]", "audioType": "speech" | "music" | "sfx", "prompt": "Content or description", "voice": "Rachel", "duration": 15, "model": "MiniMax Speech 2.8" }}
+   - Data: {{ "label": "Audio: [Name]", "audioType": "speech" | "music" | "sfx", "prompt": "Content or description", "voice": "Rachel", "duration": 15, "model": "minimax-speech-2-8-turbo" }}
+   - **CRITICAL**: The `"model"` field MUST be the stable **id** (e.g. `"eleven-v3"`, `"minimax-speech-2-8-turbo"`, `"eleven-music"`, `"eleven-sfx-v2"`). NEVER use the display name.
    - **Audio Types**:
      - `"speech"`: Text-to-speech using a selected voice. Set `prompt` to the spoken script. Set `voice` to one of the supported voices (see below).
      - `"music"`: AI-generated background music. Set `prompt` to a descriptive music brief (genre, mood, instruments). Set `duration` in seconds (10–300).
-     - `"sfx"`: AI-generated sound effects. Set `prompt` to describe the sound. Set `duration` in seconds (10–300).
+     - `"sfx"`: AI-generated sound effects. Set `prompt` to describe the sound. Set `duration` in seconds (1–30).
    - **Model by Type (CRITICAL)**:
      - speech/tts models only: {tts_model_names}
      - music models only: {music_model_names}
      - sfx models only: {sfx_model_names}
      - NEVER assign a model from the wrong category for the selected `audioType`.
-   - **Available Voices** (for speech only): "Rachel", "Domi", "Bella", "Antoni", "Elli", "Josh", "Arnold", "Adam", "Sam", "English_Upbeat_Woman", "English_Calm_Man"
+   - **Available Voices (speech only)**:
+     - For `eleven-v3`: "Rachel", "Domi", "Bella", "Antoni", "Elli", "Josh", "Arnold", "Adam", "Sam"
+     - For `minimax-speech-2-8-turbo`: "English_Upbeat_Woman", "English_CalmWoman", "English_radiant_girl", "English_compelling_lady1", "English_magnetic_voiced_man", "English_Trustworth_Man", "English_ManWithDeepVoice", "English_Steadymentor", "English_Diligent_Man", "English_Wiselady"
    - **Connection Rule**: Connect `audioGen` output (`audio|audio`) to:
      - `editorAgent` input `audio|audio` — to layer audio over a video composition
      - `videoGen` input `audio|audio` — to attach audio to a generated video clip
@@ -1527,14 +1672,21 @@ This thinking field should briefly describe:
             text_edge_warnings: List[str] = []
             audio_warnings: List[str] = []
             model_warnings: List[str] = []
+            image_warnings: List[str] = []
+            orphan_warnings: List[str] = []
             if should_apply_workflow:
                 result_edges, text_edge_warnings = self._synchronize_text_reference_edges(
                     result_nodes,
                     result_edges,
                 )
                 normalized_audio_nodes, audio_warnings = self._normalize_audio_nodes_for_category(result_nodes)
+                normalized_nodes_img, image_warnings = self._canonicalize_image_model_ids(normalized_audio_nodes)
                 normalized_nodes, model_warnings = self._normalize_video_nodes_for_capabilities(
-                    normalized_audio_nodes,
+                    normalized_nodes_img,
+                    result_edges,
+                )
+                normalized_nodes, result_edges, orphan_warnings = self._prune_orphan_nodes(
+                    normalized_nodes,
                     result_edges,
                 )
             else:
@@ -1542,7 +1694,7 @@ This thinking field should briefly describe:
 
             message = result.get("message", "Workflow generated")
             suggested_name = result.get("suggested_name")
-            if model_warnings or audio_warnings or text_edge_warnings:
+            if model_warnings or audio_warnings or text_edge_warnings or image_warnings or orphan_warnings:
                 message = f"{message} (Adjusted some generated nodes/edges to match workflow rules.)"
             if attachments and effective_model.get("display_name") != requested_model.get("display_name"):
                 message = (

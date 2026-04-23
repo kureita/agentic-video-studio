@@ -110,7 +110,21 @@ class VideoGenerator:
         if self.use_mock:
             return await self._mock_generate(f"[t2v] {prompt}", duration)
 
-        endpoint_id, entry = self._resolve_endpoint(model_name, capability="t2v")
+        # Pick the most-specific capability endpoint available for this call.
+        if reference_video:
+            desired_capability = "v2v"
+        elif element_images or element_videos or element_voices:
+            desired_capability = "elements"
+        elif reference_images:
+            desired_capability = "reference"
+        else:
+            desired_capability = "t2v"
+
+        endpoint_id, entry = self._resolve_endpoint(model_name, capability=desired_capability)
+        # If the model doesn't expose the desired capability endpoint, fall back to t2v.
+        if desired_capability != "t2v" and endpoint_id == _DEFAULT_VIDEO_ENDPOINT:
+            endpoint_id, entry = self._resolve_endpoint(model_name, capability="t2v")
+
         args = FalService.build_video_args(
             prompt=prompt,
             duration=duration,
@@ -121,8 +135,7 @@ class VideoGenerator:
         )
         if reference_images:
             args["image_urls"] = reference_images
-            if reference_images:
-                args.setdefault("image_url", reference_images[0])
+            args.setdefault("image_url", reference_images[0])
         if reference_video:
             args["video_url"] = reference_video
         if element_images:
@@ -131,7 +144,7 @@ class VideoGenerator:
             args["element_videos"] = element_videos
 
         return await self._dispatch_and_finalize(
-            capability="t2v", endpoint_id=endpoint_id, args=args, entry=entry,
+            capability=desired_capability, endpoint_id=endpoint_id, args=args, entry=entry,
             model_name_used=model_name, audio_url=audio_url,
             meta={"duration": duration, "resolution": resolution, "aspect_ratio": aspect_ratio},
         )

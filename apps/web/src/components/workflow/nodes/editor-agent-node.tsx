@@ -327,7 +327,6 @@ export const EditorAgentNode = memo(({ id, selected, data }: NodeProps) => {
                                 src={videoSrc!}
                                 className="w-full h-full object-cover select-none nodrag nopan nowheel"
                                 controls
-                                autoPlay
                                 preload="metadata"
                                 playsInline
                                 crossOrigin="anonymous"

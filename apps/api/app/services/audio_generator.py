@@ -47,9 +47,24 @@ class AudioGenerator:
             print("[AudioGenerator] PRODUCTION mode — using fal.ai")
 
         # Default voice used when no `voice` is passed
-        self.default_voice = "English_Upbeat_Woman"
-        # Friendly-name → voice id (best-effort mapping, reused across TTS providers)
-        self.voice_ids = {
+        self.default_minimax_voice = "English_Upbeat_Woman"
+        self.default_eleven_voice = "Rachel"
+        # MiniMax native voices (sent as `voice_id` in `voice_setting`).
+        self._minimax_voices = {
+            "English_Upbeat_Woman",
+            "English_CalmWoman",
+            "English_radiant_girl",
+            "English_compelling_lady1",
+            "English_Wiselady",
+            "English_magnetic_voiced_man",
+            "English_Trustworth_Man",
+            "English_ManWithDeepVoice",
+            "English_Steadymentor",
+            "English_Diligent_Man",
+        }
+        # Fallback: ElevenLabs-style friendly names mapped into MiniMax voice_ids
+        # (used only when a non-native voice is selected for the minimax endpoint).
+        self._eleven_to_minimax = {
             "Rachel": "English_Upbeat_Woman",
             "Bella": "English_radiant_girl",
             "Elli": "English_CalmWoman",
@@ -60,6 +75,25 @@ class AudioGenerator:
             "Josh": "English_Steadymentor",
             "Sam": "English_Diligent_Man",
         }
+
+    def _resolve_voice_for_endpoint(self, endpoint_id: str, voice: str) -> str:
+        """Return the provider-specific voice identifier for the chosen TTS endpoint.
+
+        * For MiniMax: use a MiniMax voice_id if provided; otherwise translate from
+          an ElevenLabs-style friendly name; otherwise use the MiniMax default.
+        * For ElevenLabs: pass the friendly voice name through as-is (fal.ai's
+          ElevenLabs endpoint accepts names like 'Rachel', 'Adam', etc.).
+        """
+        ep = (endpoint_id or "").lower()
+        v = (voice or "").strip()
+        if "minimax" in ep:
+            if v in self._minimax_voices:
+                return v
+            if v in self._eleven_to_minimax:
+                return self._eleven_to_minimax[v]
+            return self.default_minimax_voice
+        # ElevenLabs (or unknown endpoint): pass friendly name through.
+        return v or self.default_eleven_voice
 
     # ------------------------------------------------------------------ Mock
     def _get_mock_audio(self) -> Optional[Path]:
@@ -154,8 +188,8 @@ class AudioGenerator:
         if not text or not text.strip():
             return {"success": False, "error": "No text provided"}
 
-        voice_id = self.voice_ids.get(voice, self.default_voice)
         endpoint_id = self._resolve_endpoint(model_id, _DEFAULT_TTS_ENDPOINT, "tts")
+        voice_id = self._resolve_voice_for_endpoint(endpoint_id, voice)
         args = FalService.build_tts_args(text=text, voice=voice_id)
         model_info = self._model_info(endpoint_id, "TTS")
 

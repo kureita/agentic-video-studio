@@ -35,6 +35,7 @@ import { CommentNode } from "./nodes/comment-node";
 // Store
 import { useWorkflowStore } from "@/lib/workflow-store";
 import { usePublicView } from "@/lib/public-view-context";
+import { useModels } from "@/lib/use-models";
 import { inferMediaKind } from "@/lib/media-utils";
 import {
     getWorkflowConnectionColor,
@@ -89,6 +90,7 @@ function FlowEditorInner({ workflowId }: FlowEditorProps) {
     const flowWrapperRef = useRef<HTMLDivElement>(null);
 
     const { takeSnapshot, undo, redo, canUndo, canRedo } = useUndoRedo();
+    const { models } = useModels();
 
     const reactFlowInstance = useReactFlow();
 
@@ -200,9 +202,21 @@ function FlowEditorInner({ workflowId }: FlowEditorProps) {
             return false;
         }
 
-        const singleConnectionHandles = ['ref_video', 'reference_video', 'reference_image', 'start_image', 'end_image'];
+        // Handles that are ALWAYS single-connection regardless of model.
+        const alwaysSingleHandles = ['ref_video', 'reference_video', 'start_image', 'end_image'];
+        // Handles that may accept multiple connections when the target model allows it.
+        // - `reference_image` (singular): single ref
+        // - `reference_images` (plural): multi-ref, capped by model.reference_images_max
+        // - `elements_image` / `elements_video` / `elements_audio`: capped by model.elements_max
+        const multiCapableHandles = new Map<string, number | undefined>([
+            ['reference_image', 1],
+            ['reference_images', undefined],
+            ['elements_image', undefined],
+            ['elements_video', undefined],
+            ['elements_audio', undefined],
+        ]);
 
-        if (targetHandleId && singleConnectionHandles.includes(targetHandleId)) {
+        if (targetHandleId && alwaysSingleHandles.includes(targetHandleId)) {
             const connectionId = 'id' in connection ? connection.id : null;
             const existingConnection = edges.find(
                 (edge) =>
@@ -214,6 +228,39 @@ function FlowEditorInner({ workflowId }: FlowEditorProps) {
             if (existingConnection) {
                 console.log(`[FlowEditor] Connection rejected: ${targetHandleId} already has a connection`);
                 return false;
+            }
+        } else if (targetHandleId && multiCapableHandles.has(targetHandleId)) {
+            const targetNode = nodes.find((n) => n.id === connection.target);
+            const modelId = typeof targetNode?.data?.model === 'string'
+                ? (targetNode?.data?.model as string)
+                : undefined;
+            const targetModel = modelId
+                ? models.find((m) => m.id === modelId) || models.find((m) => m.name === modelId)
+                : undefined;
+
+            let cap: number | undefined;
+            if (targetHandleId === 'reference_image' || targetHandleId === 'reference_images') {
+                cap = typeof targetModel?.reference_images_max === 'number'
+                    ? targetModel.reference_images_max
+                    : multiCapableHandles.get(targetHandleId);
+            } else if (targetHandleId.startsWith('elements_')) {
+                cap = typeof targetModel?.elements_max === 'number'
+                    ? targetModel.elements_max
+                    : undefined;
+            }
+
+            if (typeof cap === 'number' && cap > 0) {
+                const connectionId = 'id' in connection ? connection.id : null;
+                const existingCount = edges.filter(
+                    (edge) =>
+                        edge.target === connection.target &&
+                        edge.targetHandle?.split('|')[1] === targetHandleId &&
+                        edge.id !== connectionId
+                ).length;
+                if (existingCount >= cap) {
+                    console.log(`[FlowEditor] Connection rejected: ${targetHandleId} already has ${existingCount}/${cap} connections`);
+                    return false;
+                }
             }
         }
 
@@ -245,7 +292,7 @@ function FlowEditorInner({ workflowId }: FlowEditorProps) {
         }
 
         return true;
-    }, [edges, nodes]);
+    }, [edges, nodes, models]);
 
     const onConnect = useCallback(
         (params: Connection) => {
@@ -379,7 +426,7 @@ function FlowEditorInner({ workflowId }: FlowEditorProps) {
 
         // Build node data from saved settings
         const savedData = payload.node_data || {};
-        const nodeData: Record<string, unknown> = { ...savedData, output: payload.url };
+        const nodeData: Record<string, unknown> = { ...savedData, output: payload.url, isPinnedAsset: true };
         if (nodeType === "mediaUpload" && !nodeData.mediaType) {
             const inferredKind = inferMediaKind({
                 mimeType: payload.mime_type,

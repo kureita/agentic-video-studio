@@ -360,9 +360,18 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
         set((state) => {
             const { newOutputs, newNodes } = clearNodeOutputArtifacts(state, nodeId);
 
+            // Also drop the pinned-asset flag so the user can now regenerate.
+            const unpinnedNodes = newNodes.map((node) => {
+                if (node.id !== nodeId) return node;
+                const data = node.data as Record<string, unknown> | undefined;
+                if (!data || !("isPinnedAsset" in data)) return node;
+                const { isPinnedAsset: _pinned, ...rest } = data;
+                return { ...node, data: rest };
+            });
+
             return {
                 outputs: newOutputs,
-                nodes: newNodes,
+                nodes: unpinnedNodes,
                 isDirty: true
             };
         });
@@ -805,6 +814,14 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 
         if (!id) {
             console.error("[WorkflowStore] No workflow ID to run node");
+            return;
+        }
+
+        // Nodes dropped in from "Your Stuff" carry a pre-filled output and are flagged with
+        // `isPinnedAsset`. Refuse to regenerate until the user explicitly clears them.
+        const targetNode = store.nodes.find(n => n.id === nodeId);
+        if (targetNode?.data?.isPinnedAsset && store.outputs[nodeId]) {
+            toast.info("This asset is pinned. Clear the node first to regenerate.");
             return;
         }
 

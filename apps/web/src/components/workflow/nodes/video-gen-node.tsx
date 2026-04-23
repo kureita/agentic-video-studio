@@ -1,5 +1,5 @@
 import { memo, useState, useRef, useMemo, ChangeEvent, useCallback, useEffect } from "react";
-import { NodeProps, useReactFlow } from "@xyflow/react";
+import { NodeProps, useReactFlow, useUpdateNodeInternals, type Edge } from "@xyflow/react";
 import { Video, Clock, ChevronDown, Square, Loader2, Download, Monitor, MoreVertical } from "lucide-react";
 import { NodeWrapper } from "@/components/workflow/node-wrapper";
 import { HighlightedTextarea } from "@/components/workflow/nodes/highlighted-textarea";
@@ -132,6 +132,32 @@ const getInputModeLabel = (mode: InputMode) => {
     }
 };
 
+// Ordered preference of which image handle to reuse in each input mode.
+// The first entry that's available in the new mode wins.
+const IMAGE_REMAP_PRIORITY: Record<InputMode, string[]> = {
+    t2v: [],
+    i2v: ["start_image", "end_image"],
+    reference: ["reference_image", "reference_images"],
+    elements: ["elements_image"],
+    v2v: [],
+};
+
+const VIDEO_REMAP_PRIORITY: Record<InputMode, string[]> = {
+    t2v: [],
+    i2v: [],
+    reference: [],
+    elements: ["elements_video"],
+    v2v: ["reference_video"],
+};
+
+const AUDIO_REMAP_PRIORITY: Record<InputMode, string[]> = {
+    t2v: ["audio"],
+    i2v: ["audio"],
+    reference: ["audio"],
+    elements: ["elements_audio"],
+    v2v: ["audio"],
+};
+
 const getNativeAudioDefault = (model?: Model) => {
     const hasAudioCapability = !!model?.capabilities?.some((c) => c.toLowerCase() === "audio");
     if (!hasAudioCapability) return false;
@@ -161,7 +187,8 @@ const getCapabilitiesLabel = (capabilities: string[] = []) => {
 
 export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
     const { deleteElements } = useReactFlow();
-    const { nodes, setNodes, runNode, clearNodeOutput, outputs, runningNodeId, setRawOutput } = useWorkflowStore();
+    const updateNodeInternals = useUpdateNodeInternals();
+    const { nodes, setNodes, setEdges: setGlobalEdges, runNode, clearNodeOutput, outputs, runningNodeId, setRawOutput } = useWorkflowStore();
 
     const { models, isLoading: isModelsLoading } = useModels();
     const videoModels = models.filter(m => m.type === "video");
@@ -424,6 +451,50 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
         }
     }, [selectedModelData, requestedInputMode, inputMode, updateData]);
 
+    // ONE-SHOT drift correction: if the workflow loaded with edges targeting
+    // handles that the saved `inputMode` doesn't expose (e.g. edges on
+    // `reference_images` but mode stored as `t2v`), flip mode exactly once so
+    // the handles appear. After this runs we never touch the mode again — the
+    // user and the remap effect own mode from that point on. This avoids any
+    // possibility of an inference-vs-remap oscillation.
+    const didRunInitialInferenceRef = useRef(false);
+    useEffect(() => {
+        if (didRunInitialInferenceRef.current) return;
+        if (!selectedModelData) return;
+
+        const state = useWorkflowStore.getState();
+        const incoming = state.edges.filter((e) => e.target === id);
+        if (incoming.length === 0) {
+            // Nothing to infer from — mark done so we don't keep retrying.
+            didRunInitialInferenceRef.current = true;
+            return;
+        }
+
+        const handleIds = new Set<string>();
+        for (const e of incoming) {
+            const h = e.targetHandle?.split("|")[1] ?? "";
+            if (h) handleIds.add(h);
+        }
+
+        let desiredMode: InputMode | null = null;
+        if (handleIds.has("elements_image") || handleIds.has("elements_video") || handleIds.has("elements_audio")) {
+            desiredMode = "elements";
+        } else if (handleIds.has("reference_video")) {
+            desiredMode = "v2v";
+        } else if (handleIds.has("reference_image") || handleIds.has("reference_images")) {
+            desiredMode = "reference";
+        } else if (handleIds.has("start_image") || handleIds.has("end_image")) {
+            desiredMode = "i2v";
+        }
+
+        didRunInitialInferenceRef.current = true;
+
+        if (!desiredMode || desiredMode === inputMode) return;
+        if (!selectableInputModes.includes(desiredMode)) return;
+
+        updateData({ inputMode: desiredMode });
+    }, [selectedModelData, selectableInputModes, inputMode, id, updateData]);
+
     const configInputs = useMemo(() => {
         const inputs: { id: string, label: string, type: "text" | "image" | "video" | "audio" }[] = [
             { id: "text", label: "Text/Prompt", type: "text" }
@@ -463,6 +534,148 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
         frameImagesMax,
         referenceBounds.max,
     ]);
+
+    // Notify React Flow that this node's handles changed so it recomputes edge
+    // endpoints immediately. Without this, edges keep rendering against the
+    // OLD handle positions (stale handle-bounds cache) until the page is
+    // refreshed.
+    const handleSignature = useMemo(
+        () => configInputs.map((h) => h.id).sort().join("|"),
+        [configInputs]
+    );
+    useEffect(() => {
+        updateNodeInternals(id);
+    }, [handleSignature, id, updateNodeInternals]);
+
+    // When the set of available input handles actually changes (the user flipped
+    // mode or picked a new model), reconcile existing edges:
+    //   * edges still on a valid handle within capacity → keep as-is
+    //   * edges whose handle vanished but have a compatible replacement in the
+    //     new mode → remap onto that handle
+    //   * edges whose handle vanished and have no compatible replacement → DROP
+    //
+    // Dropping (rather than preserving silently) is deliberate: users expect a
+    // mode switch to reshape the node; connections that don't fit the new mode
+    // must not silently resurface when switching back. First render and no-op
+    // re-renders are skipped so saved workflows aren't wiped on load.
+    const previousHandleKeyRef = useRef<string | null>(null);
+    useEffect(() => {
+        if (!selectedModelData) return;
+
+        const handlesById = new Map(configInputs.map((h) => [h.id, h] as const));
+        const newKey = [...handlesById.keys()].sort().join("|");
+        const prevKey = previousHandleKeyRef.current;
+        previousHandleKeyRef.current = newKey;
+
+        // Skip first render (saved state hydration) and no-op re-renders.
+        if (prevKey === null || prevKey === newKey) return;
+
+        const state = useWorkflowStore.getState();
+        const currentEdges = state.edges;
+        const edgesToThisNode = currentEdges.filter((e) => e.target === id);
+        if (edgesToThisNode.length === 0) return;
+
+        const imagePool = configInputs.filter((h) => h.type === "image");
+        const videoPool = configInputs.filter((h) => h.type === "video");
+        const audioPool = configInputs.filter((h) => h.type === "audio");
+
+        const capacityOf = (handleId: string): number => {
+            if (handleId === "start_image" || handleId === "end_image") return 1;
+            if (handleId === "reference_image") return 1;
+            if (handleId === "reference_video") return 1;
+            if (handleId === "reference_images") return Math.max(1, referenceBounds.max);
+            if (handleId.startsWith("elements_")) {
+                const elementsMax = (selectedModelData?.elements_max ?? 4);
+                return Math.max(1, elementsMax);
+            }
+            if (handleId === "audio") return 1;
+            if (handleId === "text") return Infinity;
+            return 1;
+        };
+
+        const usageCount = new Map<string, number>();
+        const pickHandle = (
+            pool: { id: string; type: string }[],
+            priority: string[]
+        ): string | null => {
+            for (const pid of priority) {
+                const handle = pool.find((h) => h.id === pid);
+                if (!handle) continue;
+                const used = usageCount.get(handle.id) ?? 0;
+                if (used < capacityOf(handle.id)) return handle.id;
+            }
+            for (const handle of pool) {
+                const used = usageCount.get(handle.id) ?? 0;
+                if (used < capacityOf(handle.id)) return handle.id;
+            }
+            return null;
+        };
+
+        // Seed usage from edges already on handles that still exist, dropping
+        // any that exceed the (possibly smaller) capacity for that handle.
+        const droppedEdgeIds = new Set<string>();
+        let didChange = false;
+        for (const edge of edgesToThisNode) {
+            const existingHandleId = edge.targetHandle?.split("|")[1] ?? "";
+            if (!handlesById.has(existingHandleId)) continue;
+            const cap = capacityOf(existingHandleId);
+            const used = usageCount.get(existingHandleId) ?? 0;
+            if (used >= cap) {
+                droppedEdgeIds.add(edge.id);
+                didChange = true;
+                continue;
+            }
+            usageCount.set(existingHandleId, used + 1);
+        }
+
+        const updatedEdges = currentEdges.map((edge) => {
+            if (edge.target !== id) return edge;
+            if (droppedEdgeIds.has(edge.id)) return edge;
+
+            const [sourceType = ""] = (edge.sourceHandle ?? "").split("|");
+            const [, existingHandleId = ""] = (edge.targetHandle ?? "").split("|");
+
+            // Still on a valid handle and within capacity — keep as-is.
+            if (handlesById.has(existingHandleId)) return edge;
+
+            const pool = sourceType === "image"
+                ? imagePool
+                : sourceType === "video"
+                    ? videoPool
+                    : sourceType === "audio"
+                        ? audioPool
+                        : sourceType === "text"
+                            ? configInputs.filter((h) => h.type === "text")
+                            : [];
+            const priority = sourceType === "image"
+                ? IMAGE_REMAP_PRIORITY[inputMode]
+                : sourceType === "video"
+                    ? VIDEO_REMAP_PRIORITY[inputMode]
+                    : sourceType === "audio"
+                        ? AUDIO_REMAP_PRIORITY[inputMode]
+                        : [];
+            const nextHandleId = pool.length > 0 ? pickHandle(pool, priority) : null;
+
+            // No compatible handle in the new mode → DROP the edge so it can't
+            // silently reappear if the user switches modes again.
+            if (!nextHandleId) {
+                droppedEdgeIds.add(edge.id);
+                didChange = true;
+                return edge;
+            }
+
+            usageCount.set(nextHandleId, (usageCount.get(nextHandleId) ?? 0) + 1);
+            didChange = true;
+            return {
+                ...edge,
+                targetHandle: `${sourceType}|${nextHandleId}`,
+            } as Edge;
+        }).filter((edge) => !droppedEdgeIds.has(edge.id));
+
+        if (didChange) {
+            setGlobalEdges(updatedEdges);
+        }
+    }, [configInputs, inputMode, selectedModelData, referenceBounds.max, id, setGlobalEdges]);
 
     const hasNativeAudioCapability = !!selectedModelData?.capabilities?.some(
         (c) => c.toLowerCase() === "audio"
