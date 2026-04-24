@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
 import logging
+import re
 import tempfile
 import os
 
@@ -121,11 +122,39 @@ async def health_check():
     }
 
 
+def _cors_headers_for(request: Request) -> dict:
+    """CORS headers for error responses.
+
+    Starlette's CORSMiddleware does not run on responses built by exception
+    handlers, so error responses arrive at the browser without
+    Access-Control-Allow-Origin and surface as opaque CORS failures. Mirror the
+    allowlist/regex used by CORSMiddleware so 4xx/5xx responses carry the same
+    headers as successful ones.
+    """
+    origin = request.headers.get("origin")
+    if not origin:
+        return {}
+
+    allowed = origin in settings.cors_origins_list or (
+        settings.cors_origin_regex
+        and re.fullmatch(settings.cors_origin_regex, origin) is not None
+    )
+    if not allowed:
+        return {}
+
+    return {
+        "Access-Control-Allow-Origin": origin,
+        "Access-Control-Allow-Credentials": "true",
+        "Vary": "Origin",
+    }
+
+
 @app.exception_handler(PyMongoError)
-async def mongo_error_handler(_: Request, __: PyMongoError):
+async def mongo_error_handler(request: Request, _: PyMongoError):
     return JSONResponse(
         status_code=503,
         content={"detail": "Database temporarily unavailable"},
+        headers=_cors_headers_for(request),
     )
 
 

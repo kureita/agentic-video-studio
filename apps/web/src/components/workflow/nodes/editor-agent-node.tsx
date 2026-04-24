@@ -130,6 +130,8 @@ export const EditorAgentNode = memo(({ id, selected, data }: NodeProps) => {
         }
     }, [extractingHandle, id, renderState.blobUrl, setRawOutput, storedVideoUrl, workflowId]);
 
+    const autoExtractionAttemptedRef = useRef<string | null>(null);
+
     useEffect(() => {
         const sourceVideo = renderState.blobUrl || storedVideoUrl || null;
         if (!sourceVideo || !workflowId) return;
@@ -138,7 +140,10 @@ export const EditorAgentNode = memo(({ id, selected, data }: NodeProps) => {
         const hasEndFrame = outputs[`${id}__end_frame`];
         if (hasStartFrame && hasEndFrame) return;
 
+        if (autoExtractionAttemptedRef.current === sourceVideo) return;
+
         const timer = setTimeout(async () => {
+            autoExtractionAttemptedRef.current = sourceVideo;
             try {
                 let startFramePayload: string | undefined;
                 let endFramePayload: string | undefined;

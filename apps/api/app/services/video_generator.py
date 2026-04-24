@@ -134,8 +134,7 @@ class VideoGenerator:
             negative_prompt=negative_prompt,
         )
         if reference_images:
-            args["image_urls"] = reference_images
-            args.setdefault("image_url", reference_images[0])
+            args["image_url"] = reference_images[0]
         if reference_video:
             args["video_url"] = reference_video
         if element_images:
