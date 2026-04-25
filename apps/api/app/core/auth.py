@@ -28,8 +28,23 @@ def _get_jwks() -> dict:
 
 def _get_signing_key(token: str) -> dict:
     """Extract the correct signing key from JWKS for the given token."""
-    jwks = _get_jwks()
-    unverified_header = jwt.get_unverified_header(token)
+    try:
+        jwks = _get_jwks()
+    except Exception as e:
+        # JWKS unavailable shouldn't surface as 500 — the request is
+        # unauthenticated until we can verify the signing key.
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Unable to fetch signing keys: {e!s}",
+        ) from e
+
+    try:
+        unverified_header = jwt.get_unverified_header(token)
+    except JWTError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Malformed token: {e!s}",
+        ) from e
 
     for key in jwks.get("keys", []):
         if key["kid"] == unverified_header.get("kid"):

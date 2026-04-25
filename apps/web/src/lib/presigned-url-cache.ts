@@ -76,19 +76,49 @@ function isExpired(entry: CacheEntry): boolean {
 /**
  * Fetch fresh presigned URLs from the backend API.
  * Uses the public endpoint when in public mode (no auth required).
+ *
+ * Throws on failure so callers can avoid caching the fallback as if it were
+ * a fresh signature (a failed lookup must not poison the cache for 55 min).
  */
 async function fetchPresignedUrls(urls: string[]): Promise<Record<string, string>> {
-    try {
-        if (_publicMode) {
-            const response = await publicWorkflowApi.presign(urls);
-            return response.data.urls;
-        }
-        const response = await api.post<{ urls: Record<string, string> }>("/api/workflows/presign", { urls });
+    if (_publicMode) {
+        const response = await publicWorkflowApi.presign(urls);
         return response.data.urls;
-    } catch (error) {
-        console.error("[PresignedUrlCache] Failed to fetch presigned URLs:", error);
-        return Object.fromEntries(urls.map(u => [u, u]));
     }
+    const response = await api.post<{ urls: Record<string, string> }>("/api/workflows/presign", { urls });
+    return response.data.urls;
+}
+
+// Coalesce concurrent fetches across all callers into a single batched POST,
+// so that 24 nodes calling getPresignedUrl in the same tick produce 1 request
+// instead of 24. Without this, Lambda throttles and returns 503.
+let _pendingBatch: {
+    urls: Set<string>;
+    promise: Promise<Record<string, string>>;
+    resolve: (value: Record<string, string>) => void;
+    reject: (reason: unknown) => void;
+} | null = null;
+
+function scheduleBatchFetch(urls: string[]): Promise<Record<string, string>> {
+    if (!_pendingBatch) {
+        let resolve!: (value: Record<string, string>) => void;
+        let reject!: (reason: unknown) => void;
+        const promise = new Promise<Record<string, string>>((res, rej) => {
+            resolve = res;
+            reject = rej;
+        });
+        const batch = { urls: new Set<string>(), promise, resolve, reject };
+        _pendingBatch = batch;
+        // Flush after the current microtask so all synchronous getPresignedUrl
+        // calls in the same render cycle land in this batch.
+        queueMicrotask(() => {
+            _pendingBatch = null;
+            const urlList = Array.from(batch.urls);
+            fetchPresignedUrls(urlList).then(batch.resolve, batch.reject);
+        });
+    }
+    for (const u of urls) _pendingBatch.urls.add(u);
+    return _pendingBatch.promise;
 }
 
 /**
@@ -120,19 +150,30 @@ export async function getPresignedUrl(url: string): Promise<string> {
         return pending;
     }
 
-    // Fetch fresh presigned URL
+    // Fetch fresh presigned URL via the shared batch
     const promise = (async () => {
         try {
-            const result = await fetchPresignedUrls([rawUrl]);
-            const presignedUrl = result[rawUrl] || url;
+            const result = await scheduleBatchFetch([rawUrl]);
+            const presignedUrl = result[rawUrl];
 
-            // Cache the result
+            if (!presignedUrl) {
+                // Server didn't return a signature for this URL. Don't cache —
+                // a future call should retry rather than be locked into a bad
+                // value for 55 minutes.
+                return url;
+            }
+
             urlCache.set(rawUrl, {
                 presignedUrl,
                 expiresAt: Date.now() + TTL_MS,
             });
-
             return presignedUrl;
+        } catch (err) {
+            // Network/CORS/5xx — don't cache the failure. Return the original
+            // URL so the image at least attempts to load with whatever signature
+            // it already had, and the next render can retry.
+            console.error("[PresignedUrlCache] Failed to fetch presigned URL:", err);
+            return url;
         } finally {
             pendingRequests.delete(rawUrl);
         }
@@ -170,19 +211,26 @@ export async function getPresignedUrls(urls: string[]): Promise<Record<string, s
     }
 
     if (urlsToFetch.length > 0) {
-        const freshUrls = await fetchPresignedUrls(urlsToFetch);
+        let freshUrls: Record<string, string> = {};
+        try {
+            freshUrls = await scheduleBatchFetch(urlsToFetch);
+        } catch (err) {
+            console.error("[PresignedUrlCache] Batch presign failed:", err);
+        }
 
-        for (const [rawUrl, presignedUrl] of Object.entries(freshUrls)) {
-            // Cache the result
-            urlCache.set(rawUrl, {
-                presignedUrl,
-                expiresAt: Date.now() + TTL_MS,
-            });
-
-            // Map back to original URLs
+        for (const rawUrl of urlsToFetch) {
+            const presignedUrl = freshUrls[rawUrl];
+            // Only cache successes — a missing/empty signature means the
+            // request failed and should be retried later, not pinned for 55 min.
+            if (presignedUrl) {
+                urlCache.set(rawUrl, {
+                    presignedUrl,
+                    expiresAt: Date.now() + TTL_MS,
+                });
+            }
             for (const originalUrl of urls) {
                 if (stripPresignedParams(originalUrl) === rawUrl) {
-                    result[originalUrl] = presignedUrl;
+                    result[originalUrl] = presignedUrl || originalUrl;
                 }
             }
         }

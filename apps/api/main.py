@@ -158,6 +158,22 @@ async def mongo_error_handler(request: Request, _: PyMongoError):
     )
 
 
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    # Without this, Starlette's ServerErrorMiddleware returns a bare 500
+    # that bypasses CORSMiddleware, so the browser surfaces it as a CORS
+    # failure instead of the underlying error. Mirror the CORS headers so
+    # the actual status reaches the client.
+    logging.getLogger(__name__).exception(
+        "Unhandled exception on %s %s", request.method, request.url.path
+    )
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error"},
+        headers=_cors_headers_for(request),
+    )
+
+
 # Include API routes (order matters: public & internal before authenticated)
 from app.api.routes import internal_router, public_router
 app.include_router(public_router, prefix="/api")
