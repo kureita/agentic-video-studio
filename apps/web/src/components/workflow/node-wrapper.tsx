@@ -10,8 +10,6 @@ import { useModels } from "@/lib/use-models";
 import {
     computeNodeRunEstimate,
     formatEstimatedUsd,
-    hasUnavailableCostEstimate,
-    isPinnedAssetNode,
 } from "@/lib/compute-cost";
 import {
     getWorkflowConnectionColor,
@@ -107,13 +105,7 @@ export const NodeWrapper = memo(({
         }),
         [nodeId, nodes, edges, outputsByNodeId, models, estimatedCost]
     );
-    const hasUnavailableRunCost = useMemo(() => {
-        const nodeById = new Map(nodes.map((node) => [node.id, node]));
-        return runEstimate.nodeIds.some((id) => {
-            const node = nodeById.get(id);
-            return !!node && !isPinnedAssetNode(node) && hasUnavailableCostEstimate(node, models);
-        });
-    }, [nodes, runEstimate.nodeIds, models]);
+    const hasUnavailableRunCost = runEstimate.hasUnavailable;
     const effectiveEstimatedCost = runEstimate.cost > 0 ? runEstimate.cost : (estimatedCost ?? 0);
     const upstreamBillableNodeCount = runEstimate.billableNodeIds.filter((id) => id !== nodeId).length;
     const runScopeLabel = upstreamBillableNodeCount > 0

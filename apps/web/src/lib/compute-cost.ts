@@ -133,7 +133,17 @@ export function hasUnavailableCostEstimate(node: CostNode, models?: Model[]): bo
     return false;
 }
 
-export function computeNodeCost(node: CostNode, models: Model[]): number {
+/**
+ * Estimate USD cost for a single node.
+ *
+ * Returns `null` when the node CAN'T be honestly estimated — i.e. its cost
+ * depends on a required input that hasn't been provided (e.g. avatar / lipsync
+ * models bill per second of the attached audio, so without an audio length we
+ * can't quote a dollar amount). Callers must distinguish `null` (unknown) from
+ * `0` (definitely free) so the pre-run confirm dialog and balance check don't
+ * silently under-estimate.
+ */
+export function computeNodeCost(node: CostNode, models: Model[]): number | null {
     if (node.type === "editorAgent") return EDITOR_AGENT_DEFAULT_ESTIMATE_USD;
 
     const modelType = getModelTypeForNode(node);
@@ -142,10 +152,10 @@ export function computeNodeCost(node: CostNode, models: Model[]): number {
     const model = findModelForNode(node, modelType, models);
     if (!model || !model.configs || model.configs.length === 0) return 0;
 
-    // Audio-driven models (avatar, lipsync): real cost = $/sec × audio duration.
-    // Until the audio is attached and probed there's no honest estimate to
-    // quote, so contribute $0 and let `hasUnavailableCostEstimate` flag it.
-    if (model.requires_input_duration) return 0;
+    // Audio-driven video models (avatar, lipsync): output duration = attached
+    // audio duration, and we have no way to probe that ahead of time. Treat the
+    // estimate as unavailable so aggregates flag it instead of pretending $0.
+    if (model.requires_input_duration) return null;
 
     if (modelType === "video") {
         const resolution = (node.data?.resolution as string) || "720p";
@@ -186,15 +196,34 @@ export function computeNodeCost(node: CostNode, models: Model[]): number {
     return (defaultCfg?.est_price_usd ?? model.configs[0]?.est_price_usd) ?? 0;
 }
 
-export function computeWorkflowCost(nodes: CostNode[], models: Model[]): number {
-    return nodes.reduce((total, node) => {
-        if (isPinnedAssetNode(node)) return total;
-        return total + computeNodeCost(node, models);
-    }, 0);
+/**
+ * Sum of known per-node costs across a workflow. `cost` is just the known
+ * portion (excludes nodes whose estimate is unavailable); `hasUnavailable`
+ * tells the caller whether the real total may be higher.
+ */
+export interface WorkflowCostEstimate {
+    cost: number;
+    hasUnavailable: boolean;
+}
+
+export function computeWorkflowCost(nodes: CostNode[], models: Model[]): WorkflowCostEstimate {
+    let cost = 0;
+    let hasUnavailable = false;
+    for (const node of nodes) {
+        if (isPinnedAssetNode(node)) continue;
+        const nodeCost = computeNodeCost(node, models);
+        if (nodeCost == null) {
+            hasUnavailable = true;
+            continue;
+        }
+        cost += nodeCost;
+    }
+    return { cost, hasUnavailable };
 }
 
 export interface NodeRunEstimate {
     cost: number;
+    hasUnavailable: boolean;
     nodeIds: string[];
     billableNodeIds: string[];
     billableNodeCount: number;
@@ -245,18 +274,23 @@ export function computeNodeRunEstimate(args: {
     const nodeById = new Map(nodes.map((node) => [node.id, node]));
     const nodeIds = getNodeIdsNeededForRun(nodeId, nodes, edges, outputs);
     let cost = 0;
+    let hasUnavailable = false;
     const billableNodeIds: string[] = [];
 
     for (const id of nodeIds) {
         const node = nodeById.get(id);
         if (!node || isPinnedAssetNode(node)) continue;
 
-        const nodeCost = id === nodeId && currentNodeEstimatedCost != null
+        const nodeCost = id === nodeId && currentNodeEstimatedCost !== undefined
             ? currentNodeEstimatedCost
             : computeNodeCost(node, models);
+        if (nodeCost == null) {
+            hasUnavailable = true;
+            continue;
+        }
         cost += nodeCost;
         if (nodeCost > 0) billableNodeIds.push(id);
     }
 
-    return { cost, nodeIds, billableNodeIds, billableNodeCount: billableNodeIds.length };
+    return { cost, hasUnavailable, nodeIds, billableNodeIds, billableNodeCount: billableNodeIds.length };
 }

@@ -11,7 +11,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { YourStuffPanel } from "@/components/your-stuff-panel";
 import { useModels } from "@/lib/use-models";
-import { computeWorkflowCost, formatEstimatedUsd, hasUnavailableCostEstimate, isPinnedAssetNode } from "@/lib/compute-cost";
+import { computeWorkflowCost, formatEstimatedUsd } from "@/lib/compute-cost";
 
 export function WorkflowHeader() {
     const router = useRouter();
@@ -24,8 +24,7 @@ export function WorkflowHeader() {
     
     const { models, isLoading: areModelsLoading } = useModels();
 
-    const totalEstimatedCost = computeWorkflowCost(nodes, models);
-    const hasUnavailableRunAllCost = nodes.some((node) => !isPinnedAssetNode(node) && hasUnavailableCostEstimate(node, models));
+    const { cost: totalEstimatedCost, hasUnavailable: hasUnavailableRunAllCost } = computeWorkflowCost(nodes, models);
     const runAllTooltip = areModelsLoading
         ? "Run all nodes (cost estimate loading)"
         : totalEstimatedCost > 0

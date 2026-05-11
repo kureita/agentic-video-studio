@@ -688,6 +688,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
             ]);
 
             let totalEstimatedCost = 0;
+            let hasUnavailable = false;
             for (const node of nodes) {
                 // Approximate: assume all generative nodes without pinned assets are re-run
                 const data = node.data as Record<string, unknown> | undefined;
@@ -695,11 +696,27 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
                     continue; // Skip pinned assets
                 }
                 const cost = computeNodeCost(node, models);
-                if (cost) totalEstimatedCost += cost;
+                if (cost == null) {
+                    hasUnavailable = true;
+                    continue;
+                }
+                totalEstimatedCost += cost;
             }
 
-            if (totalEstimatedCost > 0) {
-                const currentBalance = balanceRes?.data?.balance || 0;
+            const currentBalance = balanceRes?.data?.balance || 0;
+
+            if (hasUnavailable) {
+                // At least one node (e.g. avatar/lipsync) bills by attached
+                // media duration we can't probe yet. Skip the dollar-amount
+                // balance gate — the backend `check_balance` will still reject
+                // empty wallets — and surface the uncertainty to the user.
+                const msg = totalEstimatedCost > 0
+                    ? `This workflow includes nodes whose cost depends on attached media duration (e.g. avatar / lipsync).\n\nKnown nodes will cost ~$${totalEstimatedCost.toFixed(2)}; the audio-driven nodes will add more on top. Your balance: $${currentBalance.toFixed(2)}.\n\nProceed?`
+                    : `This workflow includes nodes whose cost depends on attached media duration (e.g. avatar / lipsync), so the total can't be estimated up-front. Your balance: $${currentBalance.toFixed(2)}.\n\nProceed?`;
+                if (!window.confirm(msg)) {
+                    return;
+                }
+            } else if (totalEstimatedCost > 0) {
                 if (currentBalance < totalEstimatedCost) {
                     toast.error(`Insufficient balance. Estimated cost is ~$${totalEstimatedCost.toFixed(2)}, but you only have $${currentBalance.toFixed(2)}.`);
                     return;
@@ -975,16 +992,28 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
             findNodesToRun(nodeId);
 
             let totalEstimatedCost = 0;
+            let hasUnavailable = false;
             for (const nid of nodesToRun) {
                 const node = store.nodes.find(n => n.id === nid);
-                if (node) {
-                    const cost = computeNodeCost(node, models);
-                    if (cost) totalEstimatedCost += cost;
+                if (!node) continue;
+                const cost = computeNodeCost(node, models);
+                if (cost == null) {
+                    hasUnavailable = true;
+                    continue;
                 }
+                totalEstimatedCost += cost;
             }
 
-            if (totalEstimatedCost > 0) {
-                const currentBalance = balanceRes?.data?.balance || 0;
+            const currentBalance = balanceRes?.data?.balance || 0;
+
+            if (hasUnavailable) {
+                const msg = totalEstimatedCost > 0
+                    ? `Running this node will also run upstream nodes. Some of them (e.g. avatar / lipsync) bill by attached media duration, so the total isn't known up-front.\n\nKnown nodes will cost ~$${totalEstimatedCost.toFixed(2)}; the audio-driven nodes will add more on top. Your balance: $${currentBalance.toFixed(2)}.\n\nProceed?`
+                    : `This node's cost depends on attached media duration (e.g. avatar / lipsync), so the total isn't known up-front. Your balance: $${currentBalance.toFixed(2)}.\n\nProceed?`;
+                if (!window.confirm(msg)) {
+                    return;
+                }
+            } else if (totalEstimatedCost > 0) {
                 if (currentBalance < totalEstimatedCost) {
                     toast.error(`Insufficient balance. Estimated cost is ~$${totalEstimatedCost.toFixed(2)}, but you only have $${currentBalance.toFixed(2)}.`);
                     return;

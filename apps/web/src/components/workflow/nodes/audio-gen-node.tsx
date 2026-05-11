@@ -334,7 +334,7 @@ export const AudioGenNode = memo(({ id, selected, data }: NodeProps) => {
                     </div>
 
                     {/* Controls Bar */}
-                    <div className="relative z-20 px-3 pb-3 flex items-center gap-2 opacity-0 group-hover/audio:opacity-100 focus-within:opacity-100 transition-all duration-300 translate-y-2 group-hover/audio:translate-y-0 focus-within:translate-y-0">
+                    <div className="relative z-20 px-3 pb-3 flex flex-wrap items-center gap-x-2 gap-y-2 opacity-0 group-hover/audio:opacity-100 focus-within:opacity-100 transition-all duration-300 translate-y-2 group-hover/audio:translate-y-0 focus-within:translate-y-0">
                         {/* Audio Type Selector */}
                         <div className="relative flex-shrink-0" ref={typeMenuRef}>
                             <button
