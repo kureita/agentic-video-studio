@@ -37,6 +37,37 @@ class BillingService:
             raise HTTPException(status_code=404, detail="User not found")
         return user_doc.get("usd_balance", 0.0)
 
+    async def check_balance(self, user_id: str, node_type: str) -> None:
+        """Pre-execution balance gate.
+
+        Raises HTTPException(402) if the user's balance is below the
+        minimum required for the given node type.
+
+        Minimums:
+          - audioGen / videoGen: $1.00 (these are expensive — voice design
+            alone is $3, most videos are $0.35–$4+)
+          - imageGen / editorAgent: $0.00 (just non-negative)
+        """
+        MINIMUM_BALANCE: dict[str, float] = {
+            "audioGen": 1.00,
+            "videoGen": 1.00,
+            "imageGen": 0.00,
+            "editorAgent": 0.00,
+        }
+        min_required = MINIMUM_BALANCE.get(node_type)
+        if min_required is None:
+            return  # Not a billable node type (e.g. text, mediaUpload)
+
+        balance = await self.get_user_balance(user_id)
+        if balance < min_required:
+            raise HTTPException(
+                status_code=402,
+                detail=(
+                    f"Insufficient balance. You need at least ${min_required:.2f} "
+                    f"to run {node_type} nodes. Current balance: ${balance:.2f}"
+                ),
+            )
+
     async def charge_usage(
         self,
         user_id: str,

@@ -24,7 +24,9 @@ class Settings(BaseSettings):
     app_name: str = "Kureita API"
     app_env: str = "local"  # APP_ENV: "local" uses Dodo test_mode; "prod" uses live_mode
     debug: bool = False
-    api_base_url: str = "http://localhost:8000"  # Public URL of the API (also used for webhook URL in dashboard)
+    api_base_url: str = (
+        "http://localhost:8000"  # Public URL of the API (also used for webhook URL in dashboard)
+    )
     web_app_url: str = "http://localhost:3000"  # Browser app origin for Dodo return_url
 
     # CORS (comma-separated string, use cors_origins_list property for list)
@@ -58,6 +60,9 @@ class Settings(BaseSettings):
     # Public URL where fal should deliver webhooks (e.g. https://app-api.kureita.com).
     # Leave empty in local dev to auto-fall back to synchronous subscribe mode.
     fal_webhook_public_url: str = ""
+    # When true, video generation returns the exact fal payload without submitting.
+    # Useful to verify start/end/elements wiring safely in production.
+    fal_video_debug_dry_run: bool = False
 
     @property
     def google_ai_key(self) -> str:
@@ -75,6 +80,15 @@ class Settings(BaseSettings):
     aws_region: str = "us-east-1"
     s3_bucket: str = "kureita-assets"
     s3_endpoint: str = ""  # Optional: for S3-compatible services (R2, MinIO)
+
+    # Upload limits. Direct browser-to-S3 uploads use these for per-file checks
+    # and tenant storage quota enforcement. The API multipart route remains
+    # intentionally small because API Gateway/Lambda reject large request bodies.
+    upload_max_image_mb: int = 25
+    upload_max_video_mb: int = 100
+    upload_max_audio_mb: int = 50
+    upload_api_max_mb: int = 8
+    tenant_asset_storage_quota_mb: int = 500
 
     # Remotion rendering service
     remotion_url: str = "http://localhost:3001"  # Remotion render server

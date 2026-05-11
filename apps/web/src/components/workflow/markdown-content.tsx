@@ -19,7 +19,7 @@ import {
 // ============================================
 
 // Regex to match @Text #N, @Image Gen #N, @Video Gen #N etc.
-const REF_PATTERN = /@(?:Text|Image Gen|Video Gen|Vision|Editor Agent|Media Upload|Audio Gen)\s*#\d+/g;
+const REF_PATTERN = /@(?:Text|Image Gen|Video Gen|Vision|Media Assistant|Editor Agent|Media Upload|Upload|Audio Gen)\s*#\d+/g;
 
 function getRefIcon(ref: string) {
     if (ref.startsWith("@Text")) return <Type className="w-2.5 h-2.5" />;
@@ -27,7 +27,8 @@ function getRefIcon(ref: string) {
     if (ref.startsWith("@Video Gen")) return <Video className="w-2.5 h-2.5" />;
     if (ref.startsWith("@Vision")) return <Eye className="w-2.5 h-2.5" />;
     if (ref.startsWith("@Editor Agent")) return <Clapperboard className="w-2.5 h-2.5" />;
-    if (ref.startsWith("@Media Upload")) return <Upload className="w-2.5 h-2.5" />;
+    if (ref.startsWith("@Media Assistant")) return <Eye className="w-2.5 h-2.5" />;
+    if (ref.startsWith("@Media Upload") || ref.startsWith("@Upload")) return <Upload className="w-2.5 h-2.5" />;
     if (ref.startsWith("@Audio Gen")) return <Music className="w-2.5 h-2.5" />;
     return <Type className="w-2.5 h-2.5" />;
 }
@@ -38,7 +39,8 @@ function getRefColor(ref: string) {
     if (ref.startsWith("@Video Gen")) return "bg-emerald-500/15 text-emerald-400 border-emerald-500/25";
     if (ref.startsWith("@Vision")) return "bg-amber-500/15 text-amber-400 border-amber-500/25";
     if (ref.startsWith("@Editor Agent")) return "bg-rose-500/15 text-rose-400 border-rose-500/25";
-    if (ref.startsWith("@Media Upload")) return "bg-cyan-500/15 text-cyan-400 border-cyan-500/25";
+    if (ref.startsWith("@Media Assistant")) return "bg-indigo-500/15 text-indigo-400 border-indigo-500/25";
+    if (ref.startsWith("@Media Upload") || ref.startsWith("@Upload")) return "bg-cyan-500/15 text-cyan-400 border-cyan-500/25";
     if (ref.startsWith("@Audio Gen")) return "bg-orange-500/15 text-orange-400 border-orange-500/25";
     return "bg-blue-500/15 text-blue-400 border-blue-500/25";
 }

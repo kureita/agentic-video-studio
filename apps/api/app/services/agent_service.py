@@ -49,6 +49,33 @@ class AgentService:
         self._chat_models_cache: Optional[List[Dict[str, Any]]] = None
         self._chat_models_cache_ts: float = 0.0
 
+    def _node_reference_number(self, node: Dict[str, Any], nodes: List[Dict[str, Any]]) -> Optional[int]:
+        data = node.get("data", {}) or {}
+        stored = data.get("referenceNumber")
+        if isinstance(stored, int) and stored > 0:
+            return stored
+        if isinstance(stored, float) and stored.is_integer() and stored > 0:
+            return int(stored)
+
+        node_type = node.get("type")
+        typed_nodes = [candidate for candidate in nodes if candidate.get("type") == node_type]
+        node_id = node.get("id")
+        for index, candidate in enumerate(typed_nodes):
+            if candidate is node or candidate.get("id") == node_id:
+                return index + 1
+        return None
+
+    def _find_node_by_reference(self, nodes: List[Dict[str, Any]], node_type: str, reference_number: int) -> Optional[Dict[str, Any]]:
+        candidates = [node for node in nodes if node.get("type") == node_type]
+        for node in candidates:
+            if self._node_reference_number(node, nodes) == reference_number:
+                return node
+
+        fallback_index = reference_number - 1
+        if 0 <= fallback_index < len(candidates):
+            return candidates[fallback_index]
+        return None
+
     async def _fetch_openrouter_modalities_map(self) -> Dict[str, List[str]]:
         if self._chat_models_cache is not None and (time.time() - self._chat_models_cache_ts) < 3600:
             return {
@@ -375,7 +402,7 @@ class AgentService:
 
         endpoint_id = resolve_endpoint_id(
             model_input=model_input,
-            fallback_endpoint_id="fal-ai/minimax/speech-2.8-turbo",
+            fallback_endpoint_id="fal-ai/minimax/voice-design",
             model_type="audio",
         )
         by_ep = get_model_by_endpoint_id(endpoint_id)
@@ -399,10 +426,15 @@ class AgentService:
         return candidates[0]
 
     def _normalize_audio_nodes_for_category(self, nodes: List[Dict[str, Any]]) -> tuple[List[Dict[str, Any]], List[str]]:
-        """Ensure audioGen model category matches audioType (speech/music/sfx)."""
+        """Ensure audioGen model category matches audioType."""
         normalized_nodes = deepcopy(nodes)
         warnings: List[str] = []
-        type_to_category = {"speech": "tts", "music": "music", "sfx": "sfx"}
+        type_to_category = {
+            "voice_design": "voice_design",
+            "voice_clone": "voice_clone",
+            "music": "music",
+            "sfx": "sfx",
+        }
 
         for node in normalized_nodes:
             if node.get("type") != "audioGen":
@@ -412,8 +444,8 @@ class AgentService:
             if not isinstance(node_data, dict):
                 continue
 
-            audio_type = str(node_data.get("audioType", "speech")).lower()
-            expected_category = type_to_category.get(audio_type, "tts")
+            audio_type = str(node_data.get("audioType", "voice_design")).lower()
+            expected_category = type_to_category.get(audio_type, "voice_design")
             selected_model = str(node_data.get("model") or "")
             entry = self._resolve_audio_model_entry(selected_model) if selected_model else None
             selected_category = str((entry or {}).get("category", "")).lower()
@@ -689,11 +721,12 @@ class AgentService:
             if not match:
                 continue
 
-            text_index = int(match.group(1)) - 1
-            if text_index < 0 or text_index >= len(text_nodes):
+            reference_number = int(match.group(1))
+            expected_text_node = self._find_node_by_reference(nodes, "text", reference_number)
+            if not expected_text_node:
                 continue
 
-            expected_source_id = str(text_nodes[text_index].get("id", ""))
+            expected_source_id = str(expected_text_node.get("id", ""))
             target_id = str(node.get("id", ""))
             if not expected_source_id or not target_id:
                 continue
@@ -816,16 +849,23 @@ class AgentService:
                 extra.append("elements")
             if "v2v" in caps:
                 extra.append("v2v")
+            if "avatar" in caps:
+                extra.append("avatar")
             if "audio" in caps:
                 extra.append("audio")
             tag = f" [{'/'.join(extra)}]" if extra else ""
             return f'"{mname}" (id: "{mid}"){tag}'
 
         video_model_names = ", ".join(_fmt_model(m) for m in VIDEO_MODELS)
-        tts_model_names = ", ".join(
+        voice_design_model_names = ", ".join(
             f'"{m.get("name", m.get("id", "Unknown"))}" (id: "{m.get("id", "")}")'
             for m in AUDIO_MODELS
-            if str(m.get("category", "")).lower() == "tts"
+            if str(m.get("category", "")).lower() == "voice_design"
+        )
+        voice_clone_model_names = ", ".join(
+            f'"{m.get("name", m.get("id", "Unknown"))}" (id: "{m.get("id", "")}")'
+            for m in AUDIO_MODELS
+            if str(m.get("category", "")).lower() == "voice_clone"
         )
         music_model_names = ", ".join(
             f'"{m.get("name", m.get("id", "Unknown"))}" (id: "{m.get("id", "")}")'
@@ -866,6 +906,11 @@ class AgentService:
             f'"{m.get("id", "")}"'
             for m in VIDEO_MODELS
             if "v2v" in {c.lower() for c in m.get("capabilities", [])}
+        )
+        avatar_model_names = ", ".join(
+            f'"{m.get("id", "")}"'
+            for m in VIDEO_MODELS
+            if "avatar" in {c.lower() for c in m.get("capabilities", [])}
         )
 
         duration_parts = []
@@ -918,8 +963,8 @@ Your #1 priority is VISUAL CONSISTENCY — every character, background, and styl
    - **Model Notes**: "flux-2-dev" cheapest ($0.005). "gpt-image-1" best for editing. "kling-image-o3" for character consistency. "flux-2-max" highest quality. "nano-banana-2" great quality + fast.
 
 3. **videoGen** - Video Generator (Multiple models via fal.ai)
-   - Inputs: "text|text" (type: text), "image|start_image" (type: image), "image|end_image" (type: image, optional), "image|reference_image" / "image|reference_images" (type: image, for reference mode), "video|reference_video" (type: video, for v2v mode), "image|elements_image" (type: image, elements), "video|elements_video" (type: video, elements), "audio|elements_audio" (type: audio, elements)
-   - Outputs: "video|video" (type: video), "image|start_frame" (type: image, first frame), "image|end_frame" (type: image, last frame)
+   - Inputs: "text|text" (type: text), "image|start_image" (type: image), "image|end_image" (type: image, optional), "image|reference_image" / "image|reference_images" (type: image, for reference mode), "video|reference_video" (type: video, for v2v/lipsync mode), "image|elements_image" (type: image, elements), "video|elements_video" (type: video, elements), "audio|elements_audio" (type: audio, elements), "audio|audio" (type: audio, for avatar/lipsync/audio-input modes)
+   - Outputs: "video|video" (type: video), "audio|audio" (type: audio, embedded video audio using the same video URL), "image|start_frame" (type: image, first frame), "image|end_frame" (type: image, last frame)
    - Data: {{ "label": "Video Scene X", "prompt": "Motion description", "duration": "5s", "ratio": "9:16", "model": "kling-video-v3-standard", "generateAudio": true, "inputMode": "t2v" }}
    - **Prompt Type**: Write this as a MOTION prompt. If `start_image` is connected, assume the clip starts from that exact frame, then describe what changes over time: subject movement, camera movement, timing, performance, atmosphere shifts, and the ending beat.
    - **Available Models**: {video_model_names}
@@ -932,6 +977,7 @@ Your #1 priority is VISUAL CONSISTENCY — every character, background, and styl
      - If reference images are needed (multi-subject / consistency), pick from: {reference_model_names}.
      - If elements mode is needed, pick from: {elements_model_names}.
      - If v2v (video extend) is needed, pick from: {v2v_model_names}.
+     - If avatar video from image + spoken audio is needed, pick from: {avatar_model_names}. Use `"bytedance-omnihuman-v1-5"` for OmniHuman avatar generation.
      - For cinematic camera control, use `"kling-motion-control"` (accepts a single start image).
    - **Input Mode Rules (CRITICAL)**:
      - Use `inputMode: "t2v"` when no media handles are connected.
@@ -939,32 +985,32 @@ Your #1 priority is VISUAL CONSISTENCY — every character, background, and styl
      - Use `inputMode: "reference"` only when reference image handles are connected.
      - Use `inputMode: "elements"` only when elements handles are connected.
      - Use `inputMode: "v2v"` only when a reference video is connected.
+     - Use `inputMode: "avatar"` when an image and audio should produce a talking avatar video.
    - **Audio Rules**:
      - If no external audio node is connected and the selected model supports native audio, default to `generateAudio: true` for ad/reel/talking-head workflows.
      - If external `audioGen` is connected, prefer `generateAudio: false` to avoid double audio unless the user explicitly asks for both.
      - If the user wants custom voiceover/music/SFX from separate audio nodes, keep `generateAudio: false` and connect `audioGen` output (`audio|audio`) to `videoGen` input (`audio|audio`) or `editorAgent` input (`audio|audio`).
 
-4. **audioGen** - Audio Generator (Speech, Music, SFX)
-   - Inputs: "text|prompt" (type: text, optional — for TTS script or music/SFX description)
+4. **audioGen** - Audio Generator (Voice Design, Voice Clone, Music, SFX)
+   - Inputs: "text|prompt" (type: text, optional — for voice description, clone preview text, or music/SFX description), "text|preview_text" (type: text, voice design preview), "audio|audio" (type: audio, voice clone source)
    - Outputs: "audio|audio" (type: audio)
-   - Data: {{ "label": "Audio: [Name]", "audioType": "speech" | "music" | "sfx", "prompt": "Content or description", "voice": "Rachel", "duration": 15, "model": "minimax-speech-2-8-turbo" }}
-   - **CRITICAL**: The `"model"` field MUST be the stable **id** (e.g. `"eleven-v3"`, `"minimax-speech-2-8-turbo"`, `"eleven-music"`, `"eleven-sfx-v2"`). NEVER use the display name.
+   - Data: {{ "label": "Audio: [Name]", "audioType": "voice_design" | "voice_clone" | "music" | "sfx", "prompt": "Content or description", "previewText": "Preview script for voice design", "duration": 15, "model": "minimax-voice-design" }}
+   - **CRITICAL**: The `"model"` field MUST be the stable **id** (e.g. `"minimax-voice-design"`, `"minimax-voice-clone"`, `"eleven-music"`, `"eleven-sfx-v2"`). NEVER use the display name.
    - **Audio Types**:
-     - `"speech"`: Text-to-speech using a selected voice. Set `prompt` to the spoken script. Set `voice` to one of the supported voices (see below).
-     - `"music"`: AI-generated background music. Set `prompt` to a descriptive music brief (genre, mood, instruments). Set `duration` in seconds (10–300).
-     - `"sfx"`: AI-generated sound effects. Set `prompt` to describe the sound. Set `duration` in seconds (1–30).
+     - `"voice_design"`: Create a new MiniMax voice from text. Set `prompt` to the voice description and `previewText` to the preview script (max 500 chars). Use model `"minimax-voice-design"`.
+     - `"voice_clone"`: Clone a voice from an audio input. Connect source audio to `audio|audio`; set `prompt` to optional preview text. Use model `"minimax-voice-clone"`.
+     - `"music"`: AI-generated background music. Set `prompt` to a descriptive music brief (genre, mood, instruments). Optional `duration` is seconds from 3 to 600; omit it to let fal choose from the prompt.
+     - `"sfx"`: AI-generated sound effects. Set `prompt` to describe the sound. Optional `duration` is seconds from 0.5 to 22; omit it to let fal choose from the prompt.
    - **Model by Type (CRITICAL)**:
-     - speech/tts models only: {tts_model_names}
+     - voice design models only: {voice_design_model_names}
+     - instant voice cloning models only: {voice_clone_model_names}
      - music models only: {music_model_names}
      - sfx models only: {sfx_model_names}
      - NEVER assign a model from the wrong category for the selected `audioType`.
-   - **Available Voices (speech only)**:
-     - For `eleven-v3`: "Rachel", "Domi", "Bella", "Antoni", "Elli", "Josh", "Arnold", "Adam", "Sam"
-     - For `minimax-speech-2-8-turbo`: "English_Upbeat_Woman", "English_CalmWoman", "English_radiant_girl", "English_compelling_lady1", "English_magnetic_voiced_man", "English_Trustworth_Man", "English_ManWithDeepVoice", "English_Steadymentor", "English_Diligent_Man", "English_Wiselady"
    - **Connection Rule**: Connect `audioGen` output (`audio|audio`) to:
      - `editorAgent` input `audio|audio` — to layer audio over a video composition
      - `videoGen` input `audio|audio` — to attach audio to a generated video clip
-   - **Example**: For a video ad with voiceover + background music, create TWO audioGen nodes (one `speech`, one `music`) and connect both to the `editorAgent` node.
+   - **Example**: For a video ad with custom presenter audio + background music, create a voice design or voice clone node and a music node, then connect both outputs to the `editorAgent` node.
 
 5. **assistant** - Multimodal Media Processor
    - Inputs: "text|text" (optional), "image|ref_images" (Multiple), "video|ref_videos" (Multiple), "audio|audio" (Multiple)
@@ -979,11 +1025,11 @@ Your #1 priority is VISUAL CONSISTENCY — every character, background, and styl
 
 6. **editorAgent** - AI Editor (Stitches / trims / retimes videos)
    - Inputs: "text|text", "video|ref_videos" (Multiple), "audio|audio" (Multiple — connect audioGen outputs here)
-   - Outputs: "video|output", "image|start_frame", "image|end_frame"
+   - Outputs: "video|output", "audio|audio" (embedded rendered-video audio using the same video URL), "image|start_frame", "image|end_frame"
    - Data: {{ "label": "Editor", "instruction": "Editing instructions. Use this for trimming, stitching, timing correction, pacing, captions, light motion graphics, and exact duration delivery. NOT for primary visual generation.", "ratio": "16:9" }}
 
 7. **mediaUpload** - Asset Upload (User Files)
-   - Outputs: "image|output" OR "video|output"
+   - Outputs: "image|output" OR "video|output" + "audio|audio" for uploaded videos with embedded audio
    - Data: {{ "label": "Upload [Name]", "mediaType": "image" or "video", "output": "URL_IF_KNOWN" }}
 
 # CORE RULES (MUST FOLLOW STRICTLY):
@@ -1220,7 +1266,7 @@ When a **text** node is connected to a generator node (imageGen, videoGen, edito
 the generator node's prompt/instruction field MUST reference the connected text node using the `@Text #N` syntax.
 
 **How it works:**
-- Text nodes are numbered sequentially: Text #1, Text #2, Text #3, etc. (based on their order in the nodes array).
+- Text nodes have stable `data.referenceNumber` values: Text #1, Text #2, Text #3, etc. Once assigned, a node keeps that number even if earlier nodes are deleted.
 - When you connect a text node to a generator node AND want that generator to use the text content, put `@Text #N` in the generator's prompt/instruction field.
 - At runtime, `@Text #N` gets replaced with the actual text content from the referenced text node.
 
@@ -1239,8 +1285,8 @@ the generator node's prompt/instruction field MUST reference the connected text 
 - If a scene has both `imageGen` and `videoGen`, create separate text nodes and separate `@Text #N` references for each.
 - Do NOT connect the same text node to both the scene's `imageGen` and `videoGen` when generating a start image for that scene.
 - Do NOT duplicate the text content directly in the generator's prompt field if a text node is connected.
-- The `@Text #N` number corresponds to the text node's position among ALL text nodes (1-indexed).
-  - If you create 3 text nodes, they are Text #1, Text #2, Text #3 (in the order they appear in the nodes array).
+- The `@Text #N` number corresponds to that text node's stable `data.referenceNumber`, not the current array position.
+- When creating new nodes, set `data.referenceNumber` to the next unused number for that node type and never renumber existing nodes.
 - For `editorAgent` nodes, use `@Text #N` in the `instruction` field.
 - For `assistant` nodes, use `@Text #N` in the `instruction` field.
 - For `imageGen`, `videoGen`, and `audioGen` nodes, use `@Text #N` in the `prompt` field.

@@ -33,6 +33,7 @@ import { useAuth0 } from "@auth0/auth0-react";
 import { useMobileTab } from "@/components/workflow/mobile-tab-context";
 import { useRouter } from "next/navigation";
 import { inferMediaKind } from "@/lib/media-utils";
+import { getNodeReferenceLabel, getNodeReferenceNumber } from "@/lib/node-references";
 
 
 // ============================================
@@ -51,20 +52,6 @@ function getNodeTypeIcon(type: string) {
         case 'mediaUpload': return <Upload className="w-3 h-3" />;
         case 'audioGen': return <Music className="w-3 h-3" />;
         default: return <Type className="w-3 h-3" />;
-    }
-}
-
-function getNodeTypeLabel(type: string) {
-    switch (type) {
-        case 'text': return 'Text';
-        case 'imageGen': return 'Image Gen';
-        case 'videoGen': return 'Video Gen';
-        case 'assistant': return 'Media Assistant';
-        case 'vision': return 'Media Assistant';
-        case 'editorAgent': return 'Editor Agent';
-        case 'mediaUpload': return 'Media Upload';
-        case 'audioGen': return 'Audio Gen';
-        default: return type;
     }
 }
 
@@ -199,9 +186,8 @@ function CursorInput({
     const groupedNodes = nodes.reduce((acc, node, idx) => {
         const type = node.type || 'unknown';
         if (!acc[type]) acc[type] = [];
-        // Calculate the type-specific index
-        const typeIndex = nodes.filter(n => n.type === type).indexOf(node) + 1;
-        const label = `${getNodeTypeLabel(type)} #${typeIndex}`;
+        const typeIndex = getNodeReferenceNumber(node) || nodes.filter(n => n.type === type).indexOf(node) + 1;
+        const label = getNodeReferenceLabel(node);
         acc[type].push({ id: node.id, label, typeIndex, globalIndex: idx });
         return acc;
     }, {} as Record<string, { id: string; label: string; typeIndex: number; globalIndex: number }[]>);

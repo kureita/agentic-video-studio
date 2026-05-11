@@ -9,9 +9,27 @@ import { assetsApi } from "@/lib/api";
 import axios from "axios";
 import { toast } from "sonner";
 import { workflowApi } from "@/lib/workflow-api";
-import { extractFrameFromVideo } from "@/lib/video-utils";
+import { canExtractFramesClientSide, extractFrameFromVideo } from "@/lib/video-utils";
 import { ALLOWED_MEDIA_TYPES } from "@/lib/utils";
 import { inferMediaKind } from "@/lib/media-utils";
+import { getNodeReferenceLabelById } from "@/lib/node-references";
+
+const API_UPLOAD_SAFE_LIMIT_BYTES = 8 * 1024 * 1024;
+
+const getUploadErrorMessage = (error: unknown) => {
+    const response = (error as { response?: { data?: { detail?: unknown }, status?: number } })?.response;
+    const detail = response?.data?.detail;
+    if (typeof detail === "string") return detail;
+    if (detail && typeof detail === "object") {
+        const maybeMessage = (detail as { message?: unknown }).message;
+        if (typeof maybeMessage === "string") {
+            const maxMb = (detail as { max_file_size_mb?: unknown }).max_file_size_mb;
+            return typeof maxMb === "number" ? `${maybeMessage}. Max: ${maxMb} MB.` : maybeMessage;
+        }
+    }
+    if (response?.status === 413) return "File is too large.";
+    return null;
+};
 
 export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
     const { deleteElements } = useReactFlow();
@@ -95,6 +113,15 @@ export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
         setExtractingHandle(handleId);
         setExtractionError(null);
         try {
+            if (!canExtractFramesClientSide(videoUrl)) {
+                const res = await workflowApi.extractFrames(workflowId, id, undefined, undefined, videoUrl);
+                const frame = handleId === "start_frame" ? res.data.start_frame : res.data.end_frame;
+                if (frame) {
+                    setRawOutput(`${id}__${handleId}`, frame);
+                }
+                return;
+            }
+
             const timeRatio = handleId === 'end_frame' ? 1 : 0;
             const base64Image = await extractFrameFromVideo(videoUrl, timeRatio);
 
@@ -113,6 +140,70 @@ export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
         }
     };
 
+    const uploadViaApi = async (fileToUpload: File) => {
+        const response = await assetsApi.upload(fileToUpload, (progressEvent: { loaded: number; total?: number }) => {
+            const percentCompleted = progressEvent.total ? Math.round((progressEvent.loaded * 100) / progressEvent.total) : 0;
+            setUploadProgress(percentCompleted);
+        }, {
+            workflowId: workflowId || undefined,
+            workflowName: workflowName || undefined,
+        });
+        return response.data.url;
+    };
+
+    const uploadDirectToStorage = async (
+        presignedData: {
+            upload_url?: string;
+            upload_method?: "PUT" | "POST";
+            upload_fields?: Record<string, string>;
+            file_url?: string;
+        },
+        fileToUpload: File,
+        uploadedType: string
+    ) => {
+        const { upload_url, upload_method, upload_fields, file_url } = presignedData;
+        if (!upload_url || !file_url) {
+            throw new Error("Missing upload URL from backend");
+        }
+
+        const progressConfig = {
+            onUploadProgress: (progressEvent: { loaded: number; total?: number }) => {
+                const percentCompleted = progressEvent.total ? Math.round((progressEvent.loaded * 100) / progressEvent.total) : 0;
+                setUploadProgress(percentCompleted);
+            },
+        };
+
+        if (upload_method === "POST") {
+            const formData = new FormData();
+            Object.entries(upload_fields || {}).forEach(([key, value]) => {
+                formData.append(key, value);
+            });
+            formData.append("file", fileToUpload);
+            await axios.post(upload_url, formData, progressConfig);
+        } else {
+            await axios.put(upload_url, fileToUpload, {
+                headers: { "Content-Type": fileToUpload.type },
+                ...progressConfig,
+            });
+        }
+
+        const confirmRes = await assetsApi.confirmPresignedUpload({
+            fileUrl: file_url,
+            workflowId: workflowId || undefined,
+            workflowName: workflowName || undefined,
+            nodeId: id,
+            nodeType: "mediaUpload",
+            nodeData: {
+                mediaType: uploadedType,
+                fileSizeBytes: fileToUpload.size,
+                mimeType: fileToUpload.type,
+                filename: fileToUpload.name,
+            },
+        });
+
+        return confirmRes.data.url;
+    };
+
     const processFile = async (file: File) => {
         if (!ALLOWED_MEDIA_TYPES.includes(file.type)) {
             toast.error("Format not supported. Please use accepted image, video, or audio formats.");
@@ -126,50 +217,45 @@ export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
         try {
             let uploadedUrl: string;
             const uploadedType = file.type.split('/')[0];
+            const requiresDirectUpload = file.size > API_UPLOAD_SAFE_LIMIT_BYTES;
 
             // 1. Try to get a presigned URL first (better for large files in prod)
             try {
-                const presignedRes = await assetsApi.getPresignedUrl(file.name, file.type);
+                const presignedRes = await assetsApi.getPresignedUrl(file.name, file.type, file.size);
                 if (presignedRes.data.success && presignedRes.data.upload_url && !presignedRes.data.is_local) {
-                    const { upload_url, file_url } = presignedRes.data;
-
-                    // Direct upload to S3 using PUT
-                    await axios.put(upload_url, file, {
-                        headers: { "Content-Type": file.type },
-                        onUploadProgress: (progressEvent: { loaded: number; total?: number }) => {
-                            const percentCompleted = progressEvent.total ? Math.round((progressEvent.loaded * 100) / progressEvent.total) : 0;
-                            setUploadProgress(percentCompleted);
-                        }
-                    });
-
-                    uploadedUrl = file_url!;
+                    uploadedUrl = await uploadDirectToStorage(presignedRes.data, file, uploadedType);
                 } else {
+                    if (requiresDirectUpload) {
+                        throw new Error("This file is too large for API upload. Direct S3 upload is required but is not available.");
+                    }
                     // Fallback to standard multipart upload
-                    const response = await assetsApi.upload(file, (progressEvent: { loaded: number; total?: number }) => {
-                        const percentCompleted = progressEvent.total ? Math.round((progressEvent.loaded * 100) / progressEvent.total) : 0;
-                        setUploadProgress(percentCompleted);
-                    }, {
-                        workflowId: workflowId || undefined,
-                        workflowName: workflowName || undefined,
-                    });
-                    uploadedUrl = response.data.url;
+                    uploadedUrl = await uploadViaApi(file);
                 }
             } catch (err) {
+                if (requiresDirectUpload) {
+                    const backendMessage = getUploadErrorMessage(err);
+                    if (backendMessage) {
+                        throw new Error(backendMessage);
+                    }
+                    console.warn("Direct S3 upload failed for a large file:", err);
+                    throw new Error("Direct S3 upload failed. Please apply the S3 bucket CORS config that allows PUT uploads from the web app.");
+                }
+
                 console.warn("Presigned upload failed, falling back to standard upload:", err);
-                const response = await assetsApi.upload(file, (progressEvent: { loaded: number; total?: number }) => {
-                    const percentCompleted = progressEvent.total ? Math.round((progressEvent.loaded * 100) / progressEvent.total) : 0;
-                    setUploadProgress(percentCompleted);
-                }, {
-                    workflowId: workflowId || undefined,
-                    workflowName: workflowName || undefined,
-                });
-                uploadedUrl = response.data.url;
+                uploadedUrl = await uploadViaApi(file);
             }
 
             // Update mediaType and ratio locally before output
             setNodes(nodes.map(n => n.id === id ? {
                 ...n,
-                data: { ...n.data, mediaType: uploadedType, output: uploadedUrl }
+                data: {
+                    ...n.data,
+                    mediaType: uploadedType,
+                    output: uploadedUrl,
+                    fileSizeBytes: file.size,
+                    mimeType: file.type,
+                    filename: file.name,
+                }
             } : n));
 
             setNodeOutput(id, uploadedUrl);
@@ -221,7 +307,9 @@ export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
             // If it's a 413, even with presigned URL attempt, it might be an S3 limit or something else
             // but usually 413 comes from API Gateway/Lambda
             if (axiosError.response?.status === 413) {
-                toast.error("File is too large.");
+                toast.error(getUploadErrorMessage(error) || "File is too large.");
+            } else if (error instanceof Error) {
+                toast.error(error.message);
             } else {
                 toast.error("An error occurred during upload.");
             }
@@ -343,6 +431,11 @@ export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
     // Add start and end frames for video uploads
     if (mediaType === 'video') {
         nodeHandles.push({
+            id: "audio",
+            label: "Embedded Audio",
+            type: "audio",
+        });
+        nodeHandles.push({
             id: "start_frame",
             label: "Start (Frame 0)",
             type: "image",
@@ -371,11 +464,7 @@ export const MediaUploadNode = memo(({ id, selected, data }: NodeProps) => {
     return (
         <NodeWrapper
             nodeId={id}
-            title={`Asset #${useWorkflowStore((state) =>
-                state.nodes
-                    .filter(n => n.type === 'mediaUpload')
-                    .findIndex(n => n.id === id) + 1
-            )}`}
+            title={useWorkflowStore((state) => getNodeReferenceLabelById(state.nodes, id) || "Media Upload #?")}
             icon={<Upload className="w-4 h-4" />}
             selected={selected}
             outputs={nodeHandles}

@@ -2,6 +2,10 @@ import { create } from "zustand";
 import { Node, Edge } from "@xyflow/react";
 import { workflowApi, publicWorkflowApi, Workflow, ChatMessage, WorkflowNode, NodeState, WorkflowRunStatus, JobStatusResponse, JobTaskStatus } from "./workflow-api";
 import { toast } from "sonner";
+import { assignStableNodeReferences, getNodeReferenceLabel } from "./node-references";
+import { fetchModels } from "./use-models";
+import { computeNodeCost } from "./compute-cost";
+import { billingApi } from "./api";
 
 function taskToNodeState(task: JobTaskStatus): NodeState {
     return {
@@ -72,7 +76,7 @@ interface WorkflowState {
     runWorkflowAsync: () => Promise<void>;
     runNode: (nodeId: string) => Promise<void>;
     clearExecutionStates: () => void;
-    uploadRenderedVideo: (nodeId: string, file: File) => Promise<string | null>;
+    uploadRenderedVideo: (nodeId: string, file: File, renderedFp?: string) => Promise<string | null>;
     cancelJob: () => Promise<void>;
     checkActiveJob: () => Promise<void>;
     togglePublic: (isPublic: boolean) => Promise<void>;
@@ -118,9 +122,16 @@ interface RawEdge {
 }
 
 const FRAME_OUTPUT_HANDLES = ["start_frame", "end_frame"] as const;
+// Auxiliary per-node keys persisted alongside outputs[id] (e.g. the editor
+// agent's rendered-code fingerprint and last uploaded URL). Cleared with the
+// node so a Clear+Re-run re-renders & re-uploads the next composition.
+const AUX_OUTPUT_SUFFIXES = ["rendered_fp", "rendered_url"] as const;
 
 const getFrameOutputKeys = (nodeId: string) =>
     FRAME_OUTPUT_HANDLES.map((handle) => `${nodeId}__${handle}`);
+
+const getAuxOutputKeys = (nodeId: string) =>
+    AUX_OUTPUT_SUFFIXES.map((suffix) => `${nodeId}__${suffix}`);
 
 const getNodeOutputValue = (state: Pick<WorkflowState, "outputs" | "nodes">, nodeId: string) => {
     const output = state.outputs[nodeId];
@@ -160,6 +171,7 @@ const clearNodeOutputArtifacts = (
     const newOutputs = { ...state.outputs };
     delete newOutputs[nodeId];
     getFrameOutputKeys(nodeId).forEach((key) => delete newOutputs[key]);
+    getAuxOutputKeys(nodeId).forEach((key) => delete newOutputs[key]);
 
     const newNodes = syncNodeDataOutput(state.nodes, newOutputs, new Set([nodeId]));
     return { newOutputs, newNodes };
@@ -282,12 +294,12 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
         const chatHistory = Array.isArray(workflow.chat_history) ? workflow.chat_history : [];
 
         // Validate and sanitize nodes
-        const validNodes = nodes.map((node: WorkflowNode) => ({
+        const validNodes = assignStableNodeReferences(nodes.map((node: WorkflowNode) => ({
             id: node.id || String(Math.random()),
             type: node.type || 'default',
             position: node.position || { x: 0, y: 0 },
             data: node.data || {},
-        })) as Node[];
+        })) as Node[]);
 
         // Validate and sanitize edges
         const validEdges = edges.map((edge: RawEdge | unknown) => {
@@ -302,12 +314,26 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
             };
         }) as Edge[];
 
+        // Hydrate outputs map from `data.output` for any node missing a server-side
+        // output. Dragged-in "Your Stuff" assets persist their URL on `data.output`
+        // (with `isPinnedAsset: true`) but never write to the server outputs map,
+        // so without this rehydration any downstream node that depends on them
+        // would treat them as un-generated and try to re-run them.
+        const hydratedOutputs: Record<string, string> = { ...(workflow.outputs || {}) };
+        for (const node of validNodes) {
+            if (hydratedOutputs[node.id]) continue;
+            const dataOutput = (node.data as Record<string, unknown> | undefined)?.output;
+            if (typeof dataOutput === "string" && dataOutput.length > 0) {
+                hydratedOutputs[node.id] = dataOutput;
+            }
+        }
+
         set({
             id: workflow.id,
             name: workflow.name,
             nodes: validNodes,
             edges: validEdges,
-            outputs: workflow.outputs || {},
+            outputs: hydratedOutputs,
             chatHistory: chatHistory,
             isDirty: false,
             isPublic: workflow.is_public ?? false,
@@ -319,7 +345,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     },
 
     setNodes: (nodes: Node[]) => {
-        set({ nodes, isDirty: true });
+        set({ nodes: assignStableNodeReferences(nodes), isDirty: true });
     },
 
     setEdges: (edges: Edge[]) => {
@@ -459,12 +485,12 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
             const chatHistory = Array.isArray(workflow.chat_history) ? workflow.chat_history : [];
 
             // Validate and sanitize nodes
-            const validNodes = nodes.map((node: WorkflowNode) => ({
+            const validNodes = assignStableNodeReferences(nodes.map((node: WorkflowNode) => ({
                 id: node.id || String(Math.random()),
                 type: node.type || 'default',
                 position: node.position || { x: 0, y: 0 },
                 data: node.data || {},
-            })) as Node[];
+            })) as Node[]);
 
             // Validate and sanitize edges
             const validEdges = edges.map((edge: RawEdge | unknown) => {
@@ -481,12 +507,24 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 
             console.log(`[WorkflowStore] Loaded workflow ${id}: ${validNodes.length} nodes, ${validEdges.length} edges`);
 
+            // Same rehydration as setWorkflow — pull URLs out of node.data.output
+            // for any node that's missing from the server outputs map (e.g. "Your
+            // Stuff" pinned assets persisted only via node data).
+            const hydratedOutputs: Record<string, string> = { ...(workflow.outputs || {}) };
+            for (const node of validNodes) {
+                if (hydratedOutputs[node.id]) continue;
+                const dataOutput = (node.data as Record<string, unknown> | undefined)?.output;
+                if (typeof dataOutput === "string" && dataOutput.length > 0) {
+                    hydratedOutputs[node.id] = dataOutput;
+                }
+            }
+
             set({
                 id: workflow.id,
                 name: workflow.name,
                 nodes: validNodes,
                 edges: validEdges,
-                outputs: workflow.outputs || {},
+                outputs: hydratedOutputs,
                 chatHistory: chatHistory,
                 isLoading: false,
                 isDirty: false,
@@ -496,6 +534,40 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 
             // Check for an active Run All job and resume polling if found
             get().checkActiveJob();
+
+            // Recover any orphan failed fal_jobs (paid-but-missing assets) for
+            // this workflow. Fire-and-forget — never block the UI on this. If
+            // anything is recovered, re-pull the workflow so the new outputs
+            // show up without a page refresh, and clear any "failed" badges
+            // for nodes that now have a real output.
+            void workflowApi.reconcileFalJobs(id).then((res) => {
+                const { recovered } = res.data || { recovered: 0 };
+                if (recovered > 0) {
+                    console.log(`[WorkflowStore] Recovered ${recovered} orphan fal job(s); refreshing workflow`);
+                    toast.success(
+                        recovered === 1
+                            ? "Recovered a previously-failed asset that finished on the provider."
+                            : `Recovered ${recovered} previously-failed assets that finished on the provider.`
+                    );
+                    void workflowApi.get(id).then((refreshed) => {
+                        const wf = refreshed.data;
+                        set((state) => {
+                            // Only apply if user is still viewing the same workflow.
+                            if (state.id !== wf.id) return {};
+                            const newOutputs = wf.outputs || state.outputs;
+                            // Drop "failed" execution badges for any node that now has an output.
+                            const newExecStates: Record<string, NodeState> = {};
+                            for (const [nid, st] of Object.entries(state.nodeExecutionStates)) {
+                                if (st.status === "failed" && newOutputs[nid]) continue;
+                                newExecStates[nid] = st;
+                            }
+                            return { outputs: newOutputs, nodeExecutionStates: newExecStates };
+                        });
+                    }).catch(() => { });
+                }
+            }).catch((err) => {
+                console.warn("[WorkflowStore] Reconcile call failed:", err);
+            });
         } catch (error) {
             console.error("[WorkflowStore] Load error:", error);
             set({ isLoading: false, error: "Failed to load workflow" });
@@ -515,12 +587,12 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
             const edges = Array.isArray(workflow.edges) ? workflow.edges : [];
             const chatHistory = Array.isArray(workflow.chat_history) ? workflow.chat_history : [];
 
-            const validNodes = nodes.map((node: WorkflowNode) => ({
+            const validNodes = assignStableNodeReferences(nodes.map((node: WorkflowNode) => ({
                 id: node.id || String(Math.random()),
                 type: node.type || 'default',
                 position: node.position || { x: 0, y: 0 },
                 data: node.data || {},
-            })) as Node[];
+            })) as Node[]);
 
             const validEdges = edges.map((edge: RawEdge | unknown) => {
                 const safeEdge = edge as RawEdge;
@@ -536,12 +608,21 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 
             console.log(`[WorkflowStore] Loaded public workflow ${id}: ${validNodes.length} nodes, ${validEdges.length} edges`);
 
+            const hydratedOutputs: Record<string, string> = { ...(workflow.outputs || {}) };
+            for (const node of validNodes) {
+                if (hydratedOutputs[node.id]) continue;
+                const dataOutput = (node.data as Record<string, unknown> | undefined)?.output;
+                if (typeof dataOutput === "string" && dataOutput.length > 0) {
+                    hydratedOutputs[node.id] = dataOutput;
+                }
+            }
+
             set({
                 id: workflow.id,
                 name: workflow.name,
                 nodes: validNodes,
                 edges: validEdges,
-                outputs: workflow.outputs || {},
+                outputs: hydratedOutputs,
                 chatHistory: chatHistory,
                 isLoading: false,
                 isDirty: false,
@@ -565,9 +646,10 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 
         set({ isSaving: true, error: null });
         try {
+            const nodesWithReferences = assignStableNodeReferences(nodes);
             await workflowApi.update(id, {
                 name,
-                nodes: nodes.map((n) => ({
+                nodes: nodesWithReferences.map((n) => ({
                     id: n.id,
                     type: n.type || "unknown",
                     position: n.position,
@@ -581,7 +663,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
                     targetHandle: e.targetHandle || undefined,
                 })),
             });
-            set({ isSaving: false, isDirty: false });
+            set({ nodes: nodesWithReferences, isSaving: false, isDirty: false });
             console.log("[WorkflowStore] Saved successfully");
 
         } catch (error) {
@@ -593,10 +675,43 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 
     // Run the entire workflow via job orchestration (self-chaining lambda)
     runWorkflow: async () => {
-        const { id } = get();
+        const { id, nodes } = get();
         if (!id) {
             console.error("[WorkflowStore] No workflow ID to run");
             return;
+        }
+
+        try {
+            const [models, balanceRes] = await Promise.all([
+                fetchModels(),
+                billingApi.getBalance().catch(() => null)
+            ]);
+
+            let totalEstimatedCost = 0;
+            for (const node of nodes) {
+                // Approximate: assume all generative nodes without pinned assets are re-run
+                const data = node.data as Record<string, unknown> | undefined;
+                if (data?.isPinnedAsset && (typeof data.output === "string")) {
+                    continue; // Skip pinned assets
+                }
+                const cost = computeNodeCost(node, models);
+                if (cost) totalEstimatedCost += cost;
+            }
+
+            if (totalEstimatedCost > 0) {
+                const currentBalance = balanceRes?.data?.balance || 0;
+                if (currentBalance < totalEstimatedCost) {
+                    toast.error(`Insufficient balance. Estimated cost is ~$${totalEstimatedCost.toFixed(2)}, but you only have $${currentBalance.toFixed(2)}.`);
+                    return;
+                }
+
+                const msg = `Running all nodes will cost approximately ~$${totalEstimatedCost.toFixed(2)}. Do you want to proceed?`;
+                if (!window.confirm(msg)) {
+                    return;
+                }
+            }
+        } catch (e) {
+            console.warn("[WorkflowStore] Failed to compute estimated cost", e);
         }
 
         // Save first to ensure latest nodes/edges are persisted
@@ -670,8 +785,12 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 
             if (finalStatus.status === "failed" && finalStatus.errors.length > 0) {
                 console.error("[WorkflowStore] Job errors:", finalStatus.errors);
-                set({ error: `Errors in ${finalStatus.errors.length} node(s)` });
-                toast.error(`Run completed with errors in ${finalStatus.errors.length} node(s)`);
+                const firstError = finalStatus.errors[0]?.error;
+                const summary = finalStatus.errors.length === 1
+                    ? (firstError || "Node failed")
+                    : `${finalStatus.errors.length} nodes failed — ${firstError || "see node badges for details"}`;
+                set({ error: summary });
+                toast.error(summary, { duration: 8000 });
             }
             else if (finalStatus.status === "cancelled") {
                 toast.info("Run cancelled");
@@ -793,7 +912,11 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
             });
 
             if (finalStatus.status === "failed" && finalStatus.errors.length > 0) {
-                toast.error(`Run completed with errors in ${finalStatus.errors.length} node(s)`);
+                const firstError = finalStatus.errors[0]?.error;
+                const summary = finalStatus.errors.length === 1
+                    ? (firstError || "Node failed")
+                    : `${finalStatus.errors.length} nodes failed — ${firstError || "see node badges for details"}`;
+                toast.error(summary, { duration: 8000 });
             } else if (finalStatus.status !== "cancelled") {
                 toast.success("Workflow run completed");
             }
@@ -820,9 +943,60 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
         // Nodes dropped in from "Your Stuff" carry a pre-filled output and are flagged with
         // `isPinnedAsset`. Refuse to regenerate until the user explicitly clears them.
         const targetNode = store.nodes.find(n => n.id === nodeId);
-        if (targetNode?.data?.isPinnedAsset && store.outputs[nodeId]) {
+        const targetData = targetNode?.data as Record<string, unknown> | undefined;
+        if (targetData?.isPinnedAsset && (store.outputs[nodeId] || typeof targetData.output === "string")) {
             toast.info("This asset is pinned. Clear the node first to regenerate.");
             return;
+        }
+
+        try {
+            const [models, balanceRes] = await Promise.all([
+                fetchModels(),
+                billingApi.getBalance().catch(() => null)
+            ]);
+
+            const nodesToRun = new Set<string>();
+            const findNodesToRun = (currentId: string, visited = new Set<string>()) => {
+                if (visited.has(currentId)) return;
+                visited.add(currentId);
+                nodesToRun.add(currentId);
+
+                const dependencies = edges.filter(e => e.target === currentId).map(e => e.source);
+                for (const sourceId of dependencies) {
+                    const srcNode = store.nodes.find(n => n.id === sourceId);
+                    const srcData = srcNode?.data as Record<string, unknown> | undefined;
+                    const hasStoreOutput = typeof store.outputs[sourceId] === "string" && store.outputs[sourceId].length > 0;
+                    const hasDataOutput = !!srcData?.output;
+                    if (!hasStoreOutput && !hasDataOutput && !srcData?.isPinnedAsset) {
+                        findNodesToRun(sourceId, visited);
+                    }
+                }
+            };
+            findNodesToRun(nodeId);
+
+            let totalEstimatedCost = 0;
+            for (const nid of nodesToRun) {
+                const node = store.nodes.find(n => n.id === nid);
+                if (node) {
+                    const cost = computeNodeCost(node, models);
+                    if (cost) totalEstimatedCost += cost;
+                }
+            }
+
+            if (totalEstimatedCost > 0) {
+                const currentBalance = balanceRes?.data?.balance || 0;
+                if (currentBalance < totalEstimatedCost) {
+                    toast.error(`Insufficient balance. Estimated cost is ~$${totalEstimatedCost.toFixed(2)}, but you only have $${currentBalance.toFixed(2)}.`);
+                    return;
+                }
+
+                const msg = `Running this workflow will cost approximately ~$${totalEstimatedCost.toFixed(2)}. Do you want to proceed?`;
+                if (!window.confirm(msg)) {
+                    return;
+                }
+            }
+        } catch (e) {
+            console.warn("[WorkflowStore] Failed to compute estimated cost for run node", e);
         }
 
         // Save first to ensure latest nodes/edges are persisted
@@ -848,8 +1022,8 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
                     // Find all text nodes to generate the same labels as the UI
                     const textNodes = currentStore.nodes
                         .filter(n => n.type === 'text')
-                        .map((n, i) => ({
-                            label: `Text #${i + 1}`,
+                        .map((n) => ({
+                            label: getNodeReferenceLabel(n),
                             content: (n.data.text as string) || ""
                         }))
                         // Sort by length desc to prevent partial replacements
@@ -938,19 +1112,21 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
                             [targetId]: { ...nodeState }
                         }
                     }));
+                    toast.error(finalError, { duration: 8000 });
                     return false;
                 }
             } catch (error) {
                 console.error("[WorkflowStore] Run node error:", error);
+                const message = error instanceof Error ? error.message : "Network or polling error";
                 set((state) => ({
                     runningNodeId: null,
-                    error: "Failed to run node",
+                    error: message,
                     nodeExecutionStates: {
                         ...state.nodeExecutionStates,
-                        [targetId]: { status: "failed", error: "Network or polling error" }
+                        [targetId]: { status: "failed", error: message }
                     }
                 }));
-                toast.error("Failed to run node");
+                toast.error(message, { duration: 8000 });
                 return false;
             }
         };
@@ -967,20 +1143,47 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 
             // Check each dependency
             for (const sourceId of dependencies) {
-                // Check if output exists
-                const currentOutputs = get().outputs;
+                const currentState = get();
+                const currentOutputs = currentState.outputs;
+                const sourceNode = currentState.nodes.find(n => n.id === sourceId);
+                const sourceData = sourceNode?.data as Record<string, unknown> | undefined;
 
-                if (!currentOutputs[sourceId]) {
-                    console.log(`[Workflow] Dependency ${sourceId} missing output. Recursively running...`);
+                // Treat the dependency as "ready" if EITHER the in-memory outputs map
+                // OR the node's persisted data.output has a value. This is critical
+                // for assets dragged in from "Your Stuff" (isPinnedAsset) and any
+                // node loaded from MongoDB whose output lives in node data, because
+                // the outputs map is rehydrated only from server execution outputs
+                // and not from per-node `data.output`.
+                const hasStoreOutput = typeof currentOutputs[sourceId] === "string" && currentOutputs[sourceId].length > 0;
+                const dataOutput = typeof sourceData?.output === "string" ? sourceData.output : null;
+                const hasDataOutput = !!dataOutput;
+                const isPinnedAsset = !!sourceData?.isPinnedAsset;
 
-                    // First ensure ITS dependencies are ready
-                    const depsOk = await ensureDependencies(sourceId, visited);
-                    if (!depsOk) return false;
-
-                    // Then run the dependency itself
-                    const runOk = await executeNodeApi(sourceId);
-                    if (!runOk) return false;
+                if (hasStoreOutput || hasDataOutput) {
+                    // Hydrate the outputs map from data.output so downstream
+                    // resolution (and the running node's UI) see a consistent value.
+                    if (!hasStoreOutput && hasDataOutput && dataOutput) {
+                        get().setRawOutput(sourceId, dataOutput);
+                    }
+                    continue;
                 }
+
+                if (isPinnedAsset) {
+                    // Pinned asset has no output yet — refuse to re-generate; the
+                    // user must clear & re-add (or re-attach a real source).
+                    console.warn(`[Workflow] Skipping run of pinned dependency ${sourceId} (no output)`);
+                    continue;
+                }
+
+                console.log(`[Workflow] Dependency ${sourceId} missing output. Recursively running...`);
+
+                // First ensure ITS dependencies are ready
+                const depsOk = await ensureDependencies(sourceId, visited);
+                if (!depsOk) return false;
+
+                // Then run the dependency itself
+                const runOk = await executeNodeApi(sourceId);
+                if (!runOk) return false;
             }
 
             return true;
@@ -997,12 +1200,12 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     },
 
     // Upload rendered video to S3 and save to node output
-    uploadRenderedVideo: async (nodeId: string, file: File) => {
+    uploadRenderedVideo: async (nodeId: string, file: File, renderedFp?: string) => {
         const { id } = get();
         if (!id) return null;
 
         try {
-            const res = await workflowApi.uploadRenderedVideo(id, nodeId, file);
+            const res = await workflowApi.uploadRenderedVideo(id, nodeId, file, renderedFp);
             const data = res.data;
 
             if (data.url) {

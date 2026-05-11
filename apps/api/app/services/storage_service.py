@@ -31,7 +31,12 @@ class StorageService(ABC):
         pass
 
     @abstractmethod
-    def generate_presigned_upload_url(self, filename: str, content_type: str = "video/mp4") -> dict:
+    def generate_presigned_upload_url(
+        self,
+        filename: str,
+        content_type: str = "video/mp4",
+        max_file_size: int | None = None,
+    ) -> dict:
         """Generate a presigned URL for direct file uploading."""
         raise NotImplementedError
 
@@ -104,7 +109,12 @@ class LocalStorageService(StorageService):
             print(f"Error deleting file {file_url}: {e}")
         return False
 
-    def generate_presigned_upload_url(self, filename: str, content_type: str = "video/mp4") -> dict:
+    def generate_presigned_upload_url(
+        self,
+        filename: str,
+        content_type: str = "video/mp4",
+        max_file_size: int | None = None,
+    ) -> dict:
         """Local stub: frontend will just use the standard POST endpoint."""
         return {"is_local": True}
 
@@ -252,10 +262,41 @@ class S3StorageService(StorageService):
             print(f"S3 Presigned URL Error: {e}")
             return file_url
 
-    def generate_presigned_upload_url(self, filename: str, content_type: str = "video/mp4") -> dict:
+    def generate_presigned_upload_url(
+        self,
+        filename: str,
+        content_type: str = "video/mp4",
+        max_file_size: int | None = None,
+    ) -> dict:
         date_prefix = datetime.now().strftime("%Y/%m/%d")
         key = f"uploads/{date_prefix}/{filename}"
-        
+
+        # When a max size is provided, use a presigned POST policy so S3
+        # itself enforces `content-length-range`. A presigned PUT URL cannot
+        # reliably enforce a max body size against a malicious client.
+        if max_file_size and max_file_size > 0 and not settings.s3_endpoint:
+            fields = {"Content-Type": content_type}
+            conditions = [
+                {"Content-Type": content_type},
+                ["content-length-range", 1, int(max_file_size)],
+            ]
+            presigned_post = self.s3_client.generate_presigned_post(
+                Bucket=self.bucket,
+                Key=key,
+                Fields=fields,
+                Conditions=conditions,
+                ExpiresIn=3600,
+            )
+            file_url = f"https://{self.bucket}.s3.{self.region}.amazonaws.com/{key}"
+            return {
+                "upload_url": presigned_post["url"],
+                "upload_fields": presigned_post["fields"],
+                "upload_method": "POST",
+                "file_url": file_url,
+                "key": key,
+                "max_file_size": int(max_file_size),
+            }
+
         presigned_url = self.s3_client.generate_presigned_url(
             ClientMethod='put_object',
             Params={
@@ -273,6 +314,8 @@ class S3StorageService(StorageService):
             
         return {
             "upload_url": presigned_url,
+            "upload_method": "PUT",
             "file_url": file_url,
-            "key": key
+            "key": key,
+            "max_file_size": int(max_file_size) if max_file_size else None,
         }

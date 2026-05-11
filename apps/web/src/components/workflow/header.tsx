@@ -10,15 +10,31 @@ import { useMobileTab } from "@/components/workflow/mobile-tab-context";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { YourStuffPanel } from "@/components/your-stuff-panel";
+import { useModels } from "@/lib/use-models";
+import { computeWorkflowCost, formatEstimatedUsd, hasUnavailableCostEstimate, isPinnedAssetNode } from "@/lib/compute-cost";
 
 export function WorkflowHeader() {
     const router = useRouter();
-    const { id, name, setName, isSaving, isDirty, saveWorkflow, isRunning, runWorkflow, cancelJob, activeJobId, executionProgress, isPublic, togglePublic } = useWorkflowStore();
+    const { id, name, setName, isSaving, isDirty, saveWorkflow, isRunning, runWorkflow, cancelJob, activeJobId, executionProgress, isPublic, togglePublic, nodes } = useWorkflowStore();
     const [editingName, setEditingName] = useState(name);
     const { setActiveTab } = useMobileTab();
     const [showShareMenu, setShowShareMenu] = useState(false);
     const [copied, setCopied] = useState(false);
     const [isYourStuffOpen, setIsYourStuffOpen] = useState(false);
+    
+    const { models, isLoading: areModelsLoading } = useModels();
+
+    const totalEstimatedCost = computeWorkflowCost(nodes, models);
+    const hasUnavailableRunAllCost = nodes.some((node) => !isPinnedAssetNode(node) && hasUnavailableCostEstimate(node, models));
+    const runAllTooltip = areModelsLoading
+        ? "Run all nodes (cost estimate loading)"
+        : totalEstimatedCost > 0
+            ? hasUnavailableRunAllCost
+                ? `Run all nodes (at least ${formatEstimatedUsd(totalEstimatedCost)} estimated; some costs unavailable)`
+                : `Run all nodes (${formatEstimatedUsd(totalEstimatedCost)} estimated)`
+            : hasUnavailableRunAllCost
+                ? "Run all nodes (cost estimate unavailable)"
+                : "Run all nodes (no billable generation estimated)";
 
     const shareUrl = typeof window !== "undefined" && id ? `${window.location.origin}/w/?id=${id}` : "";
 
@@ -202,20 +218,27 @@ export function WorkflowHeader() {
                         </Button>
                     </div>
                 ) : (
-                    <Button
-                        onClick={runWorkflow}
-                        disabled={isRunning}
-                        className="h-8 shadow-sm gap-2"
-                        variant="default"
-                    >
-                        {isRunning ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                            <Play className="w-4 h-4 fill-current" />
-                        )}
-                        <span className="hidden sm:inline">Run All</span>
-                        <span className="sm:hidden">Run</span>
-                    </Button>
+                    <div className="relative group/runallbtn flex items-center justify-center">
+                        <Button
+                            onClick={runWorkflow}
+                            disabled={isRunning}
+                            className="h-8 shadow-sm gap-2"
+                            variant="default"
+                            title={runAllTooltip}
+                            aria-label={runAllTooltip}
+                        >
+                            {isRunning ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                                <Play className="w-4 h-4 fill-current" />
+                            )}
+                            <span className="hidden sm:inline">Run All</span>
+                            <span className="sm:hidden">Run</span>
+                        </Button>
+                        <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 opacity-0 group-hover/runallbtn:opacity-100 transition-opacity bg-black text-white text-[10px] px-2 py-1 rounded shadow-lg whitespace-nowrap pointer-events-none z-50">
+                            {runAllTooltip}
+                        </div>
+                    </div>
                 )}
 
                 {/* Mobile: Switch to AI Chat */}

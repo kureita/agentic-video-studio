@@ -100,14 +100,22 @@ async def process_fal_callback(
     result: Any,
     error_msg: Optional[str],
     billable_units: Optional[float] = None,
+    force: bool = False,
 ) -> None:
-    """Idempotent finisher: applied by both the webhook and the missed-webhook sweeper."""
+    """Idempotent finisher: applied by both the webhook and the missed-webhook sweeper.
+
+    When `force=True`, the "already finalized" guard is bypassed. This is used
+    by the reconcile script to recover historical failed jobs that fal actually
+    completed (e.g. when a payload-extraction bug dropped the result on the
+    floor). Callers should only set this when they intend to overwrite the
+    existing terminal state.
+    """
     fal_jobs = get_fal_jobs_collection()
     job_doc = await fal_jobs.find_one({"request_id": request_id})
     if not job_doc:
         logger.warning("[FalWebhook] unknown request_id=%s — ignoring", request_id)
         return
-    if job_doc.get("status") in ("completed", "failed"):
+    if not force and job_doc.get("status") in ("completed", "failed"):
         logger.info("[FalWebhook] request_id=%s already finalized — ignoring", request_id)
         return
 
@@ -121,12 +129,81 @@ async def process_fal_callback(
     now = datetime.now(timezone.utc)
 
     if status != "OK" and status != "COMPLETED":
-        # fal reports error — mark failed, no charging.
+        # fal still bills us a tiny amount on validation errors / 4xx (e.g. a
+        # bad endpoint URL → 404 with `~$0.00004` charge). Persist that so the
+        # user's billing matches fal's invoice byte-for-byte rather than
+        # silently absorbing it.
+        failed_units: Optional[float] = billable_units
+        if failed_units is None:
+            try:
+                failed_units = await FalService().fetch_billable_units(endpoint_id, request_id)
+            except Exception as e:
+                logger.info(
+                    "[FalWebhook] fetch_billable_units on failed run %s: %s",
+                    request_id, e,
+                )
+        failed_cost_usd = 0.0
+        failed_cost_info: dict[str, Any] = {}
+        if failed_units is not None and failed_units > 0:
+            try:
+                pricing = FalPricingService(get_database())
+                failed_cost_info = await pricing.compute_cost_usd(
+                    endpoint_id,
+                    billable_units=failed_units,
+                    duration_s=args_meta.get("duration"),
+                    chars=args_meta.get("chars"),
+                    resolution_label=args_meta.get("resolution"),
+                    aspect_ratio=args_meta.get("aspect_ratio"),
+                )
+                failed_cost_usd = float(failed_cost_info.get("cost_usd") or 0.0)
+            except Exception as e:
+                logger.warning("[FalWebhook] failed-run pricing error %s: %s", request_id, e)
+
         await fal_jobs.update_one(
             {"request_id": request_id},
-            {"$set": {"status": "failed", "error": error_msg or status, "completed_at": now}},
+            {
+                "$set": {
+                    "status": "failed",
+                    "error": error_msg or status,
+                    "completed_at": now,
+                    "billable_units": failed_units,
+                    "cost_usd": failed_cost_usd,
+                    "unit": failed_cost_info.get("unit"),
+                    "unit_price": failed_cost_info.get("unit_price"),
+                    "price_source": failed_cost_info.get("source"),
+                    "cost_resolution": failed_cost_info.get("resolution"),
+                }
+            },
         )
         await _write_task_failure(ctx, error_msg or status)
+
+        # Still charge the user for the (small) amount fal billed us. Bypass
+        # the cost==0 short-circuit in `_charge_billing` by checking here.
+        if failed_cost_usd > 0:
+            user_id = ctx.get("user_id")
+            workflow_id = ctx.get("workflow_id")
+            node_id = ctx.get("node_id")
+            node_type = ctx.get("node_type")
+            await _charge_billing(
+                failed_cost_usd, node_type, user_id, model_name, provider,
+                workflow_id, node_id,
+                billing_meta={
+                    "request_id": request_id,
+                    "endpoint_id": endpoint_id,
+                    "billable_units": failed_units,
+                    "unit": failed_cost_info.get("unit"),
+                    "unit_price": failed_cost_info.get("unit_price"),
+                    "price_source": failed_cost_info.get("source"),
+                    "cost_resolution": failed_cost_info.get("resolution"),
+                    "fal_error": error_msg or status,
+                    "outcome": "failed",
+                },
+            )
+            logger.info(
+                "[FalWebhook] charged $%.6f for failed run request_id=%s "
+                "(fal still bills us)",
+                failed_cost_usd, request_id,
+            )
         return
 
     normalized = FalService.extract_output(capability, result)
@@ -143,6 +220,17 @@ async def process_fal_callback(
         or normalized.get("image_url")
         or normalized.get("audio_url")
     )
+    cap_lower = str(capability or "").lower()
+    video_caps = {"t2v", "i2v", "v2v", "video", "lipsync", "reference", "elements", "vid2vid", "motion", "avatar"}
+    lipsync_audio_url = args_meta.get("lipsync_audio_url")
+    lipsync_model_name = args_meta.get("lipsync_model")
+    if cap_lower in video_caps and isinstance(lipsync_audio_url, str) and lipsync_audio_url:
+        output_url = await _apply_lipsync_chain(
+            output_url,
+            lipsync_audio_url,
+            lipsync_model_name if isinstance(lipsync_model_name, str) else None,
+        )
+
     final_url = await _download_and_upload(output_url, capability)
 
     # ── Resolve billable units ────────────────────────────────────────────────
@@ -166,7 +254,11 @@ async def process_fal_callback(
                 request_id, e,
             )
 
-    # Compute cost
+    # Compute cost. Order of authority:
+    #   1. fal's billable_units × fal's unit_price (matches their invoice)
+    #   2. config-matched est_price_usd from registry (resolution+duration)
+    #   3. per_run fallback from registry
+    # See FalPricingService.compute_cost_usd for the full chain.
     cost_usd = 0.0
     cost_info: dict[str, Any] = {}
     try:
@@ -176,11 +268,14 @@ async def process_fal_callback(
             billable_units=billable_units,
             duration_s=normalized.get("duration") or args_meta.get("duration"),
             chars=args_meta.get("chars"),
+            resolution_label=args_meta.get("resolution"),
+            aspect_ratio=args_meta.get("aspect_ratio"),
         )
         cost_usd = float(cost_info.get("cost_usd") or 0.0)
         logger.info(
             "[FalWebhook] pricing request_id=%s endpoint=%s units=%.4f unit=%s "
-            "unit_price=%.6f resolution=%s price_source=%s cost_usd=%.6f",
+            "unit_price=%.6f resolution=%s price_source=%s cost_usd=%.6f "
+            "(billable_units_from_fal=%s)",
             request_id, endpoint_id,
             cost_info.get("units", 0.0),
             cost_info.get("unit", "?"),
@@ -188,6 +283,7 @@ async def process_fal_callback(
             cost_info.get("resolution", "?"),
             cost_info.get("source"),
             cost_usd,
+            billable_units,
         )
     except Exception as e:
         logger.warning("[FalWebhook] pricing failed for %s: %s", request_id, e)
@@ -247,14 +343,19 @@ async def _download_and_upload(url: Optional[str], capability: str) -> Optional[
 
     storage = get_storage_service()
     cap = capability.lower()
-    ext = "mp4" if cap in ("t2v", "i2v", "video", "lipsync") else (
-        "png" if cap in ("t2i", "i2i", "image") else "mp3"
-    )
-    ctype = (
-        "video/mp4" if ext == "mp4"
-        else "image/png" if ext == "png"
-        else "audio/mpeg"
-    )
+    # Same capability buckets as `FalService.extract_output`. Without the
+    # video extras (reference/elements/v2v/vid2vid) "reference"-mode video
+    # outputs were uploaded with a `.mp3` extension, which then crashed the
+    # browser when the URL was served back to a `<video>` element.
+    VIDEO_CAPS = {"t2v", "i2v", "v2v", "video", "lipsync", "reference", "elements", "vid2vid", "motion", "avatar"}
+    IMAGE_CAPS = {"t2i", "i2i", "image"}
+
+    if cap in VIDEO_CAPS:
+        ext, ctype = "mp4", "video/mp4"
+    elif cap in IMAGE_CAPS:
+        ext, ctype = "png", "image/png"
+    else:
+        ext, ctype = "mp3", "audio/mpeg"
     try:
         async with httpx.AsyncClient(timeout=300.0) as client:
             resp = await client.get(url)
@@ -265,6 +366,38 @@ async def _download_and_upload(url: Optional[str], capability: str) -> Optional[
     except Exception as e:
         logger.warning("[FalWebhook] download error: %s — keeping cdn url", e)
     return url
+
+
+async def _apply_lipsync_chain(
+    video_url: Optional[str],
+    audio_url: str,
+    lipsync_model_name: Optional[str],
+) -> Optional[str]:
+    """Apply an optional post-generation lipsync pass in webhook mode.
+
+    This allows workflow (async/webhook) runs to honor externally connected
+    audio inputs the same way sync/local runs do.
+    """
+    if not video_url or not audio_url:
+        return video_url
+    try:
+        from app.services.video_generator import VideoGenerator
+
+        generator = VideoGenerator()
+        synced_url = await generator._apply_lipsync(
+            video_url,
+            audio_url,
+            lipsync_model_name=lipsync_model_name,
+        )
+        if synced_url:
+            logger.info(
+                "[FalWebhook] lipsync pass applied model=%s",
+                lipsync_model_name or "default",
+            )
+            return synced_url
+    except Exception as e:
+        logger.warning("[FalWebhook] lipsync pass failed: %s", e)
+    return video_url
 
 
 async def _write_task_success(
@@ -425,7 +558,15 @@ async def _charge_billing(
     node_id: Optional[str],
     billing_meta: Optional[dict] = None,
 ) -> None:
-    if cost_usd <= 0 or not node_type or node_type not in _ACTION_TYPE_MAP or not user_id:
+    if not node_type or node_type not in _ACTION_TYPE_MAP or not user_id:
+        return
+    if cost_usd <= 0:
+        logger.warning(
+            "[FalWebhook] billable run completed with cost_usd=0 — skipping "
+            "usage_logs insert. node_type=%s model=%s workflow=%s node=%s meta=%s. "
+            "Check fal_pricing fallback chain for this endpoint.",
+            node_type, model_name, workflow_id, node_id, billing_meta,
+        )
         return
     try:
         billing = BillingService(get_database())

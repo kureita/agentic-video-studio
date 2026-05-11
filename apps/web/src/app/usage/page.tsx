@@ -36,6 +36,23 @@ interface UsageLog {
     created_at: string;
 }
 
+/**
+ * Parse a timestamp from the API as UTC.
+ *
+ * Mongo's BSON Date strips tzinfo on round-trip, so older usage_logs rows
+ * may serialize as `2026-04-25T14:20:00.296000` (no offset). The ECMAScript
+ * spec parses such strings as *local* time, which would shift the display
+ * by the user's UTC offset. Append `Z` when an offset is missing so the
+ * Date constructor treats it as UTC and `format` then renders it in the
+ * user's local timezone correctly.
+ */
+function parseUtcTimestamp(value: string): Date {
+    if (!value) return new Date(NaN);
+    // Already has a `Z` or numeric offset (e.g. +05:30 / -08:00) — trust it.
+    if (/[zZ]$|[+-]\d{2}:?\d{2}$/.test(value)) return new Date(value);
+    return new Date(`${value}Z`);
+}
+
 const ACTION_LABELS: Record<string, { label: string, icon: React.ReactNode, color: string }> = {
     ai_chat: { label: "AI Assistant", icon: <MessageSquare className="w-4 h-4" />, color: "bg-muted text-foreground/80" },
     video_gen: { label: "Video Generation", icon: <Video className="w-4 h-4" />, color: "bg-muted text-foreground/80" },
@@ -313,7 +330,7 @@ export default function UsageDashboard() {
                                                 <TableCell className="text-xs text-muted-foreground">
                                                     <div className="flex items-center gap-1.5">
                                                         <Clock className="w-3 h-3" />
-                                                        {format(new Date(log.created_at), "MMM d, h:mm a")}
+                                                        {format(parseUtcTimestamp(log.created_at), "MMM d, h:mm a")}
                                                     </div>
                                                 </TableCell>
                                                 <TableCell className="text-right">

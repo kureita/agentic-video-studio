@@ -195,10 +195,16 @@ export const workflowApi = {
      * Save pre-extracted start/end frames from a video node to the workflow state.
      * Extraction happens on the client via canvas.
      */
-    extractFrames: (workflowId: string, nodeId: string, startFrame?: string, endFrame?: string) =>
+    extractFrames: (
+        workflowId: string,
+        nodeId: string,
+        startFrame?: string,
+        endFrame?: string,
+        videoUrl?: string
+    ) =>
         api.post<{ success: boolean; start_frame?: string; end_frame?: string; cached: boolean }>(
             `/api/workflows/${workflowId}/nodes/${nodeId}/extract-frames`,
-            { start_frame: startFrame, end_frame: endFrame }
+            { start_frame: startFrame, end_frame: endFrame, video_url: videoUrl }
         ),
 
     /**
@@ -237,8 +243,13 @@ export const workflowApi = {
     /**
      * Upload a client-rendered video blob to S3 via presigned URL, and save to node output.
      * Bypasses the 10MB API Gateway limit.
+     *
+     * @param renderedFp Optional fingerprint of the TSX composition this MP4
+     *   was rendered from. Persisted alongside the URL so that on a later
+     *   page reload (or backend re-broadcast of the same TSX) the editor
+     *   agent can recognize an unchanged composition and skip re-rendering.
      */
-    uploadRenderedVideo: async (workflowId: string, nodeId: string, file: File) => {
+    uploadRenderedVideo: async (workflowId: string, nodeId: string, file: File, renderedFp?: string) => {
         // 1. Get presigned upload URL
         const presignRes = await api.post<{ upload_url?: string; file_url?: string; is_local?: boolean }>(
             `/api/workflows/${workflowId}/nodes/${nodeId}/upload-render/presign`,
@@ -251,6 +262,9 @@ export const workflowApi = {
             // Local fallback (direct upload to FastAPI, no 10MB limit in dev)
             const formData = new FormData();
             formData.append("file", file);
+            if (renderedFp) {
+                formData.append("rendered_fp", renderedFp);
+            }
             return api.post<{ url: string; presigned_url: string }>(
                 `/api/workflows/${workflowId}/nodes/${nodeId}/upload-render`,
                 formData,
@@ -272,7 +286,7 @@ export const workflowApi = {
         // 3. Confirm upload with the backend so it saves the URL to the DB
         return api.post<{ url: string; presigned_url: string }>(
             `/api/workflows/${workflowId}/nodes/${nodeId}/upload-render/confirm`,
-            { file_url: data.file_url }
+            { file_url: data.file_url, rendered_fp: renderedFp }
         );
     },
 
@@ -401,6 +415,18 @@ export const workflowApi = {
         api.post<{ id: string; name: string; forked_from: string }>(
             `/api/workflows/${workflowId}/fork`,
         ),
+
+    /**
+     * Recover orphan failed fal_jobs that fal actually completed.
+     * Safe to call repeatedly — already-recovered/genuinely-failed rows are skipped.
+     */
+    reconcileFalJobs: (workflowId: string) =>
+        api.post<{
+            recovered: number;
+            still_failed: number;
+            in_progress: number;
+            scanned: number;
+        }>(`/api/workflows/${workflowId}/reconcile-fal-jobs`),
 };
 
 

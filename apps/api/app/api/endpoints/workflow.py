@@ -8,7 +8,7 @@ from typing import Optional, List, Dict, Any
 from uuid import uuid4
 
 from bson import ObjectId
-from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form
 from pydantic import BaseModel
 
 from app.core.database import get_database, get_workflow_jobs_collection, get_fal_jobs_collection
@@ -466,6 +466,142 @@ async def update_workflow(
     return serialized
 
 
+@router.post("/{workflow_id}/reconcile-fal-jobs")
+async def reconcile_workflow_fal_jobs(
+    workflow_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """Recover orphan failed fal_jobs that fal actually completed.
+
+    The previous extract_output bug marked some videoGen / imageGen runs as
+    failed locally even though fal had returned a usable URL. This endpoint
+    sweeps the user's fal_jobs for this workflow, re-fetches the result from
+    fal's queue, re-runs the (now fixed) extractor, and replays the success
+    path so the asset and the charge land where they should.
+
+    Safe to call repeatedly — already-recovered or genuinely-failed rows are
+    skipped. The frontend invokes this on workflow load so users never see a
+    stranded paid-but-missing asset.
+    """
+    collection = get_workflows_collection()
+    try:
+        oid = ObjectId(workflow_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid workflow ID")
+
+    user_id = current_user.get("_id")
+    # Pull the full doc — output_repair needs nodes + outputs to rewrite
+    # mislabeled `.mp3` video URLs in place. The reconcile path below only
+    # needs the _id, but loading once keeps it cheap.
+    workflow = await collection.find_one(
+        {"_id": oid, "$or": [{"user_id": user_id}, {"user_id": {"$exists": False}}]},
+    )
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    # ── Auto-repair mislabeled `.mp3` video outputs ─────────────────────
+    # This used to require a manual `scripts/fix_mislabeled_video_outputs.py`
+    # run. Now it happens silently every time the user opens a workflow.
+    repair_summary = {"scanned": 0, "repaired": 0, "errors": []}
+    try:
+        from app.services.output_repair import build_s3_client, repair_workflow_outputs
+        from app.core.config import settings
+
+        repair_summary = await repair_workflow_outputs(
+            workflow,
+            db=get_database(),
+            s3_client=build_s3_client(),
+            bucket=settings.s3_bucket,
+            region=settings.aws_region,
+            delete_old=False,
+        )
+        if repair_summary["repaired"]:
+            print(
+                f"[Reconcile] auto-repaired {repair_summary['repaired']} "
+                f"mislabeled .mp3 video output(s) for workflow={workflow_id}"
+            )
+    except Exception as e:
+        print(f"[Reconcile] output-repair failed for {workflow_id}: {e}")
+
+    fal_jobs = get_fal_jobs_collection()
+    rows = await fal_jobs.find(
+        {
+            "status": "failed",
+            "context.workflow_id": workflow_id,
+            "error": {"$regex": "no output url found in fal payload"},
+        }
+    ).to_list(length=200)
+
+    if not rows:
+        return {
+            "recovered": 0,
+            "still_failed": 0,
+            "in_progress": 0,
+            "scanned": 0,
+            "outputs_repaired": repair_summary["repaired"],
+        }
+
+    from app.services.fal_service import FalService
+    from app.api.endpoints.fal_webhook import process_fal_callback
+
+    fal = FalService()
+    recovered = 0
+    still_failed = 0
+    in_progress = 0
+
+    for row in rows:
+        rid = row.get("request_id")
+        endpoint = row.get("endpoint_id")
+        capability = row.get("capability") or ""
+        if not rid or not endpoint:
+            continue
+
+        try:
+            poll = await fal.fetch_result(endpoint, rid)
+        except Exception as e:
+            print(f"[Reconcile] fal poll error for {rid}: {e}")
+            still_failed += 1
+            continue
+
+        if poll.get("status") != "COMPLETED":
+            if poll.get("status") in ("IN_QUEUE", "IN_PROGRESS"):
+                in_progress += 1
+            else:
+                still_failed += 1
+            continue
+
+        output = poll.get("output")
+        normalized = FalService.extract_output(capability, output)
+        if not normalized.get("success"):
+            still_failed += 1
+            continue
+
+        try:
+            await process_fal_callback(
+                request_id=rid,
+                status="OK",
+                result=output,
+                error_msg=None,
+                force=True,
+            )
+            recovered += 1
+        except Exception as e:
+            print(f"[Reconcile] replay failed for {rid}: {e}")
+            still_failed += 1
+
+    print(
+        f"[Reconcile] workflow={workflow_id} scanned={len(rows)} "
+        f"recovered={recovered} still_failed={still_failed} in_progress={in_progress}"
+    )
+    return {
+        "recovered": recovered,
+        "still_failed": still_failed,
+        "in_progress": in_progress,
+        "scanned": len(rows),
+        "outputs_repaired": repair_summary["repaired"],
+    }
+
+
 @router.delete("/{workflow_id}")
 async def delete_workflow(workflow_id: str, current_user: dict = Depends(get_current_user)):
     """Delete a workflow."""
@@ -540,6 +676,10 @@ async def run_node(
     
     print(f"[Workflow] Running node: {node_id} (type: {target_node.get('type')})")
     
+    # ── Pre-execution balance gate ────────────────────────────────────────
+    billing_service = BillingService(get_database())
+    await billing_service.check_balance(user_id=user_id, node_type=node_type)
+    
     # Run the node
     runner = NodeRunner()
     result = await runner.run_node(
@@ -585,6 +725,11 @@ async def run_node(
         workflow = await collection.find_one({"_id": oid})
         current_outputs = workflow.get("outputs", {})
         current_outputs[node_id] = result.get("output")
+        
+        # Store voice_id for audioGen nodes (voice design / voice clone)
+        custom_voice_id = result.get("custom_voice_id")
+        if custom_voice_id:
+            current_outputs[f"{node_id}__voice_id"] = custom_voice_id
         
         # Also store extracted frames for videoGen nodes
         start_frame = result.get("start_frame")
@@ -640,6 +785,7 @@ async def run_node(
 class ExtractFramesRequest(BaseModel):
     start_frame: Optional[str] = None
     end_frame: Optional[str] = None
+    video_url: Optional[str] = None
 
 from app.services.storage_service import StorageService
 from app.core.dependencies import get_storage_service
@@ -698,10 +844,33 @@ async def extract_frames(
             print(f"Failed to save frame: {e}")
             return b64_str
 
-    # Persist client-provided frames instantly
+    # Persist client-provided frames instantly; if either side is missing and a
+    # video URL is available, fall back to server-side ffmpeg extraction.
     set_fields: Dict[str, Any] = {"updated_at": datetime.now(timezone.utc)}
     start_frame_url = payload.start_frame
     end_frame_url = payload.end_frame
+
+    source_video_url = payload.video_url
+    if not source_video_url:
+        existing_output = outputs.get(node_id)
+        if isinstance(existing_output, str) and existing_output.startswith("http"):
+            source_video_url = existing_output
+
+    if source_video_url and (not start_frame_url or not end_frame_url):
+        from app.services.storage_service import S3StorageService
+
+        try:
+            safe_video_url = source_video_url
+            if S3StorageService.is_s3_url(safe_video_url):
+                safe_video_url = S3StorageService().get_presigned_url(safe_video_url)
+
+            runner = NodeRunner()
+            if not start_frame_url:
+                start_frame_url = runner._extract_video_frame(safe_video_url, "start_frame")
+            if not end_frame_url:
+                end_frame_url = runner._extract_video_frame(safe_video_url, "end_frame")
+        except Exception as e:
+            print(f"[ExtractFrames] Server-side extraction failed for node {node_id}: {e}")
 
     if start_frame_url:
         start_frame_url = await _save_frame(start_frame_url, f"frame_start_{node_id}")
@@ -762,9 +931,16 @@ async def clear_node_output(
         f"outputs.{node_id}": "",
         f"outputs.{node_id}__start_frame": "",
         f"outputs.{node_id}__end_frame": "",
+        # Editor-agent dedup keys: clearing the node should also drop the
+        # "we already rendered & uploaded this TSX" memo, otherwise a re-run
+        # with a different prompt could resurface a stale URL.
+        f"outputs.{node_id}__rendered_fp": "",
+        f"outputs.{node_id}__rendered_url": "",
         f"execution.outputs.{node_id}": "",
         f"execution.outputs.{node_id}__start_frame": "",
         f"execution.outputs.{node_id}__end_frame": "",
+        f"execution.outputs.{node_id}__rendered_fp": "",
+        f"execution.outputs.{node_id}__rendered_url": "",
     }
 
     await collection.update_one(
@@ -825,6 +1001,15 @@ async def run_workflow(workflow_id: str, current_user: dict = Depends(get_curren
             continue
         
         print(f"[Workflow] Executing node: {node_id} (type: {node.get('type')})")
+        
+        # ── Pre-execution balance gate ────────────────────────────────────
+        node_type = node.get("type")
+        try:
+            billing_svc = BillingService(get_database())
+            await billing_svc.check_balance(user_id=user_id, node_type=node_type or "")
+        except HTTPException as balance_err:
+            errors.append({"node_id": node_id, "error": balance_err.detail})
+            continue
         
         result = await runner.run_node(
             node=node,
@@ -1076,6 +1261,24 @@ async def _execute_node_async(workflow_id: str, node_id: str, run_id: str, input
         "editorAgent": ActionType.RENDER,
     }
 
+    # ── Pre-execution balance gate (secondary guard inside Lambda) ────────
+    if user_id and node_type:
+        try:
+            billing_service = BillingService(get_database())
+            await billing_service.check_balance(user_id=str(user_id), node_type=node_type)
+        except HTTPException as balance_err:
+            await collection.update_one(
+                {"_id": oid},
+                {"$set": {
+                    f"execution.node_states.{node_id}.status": "failed",
+                    f"execution.node_states.{node_id}.error": balance_err.detail,
+                    "execution.status": "failed",
+                    "updated_at": datetime.now(timezone.utc),
+                }}
+            )
+            print(f"[NodeAsync] ❌ Balance check failed for node {node_id}: {balance_err.detail}")
+            return
+
     print(f"[NodeAsync] 🚀 Calling runner.run_node for: {node_id} (type: {target_node.get('type')}) (run_id: {run_id})")
     runner = NodeRunner()
     
@@ -1177,6 +1380,12 @@ async def _execute_node_async(workflow_id: str, node_id: str, run_id: str, input
                 "execution.status": "completed",
                 "updated_at": datetime.now(timezone.utc),
             }
+            
+            # Store voice_id for audioGen nodes (voice design / voice clone)
+            custom_voice_id = result.get("custom_voice_id")
+            if custom_voice_id:
+                set_fields[f"outputs.{node_id}__voice_id"] = custom_voice_id
+                set_fields[f"execution.outputs.{node_id}__voice_id"] = custom_voice_id
             
             # For videoGen nodes, also store extracted frames under special keys so
             # the frontend can auto-fill connected imageGen nodes without an extra run.
@@ -1497,6 +1706,12 @@ async def run_node_async(
             run_id=execution.get("run_id", ""), # reuse existing if available but not strictly matched
             status="running",
         )
+    
+    # ── Pre-execution balance gate ────────────────────────────────────────
+    target_node = next((n for n in workflow.get("nodes", []) if n["id"] == node_id), None)
+    if target_node:
+        billing_service = BillingService(get_database())
+        await billing_service.check_balance(user_id=user_id, node_type=target_node.get("type", ""))
     
     run_id = str(uuid4())
     print(f"[NodeAsync] Starting async node run: {workflow_id} / {node_id} (run_id: {run_id})")
@@ -1855,6 +2070,11 @@ async def get_upload_render_presigned_url(
 
 class ConfirmUploadRequest(BaseModel):
     file_url: str
+    # Optional: stable hash of the TSX composition this MP4 was rendered
+    # from. When provided we persist it alongside outputs.{node_id} so the
+    # frontend can recognize an unchanged composition after reload and
+    # skip a redundant client-side render + S3 upload.
+    rendered_fp: Optional[str] = None
 
 
 def _extract_render_frames(file_url: str) -> tuple[Optional[str], Optional[str]]:
@@ -1918,6 +2138,14 @@ async def confirm_upload_render(
     if end_frame:
         set_fields[f"outputs.{node_id}__end_frame"] = end_frame
         set_fields[f"execution.outputs.{node_id}__end_frame"] = end_frame
+    if request.rendered_fp:
+        # Persist the (fp, url) pair so a reload can recognize the existing
+        # render belongs to the current TSX composition and skip a redundant
+        # client-side render + re-upload cycle.
+        set_fields[f"outputs.{node_id}__rendered_fp"] = request.rendered_fp
+        set_fields[f"outputs.{node_id}__rendered_url"] = file_url
+        set_fields[f"execution.outputs.{node_id}__rendered_fp"] = request.rendered_fp
+        set_fields[f"execution.outputs.{node_id}__rendered_url"] = file_url
 
     await collection.update_one(
         {"_id": oid},
@@ -1933,6 +2161,7 @@ async def upload_rendered_video(
     workflow_id: str,
     node_id: str,
     file: UploadFile = File(...),
+    rendered_fp: Optional[str] = Form(default=None),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -1981,6 +2210,11 @@ async def upload_rendered_video(
         if end_frame:
             set_fields[f"outputs.{node_id}__end_frame"] = end_frame
             set_fields[f"execution.outputs.{node_id}__end_frame"] = end_frame
+        if rendered_fp:
+            set_fields[f"outputs.{node_id}__rendered_fp"] = rendered_fp
+            set_fields[f"outputs.{node_id}__rendered_url"] = file_url
+            set_fields[f"execution.outputs.{node_id}__rendered_fp"] = rendered_fp
+            set_fields[f"execution.outputs.{node_id}__rendered_url"] = file_url
 
         await collection.update_one(
             {"_id": oid},
@@ -2478,6 +2712,16 @@ async def _process_job(job_id: str):
         return
 
 
+    # ── Pre-execution balance gate ────────────────────────────────────
+    job_user_id = job.get("user_id") or workflow.get("user_id")
+    if job_user_id:
+        try:
+            billing_svc = BillingService(get_database())
+            await billing_svc.check_balance(user_id=str(job_user_id), node_type=node_type or "")
+        except HTTPException as balance_err:
+            await fail_task(jobs_collection, job_id, task_index, balance_err.detail)
+            return
+
     # ── Execute the node ──
     runner = NodeRunner()
     action_type_map = {
@@ -2564,6 +2808,11 @@ async def _process_job(job_id: str):
                 set_fields[f"outputs.{node_id}__start_frame"] = start_frame
             if end_frame:
                 set_fields[f"outputs.{node_id}__end_frame"] = end_frame
+            
+            # Store voice_id for audioGen nodes (voice design / voice clone)
+            custom_voice_id = result.get("custom_voice_id")
+            if custom_voice_id:
+                set_fields[f"outputs.{node_id}__voice_id"] = custom_voice_id
 
             await jobs_collection.update_one({"id": job_id}, {"$set": set_fields})
 

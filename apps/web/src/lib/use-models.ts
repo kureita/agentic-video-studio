@@ -7,6 +7,26 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 let modelsCache: Model[] | null = null;
 let modelsPromise: Promise<Model[]> | null = null;
 
+export const getModelsCache = () => modelsCache;
+export const fetchModels = async () => {
+    if (modelsCache) return modelsCache;
+    if (!modelsPromise) {
+        modelsPromise = billingApi.getModels()
+            .then(res => {
+                modelsCache = res.data.models || [];
+                return modelsCache;
+            })
+            .catch(() => {
+                return axios.get<{ models: Model[] }>(`${API_BASE_URL}/api/public/models`)
+                    .then(res => {
+                        modelsCache = res.data.models || [];
+                        return modelsCache;
+                    });
+            });
+    }
+    return modelsPromise;
+};
+
 export function useModels() {
     const [models, setModels] = useState<Model[]>(modelsCache || []);
     const [isLoading, setIsLoading] = useState(!modelsCache);

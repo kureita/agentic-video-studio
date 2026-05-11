@@ -1,9 +1,18 @@
-import { memo, useState, useRef } from "react";
+import { memo, useEffect, useMemo, useState, useRef } from "react";
 import { Handle, Position } from "@xyflow/react";
-import { Copy, Trash2, Play, Type, Image as ImageIcon, Video, Music, Loader2, Eraser, Scan, SkipForward, Clock } from "lucide-react";
+import { Copy, Trash2, Play, Type, Image as ImageIcon, Video, Music, Loader2, Eraser, Scan, SkipForward, Clock, AlertTriangle, X, Check, RotateCcw } from "lucide-react";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { usePublicView } from "@/lib/public-view-context";
+import { useWorkflowStore } from "@/lib/workflow-store";
+import { useModels } from "@/lib/use-models";
+import {
+    computeNodeRunEstimate,
+    formatEstimatedUsd,
+    hasUnavailableCostEstimate,
+    isPinnedAssetNode,
+} from "@/lib/compute-cost";
 import {
     getWorkflowConnectionColor,
     getWorkflowConnectionSurfaceColor,
@@ -40,9 +49,12 @@ interface NodeWrapperProps {
     onClear?: () => void;
     isRunning?: boolean;
     executionStatus?: "queued" | "running" | "completed" | "failed" | "skipped" | null;
+    executionError?: string | null;
     inputBaseOffset?: number;
     contentClassName?: string;
     style?: React.CSSProperties;
+    /** Estimated cost in USD shown as tooltip on the Run button */
+    estimatedCost?: number | null;
 }
 
 const getHandleIcon = (type?: string) => {
@@ -67,17 +79,57 @@ export const NodeWrapper = memo(({
     onClear,
     isRunning,
     executionStatus,
+    executionError,
     contentClassName,
     style,
     inputBaseOffset = 75,
+    estimatedCost,
 }: NodeWrapperProps) => {
     const { isPublicView, requireLogin } = usePublicView();
+    const nodes = useWorkflowStore((state) => state.nodes);
+    const edges = useWorkflowStore((state) => state.edges);
+    const outputsByNodeId = useWorkflowStore((state) => state.outputs);
+    const { models, isLoading: areModelsLoading } = useModels();
 
     const gatedOnRun = isPublicView
         ? () => requireLogin("Sign in to run nodes and generate media.")
         : onRun;
     const gatedOnDelete = isPublicView ? undefined : onDelete;
     const gatedOnClear = isPublicView ? undefined : onClear;
+    const runEstimate = useMemo(
+        () => computeNodeRunEstimate({
+            nodeId,
+            nodes,
+            edges,
+            outputs: outputsByNodeId,
+            models,
+            currentNodeEstimatedCost: estimatedCost,
+        }),
+        [nodeId, nodes, edges, outputsByNodeId, models, estimatedCost]
+    );
+    const hasUnavailableRunCost = useMemo(() => {
+        const nodeById = new Map(nodes.map((node) => [node.id, node]));
+        return runEstimate.nodeIds.some((id) => {
+            const node = nodeById.get(id);
+            return !!node && !isPinnedAssetNode(node) && hasUnavailableCostEstimate(node, models);
+        });
+    }, [nodes, runEstimate.nodeIds, models]);
+    const effectiveEstimatedCost = runEstimate.cost > 0 ? runEstimate.cost : (estimatedCost ?? 0);
+    const upstreamBillableNodeCount = runEstimate.billableNodeIds.filter((id) => id !== nodeId).length;
+    const runScopeLabel = upstreamBillableNodeCount > 0
+        ? `this node + ${upstreamBillableNodeCount} upstream ${upstreamBillableNodeCount === 1 ? "node" : "nodes"}`
+        : "this node";
+    const runTooltipLabel = isPublicView
+        ? "Sign in to run this node"
+        : areModelsLoading && estimatedCost == null
+            ? `Run ${runScopeLabel} (cost estimate loading)`
+            : effectiveEstimatedCost > 0
+                ? hasUnavailableRunCost
+                    ? `Run ${runScopeLabel} (at least ${formatEstimatedUsd(effectiveEstimatedCost)} estimated; some costs unavailable)`
+                    : `Run ${runScopeLabel} (${formatEstimatedUsd(effectiveEstimatedCost)} estimated)`
+                : hasUnavailableRunCost
+                    ? `Run ${runScopeLabel} (cost estimate unavailable)`
+                    : `Run ${runScopeLabel} (no billable generation estimated)`;
 
     const handleCopy = () => {
         if (typeof window === "undefined") return;
@@ -100,6 +152,36 @@ export const NodeWrapper = memo(({
         hideTimer.current = setTimeout(() => setActiveHandle(null), 100);
     };
 
+    // Failed-node error panel toggle. Auto-open when a new error appears so the
+    // user sees what went wrong without having to hunt for it.
+    const [errorOpen, setErrorOpen] = useState(false);
+    const [errorCopied, setErrorCopied] = useState(false);
+    const lastErrorRef = useRef<string | null>(null);
+    useEffect(() => {
+        if (executionStatus === "failed" && executionError) {
+            if (lastErrorRef.current !== executionError) {
+                lastErrorRef.current = executionError;
+                setErrorOpen(true);
+                setErrorCopied(false);
+            }
+        } else if (lastErrorRef.current !== null) {
+            lastErrorRef.current = null;
+            setErrorOpen(false);
+            setErrorCopied(false);
+        }
+    }, [executionStatus, executionError]);
+
+    const handleCopyError = async () => {
+        if (!executionError) return;
+        try {
+            await navigator.clipboard.writeText(executionError);
+            setErrorCopied(true);
+            setTimeout(() => setErrorCopied(false), 2000);
+        } catch {
+            toast.error("Couldn't access clipboard. Select the text manually.");
+        }
+    };
+
     // Execution status styles
     const executionBorderClass = executionStatus === "completed"
         ? "border-green-500/60 shadow-[0_0_20px_-5px_rgba(34,197,94,0.3)]"
@@ -117,20 +199,111 @@ export const NodeWrapper = memo(({
         <div className="relative group/node">
             {/* Execution Status Badge */}
             {executionStatus && (
-                <div className={cn(
-                    "absolute -top-10 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium whitespace-nowrap z-50 transition-all duration-300",
-                    executionStatus === "running" && "bg-amber-500/10 text-amber-500 border border-amber-500/20",
-                    executionStatus === "completed" && "bg-green-500/10 text-green-500 border border-green-500/20",
-                    executionStatus === "failed" && "bg-red-500/10 text-red-500 border border-red-500/20",
-                    executionStatus === "queued" && "bg-blue-400/10 text-blue-400 border border-blue-400/20",
-                    executionStatus === "skipped" && "bg-muted text-muted-foreground border border-border/40"
-                )}>
+                <button
+                    type="button"
+                    onClick={(e) => {
+                        if (executionStatus !== "failed" || !executionError) return;
+                        e.stopPropagation();
+                        setErrorOpen((open) => !open);
+                    }}
+                    className={cn(
+                        "absolute -top-10 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium whitespace-nowrap z-50 transition-all duration-300 nodrag nopan",
+                        executionStatus === "running" && "bg-amber-500/10 text-amber-500 border border-amber-500/20",
+                        executionStatus === "completed" && "bg-green-500/10 text-green-500 border border-green-500/20",
+                        executionStatus === "failed" && "bg-red-500/10 text-red-500 border border-red-500/20",
+                        executionStatus === "queued" && "bg-blue-400/10 text-blue-400 border border-blue-400/20",
+                        executionStatus === "skipped" && "bg-muted text-muted-foreground border border-border/40",
+                        executionStatus === "failed" && executionError ? "cursor-pointer hover:bg-red-500/20" : "cursor-default"
+                    )}
+                    title={executionStatus === "failed" && executionError ? "Click to view error details" : undefined}
+                >
                     {executionStatus === "running" && <Loader2 className="w-2.5 h-2.5 animate-spin" />}
                     {executionStatus === "completed" && <div className="w-2 h-2 rounded-full bg-green-500" />}
-                    {executionStatus === "failed" && <div className="w-2 h-2 rounded-full bg-red-500" />}
+                    {executionStatus === "failed" && <AlertTriangle className="w-2.5 h-2.5" />}
                     {executionStatus === "queued" && <Clock className="w-2.5 h-2.5" />}
                     {executionStatus === "skipped" && <SkipForward className="w-2.5 h-2.5" />}
                     {executionStatus.charAt(0).toUpperCase() + executionStatus.slice(1)}
+                </button>
+            )}
+
+            {/* Failed-node error panel */}
+            {executionStatus === "failed" && executionError && errorOpen && (
+                <div
+                    className="absolute bottom-full left-1/2 -translate-x-1/2 mb-12 w-[300px] bg-background border border-red-500/40 rounded-xl shadow-2xl z-[100] nodrag nopan nowheel overflow-hidden"
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => e.stopPropagation()}
+                >
+                    <div className="flex items-start gap-2 px-3 py-2 bg-red-500/10 border-b border-red-500/20">
+                        <AlertTriangle className="w-3.5 h-3.5 text-red-500 mt-0.5 flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                            <div className="text-[11px] font-semibold text-red-500">Generation failed</div>
+                            <div className="text-[9px] text-muted-foreground">Fix the issue below and run again.</div>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setErrorOpen(false);
+                            }}
+                            className="text-muted-foreground hover:text-foreground p-0.5 rounded transition-colors cursor-pointer"
+                            title="Close"
+                        >
+                            <X className="w-3 h-3" />
+                        </button>
+                    </div>
+                    <div
+                        className="px-3 py-2 max-h-[180px] overflow-y-auto select-text cursor-text"
+                        onMouseDown={(e) => e.stopPropagation()}
+                    >
+                        <p className="text-[11px] text-foreground/90 whitespace-pre-wrap break-words leading-relaxed select-text">
+                            {executionError}
+                        </p>
+                    </div>
+                    <div className="flex items-center gap-1 px-2 py-2 border-t border-border/40 bg-muted/20">
+                        <button
+                            type="button"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                void handleCopyError();
+                            }}
+                            className={cn(
+                                "flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium transition-colors cursor-pointer",
+                                errorCopied
+                                    ? "text-green-600 bg-green-500/10"
+                                    : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                            )}
+                            title="Copy error message"
+                        >
+                            {errorCopied ? (
+                                <>
+                                    <Check className="w-3 h-3" />
+                                    Copied
+                                </>
+                            ) : (
+                                <>
+                                    <Copy className="w-3 h-3" />
+                                    Copy
+                                </>
+                            )}
+                        </button>
+                        <div className="flex-1" />
+                        {gatedOnRun && (
+                            <button
+                                type="button"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setErrorOpen(false);
+                                    gatedOnRun?.();
+                                }}
+                                disabled={isRunning}
+                                className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium bg-red-500 text-white hover:bg-red-500/90 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                title="Retry running this node"
+                            >
+                                <RotateCcw className="w-3 h-3" />
+                                Retry
+                            </button>
+                        )}
+                    </div>
                 </div>
             )}
 
@@ -145,19 +318,26 @@ export const NodeWrapper = memo(({
                 selected && !isRunning && executionStatus !== "running" && executionStatus !== "queued" ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2 pointer-events-none"
             )}>
                 {gatedOnRun && (
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 text-green-500 hover:text-green-600 hover:bg-green-500/10 rounded-full disabled:opacity-50 nodrag nopan"
-                        onClick={gatedOnRun}
-                        disabled={isRunning}
-                    >
-                        {isRunning ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                            <Play className="h-3.5 w-3.5 fill-current" />
-                        )}
-                    </Button>
+                    <div className="relative group/runbtn flex items-center justify-center">
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-green-500 hover:text-green-600 hover:bg-green-500/10 rounded-full disabled:opacity-50 nodrag nopan"
+                            onClick={gatedOnRun}
+                            disabled={isRunning}
+                            title={runTooltipLabel}
+                            aria-label={runTooltipLabel}
+                        >
+                            {isRunning ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                                <Play className="h-3.5 w-3.5 fill-current" />
+                            )}
+                        </Button>
+                        <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 opacity-0 group-hover/runbtn:opacity-100 transition-opacity bg-black text-white text-[10px] px-2 py-1 rounded shadow-lg whitespace-nowrap pointer-events-none z-50">
+                            {runTooltipLabel}
+                        </div>
+                    </div>
                 )}
                 {gatedOnRun && <div className="w-[1px] h-3 bg-border/50" />}
 

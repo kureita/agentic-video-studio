@@ -9,6 +9,8 @@ import { cn } from "@/lib/utils";
 
 import { useWorkflowStore } from "@/lib/workflow-store";
 import { useModels } from "@/lib/use-models";
+import { useEstimatedCost } from "@/lib/use-estimated-cost";
+import { getNodeReferenceLabel, getNodeReferenceLabelById } from "@/lib/node-references";
 
 const INPUTS_WITH_REF: { id: string, label: string, type: "text" | "image" | "video" | "audio", style?: React.CSSProperties }[] = [
     { id: "prompt", label: "Prompt", type: "text", style: { bottom: '108px' } },
@@ -71,6 +73,8 @@ export const ImageGenNode = memo(({ id, selected, data }: NodeProps) => {
 
     const ratio = (data.ratio as string) || getRatioFromDimensions(data.width as number, data.height as number);
 
+    const estimatedCost = useEstimatedCost(currentModelId, "image", { ratio });
+
     // Calculate dimensions based on ratio
     // Base dimension matches NodeWrapper min-width (approximately)
     const BASE_DIM = 300;
@@ -126,7 +130,7 @@ export const ImageGenNode = memo(({ id, selected, data }: NodeProps) => {
         [edges, id]
     );
     const allTextNodes = React.useMemo(() =>
-        nodes.filter(n => n.type === 'text').map((n, i) => ({ id: n.id, label: `Text #${i + 1}`, content: (n.data.text as string) || "" })),
+        nodes.filter(n => n.type === 'text').map((n) => ({ id: n.id, label: getNodeReferenceLabel(n), content: (n.data.text as string) || "" })),
         [nodes]
     );
     const textNodes = React.useMemo(() =>
@@ -184,11 +188,7 @@ export const ImageGenNode = memo(({ id, selected, data }: NodeProps) => {
     return (
         <NodeWrapper
             nodeId={id}
-            title={`Image Generator #${useWorkflowStore((state) =>
-                state.nodes
-                    .filter(n => n.type === 'imageGen')
-                    .findIndex(n => n.id === id) + 1
-            )}`}
+            title={useWorkflowStore((state) => getNodeReferenceLabelById(state.nodes, id) || "Image Gen #?")}
             icon={<ImageIcon className="w-4 h-4" />}
             selected={selected}
             color="bg-purple-500"
@@ -200,6 +200,8 @@ export const ImageGenNode = memo(({ id, selected, data }: NodeProps) => {
             onClear={output ? () => clearNodeOutput(id) : undefined}
             isRunning={isRunning}
             executionStatus={data.executionStatus as "queued" | "running" | "completed" | "failed" | null}
+            executionError={(data.executionError as string | null | undefined) ?? null}
+            estimatedCost={estimatedCost}
         >
             <div
                 className="relative bg-muted/30 group/image transition-all duration-300 ease-in-out overflow-hidden"

@@ -3,6 +3,7 @@ import { NodeProps, useReactFlow } from "@xyflow/react";
 import { Type } from "lucide-react";
 import { NodeWrapper } from "@/components/workflow/node-wrapper";
 import { useWorkflowStore } from "@/lib/workflow-store";
+import { getNodeReferenceLabelById } from "@/lib/node-references";
 
 export const TextNode = memo(({ id, selected, data }: NodeProps) => {
     const { updateNodeData, deleteElements } = useReactFlow();
@@ -30,11 +31,7 @@ export const TextNode = memo(({ id, selected, data }: NodeProps) => {
     return (
         <NodeWrapper
             nodeId={id}
-            title={`Text #${useWorkflowStore((state) =>
-                state.nodes
-                    .filter(n => n.type === 'text')
-                    .findIndex(n => n.id === id) + 1
-            )}`}
+            title={useWorkflowStore((state) => getNodeReferenceLabelById(state.nodes, id) || "Text #?")}
             icon={<Type className="w-4 h-4" />}
             selected={selected}
             contentClassName="p-4"

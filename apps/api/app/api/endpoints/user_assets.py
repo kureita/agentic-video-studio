@@ -96,6 +96,9 @@ async def register_asset(
     node_type: str,
     asset_url: str,
     node_data: Optional[Dict[str, Any]] = None,
+    asset_size_bytes: Optional[int] = None,
+    mime_type: Optional[str] = None,
+    filename: Optional[str] = None,
 ) -> None:
     """
     Register a newly created/uploaded asset in the user_assets collection.
@@ -115,14 +118,34 @@ async def register_asset(
 
     existing = await collection.find_one({"user_id": user_id, "url": clean_url})
     if existing:
+        update_fields: Dict[str, Any] = {}
+        if asset_size_bytes is not None and not existing.get("asset_size_bytes"):
+            update_fields["asset_size_bytes"] = int(asset_size_bytes)
+        if mime_type and not existing.get("mime_type"):
+            update_fields["mime_type"] = mime_type
+        if filename and not existing.get("filename"):
+            update_fields["filename"] = filename
+        if update_fields:
+            await collection.update_one(
+                {"_id": existing["_id"]},
+                {"$set": update_fields},
+            )
         return  # already registered
 
     # Only keep relevant settings from node_data (prompt, model, ratio, etc.)
     safe_node_data = None
     if node_data and isinstance(node_data, dict):
+        if asset_size_bytes is None:
+            raw_size = node_data.get("fileSizeBytes")
+            if isinstance(raw_size, (int, float)) and raw_size > 0:
+                asset_size_bytes = int(raw_size)
+        if mime_type is None and isinstance(node_data.get("mimeType"), str):
+            mime_type = node_data.get("mimeType")
+        if filename is None and isinstance(node_data.get("filename"), str):
+            filename = node_data.get("filename")
         # Keep only serializable settings, drop transient runtime fields
         keep_keys = {"prompt", "instruction", "text", "model", "ratio", "count", "duration", "resolution",
-                     "voice", "audioType", "mediaType", "generateAudio"}
+                     "voice", "audioType", "mediaType", "generateAudio", "fileSizeBytes", "mimeType", "filename"}
         safe_node_data = {k: v for k, v in node_data.items() if k in keep_keys and v is not None}
 
     doc = {
@@ -136,6 +159,12 @@ async def register_asset(
         "node_data": safe_node_data,
         "created_at": datetime.now(timezone.utc),
     }
+    if asset_size_bytes is not None:
+        doc["asset_size_bytes"] = int(asset_size_bytes)
+    if mime_type:
+        doc["mime_type"] = mime_type
+    if filename:
+        doc["filename"] = filename
     await collection.insert_one(doc)
     print(f"[UserAssets] Registered asset: {category} in '{workflow_name}' → {clean_url[:80]}...")
 

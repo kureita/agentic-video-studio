@@ -2,17 +2,17 @@
 Model Registry — Single source of truth for featured image, video, and audio models on fal.ai.
 
 Every entry exposes a `model_endpoint_id` (fal endpoint id, e.g. "fal-ai/veo3.1") plus an
-`endpoints` map for sub-capabilities (t2v / i2v / t2i / tts / music / sfx / lipsync).
+`endpoints` map for sub-capabilities (t2v / i2v / t2i / voice design / voice clone / music / sfx / lipsync).
 Prices in `fallback_price` are reference-only — live pricing comes from FalPricingService
 (cached in MongoDB `fal_pricing` collection) and billing uses the live figure when available.
 
 ──────────────────────────────────────────────────────────────────────────────
-LINEUP  (16 image/video + 5 audio = 21 fal endpoints)
+LINEUP  (17 image/video + 5 audio = 22 fal endpoints)
 
   Images     Pro                        Cost
   ────────   ─────────────────────────  ─────────────────────────
   Google     nano-banana-pro            nano-banana-2
-  OpenAI     gpt-image-1.5              gpt-image-1-mini
+  OpenAI     gpt-image-2                gpt-image-1-mini
   Kling      kling-image/o3             kling-image/v3
   Bytedance  seedream/v4.5              seedream/v5/lite
 
@@ -21,18 +21,18 @@ LINEUP  (16 image/video + 5 audio = 21 fal endpoints)
   Google     veo3.1                     veo3.1/fast
   OpenAI     sora-2/.../pro             sora-2
   Kling      kling-video/v3/pro         kling-video/v3/standard
-  Kling      kling-video/v2.1-master/motion-control (motion)
+             (modes on each: t2v, i2v, reference, elements, v2v, motion)
   Bytedance  seedance-2.0               seedance-2.0/fast
 
   Audio
   ─────
-  TTS (pro)      elevenlabs/tts/eleven-v3
-  TTS (cost)     minimax/speech-2.8-turbo
+  Voice Design   minimax/voice-design
+  Voice Clone    minimax/voice-clone
   Music          elevenlabs/music
   SFX            elevenlabs/sound-effects/v2
-  Lipsync (pro)  kling-video/lipsync/audio-to-video
-  Lipsync (alt)  sync-lipsync/v2
-  Lipsync (cost) latentsync
+  Lipsync         kling-video/lipsync/audio-to-video (pro)
+                  kling-video/ai-avatar/v2/pro        (avatar pro)
+                  kling-video/ai-avatar/v2/standard   (avatar standard)
 ──────────────────────────────────────────────────────────────────────────────
 """
 
@@ -40,7 +40,7 @@ from typing import Any, Dict, List
 
 
 # ---------------------------------------------------------------------------
-# Image models (8)
+# Image models (9)
 # ---------------------------------------------------------------------------
 IMAGE_MODELS: List[Dict[str, Any]] = [
     # ── Google ─────────────────────────────────────────────────
@@ -79,6 +79,26 @@ IMAGE_MODELS: List[Dict[str, Any]] = [
         "fallback_price": {"per_run": 0.04},
     },
     # ── OpenAI ─────────────────────────────────────────────────
+    {
+        "id": "gpt-image-2",
+        "name": "GPT Image 2",
+        "provider": "OpenAI",
+        "type": "image",
+        "tier": "pro",
+        "model_endpoint_id": "openai/gpt-image-2",
+        "endpoints": {
+            "t2i": "openai/gpt-image-2",
+            "i2i": "openai/gpt-image-2/edit",
+        },
+        "capabilities": ["t2i", "i2i"],
+        "configs": [
+            {"id": "1:1",  "label": "1024×1024 (1:1)",  "aspect_ratio": "1:1",  "est_price_usd": 0.06},
+            {"id": "16:9", "label": "1536×1024 (16:9)", "aspect_ratio": "16:9", "est_price_usd": 0.06},
+            {"id": "9:16", "label": "1024×1536 (9:16)", "aspect_ratio": "9:16", "est_price_usd": 0.06},
+        ],
+        "default_config_id": "1:1",
+        "fallback_price": {"per_run": 0.06},
+    },
     {
         "id": "gpt-image-1-5",
         "name": "GPT Image 1.5",
@@ -301,7 +321,9 @@ VIDEO_MODELS: List[Dict[str, Any]] = [
     },
     # ── Kling ──────────────────────────────────────────────────
     # Kling v3 Pro exposes text-to-video, image-to-video (start/end),
-    # elements (multi subject reference), and video extend.
+    # elements (multi-subject — passed as `elements` field on the same
+    # image-to-video endpoint, NOT a separate URL — fal removed the dedicated
+    # `*/elements` paths in v3), and video extend.
     {
         "id": "kling-video-v3-pro",
         "name": "Kling Video v3 Pro",
@@ -312,17 +334,24 @@ VIDEO_MODELS: List[Dict[str, Any]] = [
         "endpoints": {
             "t2v": "fal-ai/kling-video/v3/pro/text-to-video",
             "i2v": "fal-ai/kling-video/v3/pro/image-to-video",
-            "elements": "fal-ai/kling-video/v2/pro/elements",
+            # Per fal docs (2026-04): elements is now a request-body field on
+            # the image-to-video endpoint. There is no `/elements` URL.
+            "elements": "fal-ai/kling-video/v3/pro/image-to-video",
             "v2v": "fal-ai/kling-video/v1.6/pro/video-extend",
             "reference": "fal-ai/kling-video/v3/pro/image-to-video",
+            # Motion-control is a separate fal endpoint that takes a reference
+            # image AND a reference video plus a `character_orientation`. It
+            # used to be its own selectable model; collapsed into v3 Pro/Std
+            # because it's just another mode on the same base model.
+            "motion": "fal-ai/kling-video/v3/pro/motion-control",
         },
-        "capabilities": ["t2v", "i2v", "reference", "elements", "v2v", "audio"],
-        "input_modes": ["t2v", "i2v", "reference", "elements", "v2v"],
+        "capabilities": ["t2v", "i2v", "reference", "elements", "v2v", "motion", "audio"],
+        "input_modes": ["t2v", "i2v", "reference", "elements", "v2v", "motion"],
         "frame_images_max": 2,
         "reference_images_min": 1,
         "reference_images_max": 4,
         "elements_min": 1,
-        "elements_max": 4,
+        "elements_max": 3,
         "native_audio_default": True,
         "duration_min": 3,
         "duration_max": 15,
@@ -344,17 +373,21 @@ VIDEO_MODELS: List[Dict[str, Any]] = [
         "endpoints": {
             "t2v": "fal-ai/kling-video/v3/standard/text-to-video",
             "i2v": "fal-ai/kling-video/v3/standard/image-to-video",
-            "elements": "fal-ai/kling-video/v2/standard/elements",
+            # Standard variant supports `elements` on the i2v endpoint too —
+            # same field schema as Pro. (The dedicated `*/elements` path was
+            # never on standard either.)
+            "elements": "fal-ai/kling-video/v3/standard/image-to-video",
             "v2v": "fal-ai/kling-video/v1.6/standard/video-extend",
             "reference": "fal-ai/kling-video/v3/standard/image-to-video",
+            "motion": "fal-ai/kling-video/v3/standard/motion-control",
         },
-        "capabilities": ["t2v", "i2v", "reference", "elements", "v2v", "audio"],
-        "input_modes": ["t2v", "i2v", "reference", "elements", "v2v"],
+        "capabilities": ["t2v", "i2v", "reference", "elements", "v2v", "motion", "audio"],
+        "input_modes": ["t2v", "i2v", "reference", "elements", "v2v", "motion"],
         "frame_images_max": 2,
         "reference_images_min": 1,
         "reference_images_max": 4,
         "elements_min": 1,
-        "elements_max": 4,
+        "elements_max": 3,
         "native_audio_default": True,
         "duration_min": 3,
         "duration_max": 15,
@@ -366,28 +399,10 @@ VIDEO_MODELS: List[Dict[str, Any]] = [
         "default_config_id": "720p-5s",
         "fallback_price": {"per_run": 0.35},
     },
-    # Kling Motion Control (specialized camera/motion control)
-    {
-        "id": "kling-motion-control",
-        "name": "Kling Motion Control",
-        "provider": "KlingAI",
-        "type": "video",
-        "tier": "pro",
-        "model_endpoint_id": "fal-ai/kling-video/v2.1-master/motion-control",
-        "endpoints": {
-            "i2v": "fal-ai/kling-video/v2.1-master/motion-control",
-        },
-        "capabilities": ["i2v"],
-        "input_modes": ["i2v"],
-        "frame_images_max": 1,
-        "native_audio_default": False,
-        "configs": [
-            {"id": "720p-5s",  "label": "720p / 5s",  "resolution": "720p", "duration": 5,  "aspect_ratios": ["16:9", "9:16", "1:1"], "est_price_usd": 0.90},
-            {"id": "720p-10s", "label": "720p / 10s", "resolution": "720p", "duration": 10, "aspect_ratios": ["16:9", "9:16", "1:1"], "est_price_usd": 1.80},
-        ],
-        "default_config_id": "720p-5s",
-        "fallback_price": {"per_run": 0.90},
-    },
+    # NOTE: Kling Motion Control used to be a standalone model entry here;
+    # collapsed into v3 Pro/Standard above as a `motion` mode because fal
+    # exposes it as a sub-endpoint of each variant
+    # (`v3/{tier}/motion-control`), not a separate model.
     # ── ByteDance Seedance ─────────────────────────────────────
     {
         "id": "seedance-2-0",
@@ -405,17 +420,20 @@ VIDEO_MODELS: List[Dict[str, Any]] = [
         "input_modes": ["t2v", "i2v", "reference"],
         "frame_images_max": 2,
         "reference_images_min": 1,
-        "reference_images_max": 3,
+        "reference_images_max": 9,
+        "reference_videos_max": 3,
+        "reference_audio_max": 3,
         "native_audio_default": True,
-        "duration_min": 3,
-        "duration_max": 12,
+        "duration_min": 4,
+        "duration_max": 15,
         "duration_step": 1,
         "configs": [
-            {"id": "1080p-5s",  "label": "1080p / 5s",  "resolution": "1080p", "duration": 5,  "aspect_ratios": ["16:9", "9:16"], "est_price_usd": 1.00},
-            {"id": "1080p-10s", "label": "1080p / 10s", "resolution": "1080p", "duration": 10, "aspect_ratios": ["16:9", "9:16"], "est_price_usd": 2.00},
+            {"id": "720p-5s",  "label": "720p / 5s",  "resolution": "720p", "duration": 5,  "aspect_ratios": ["auto", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"], "est_price_usd": 1.52},
+            {"id": "720p-10s", "label": "720p / 10s", "resolution": "720p", "duration": 10, "aspect_ratios": ["auto", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"], "est_price_usd": 3.03},
+            {"id": "480p-5s",  "label": "480p / 5s",  "resolution": "480p", "duration": 5,  "aspect_ratios": ["auto", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"], "est_price_usd": 1.00},
         ],
-        "default_config_id": "1080p-5s",
-        "fallback_price": {"per_run": 1.00},
+        "default_config_id": "720p-5s",
+        "fallback_price": {"per_second": 0.3034, "per_run": 1.52},
     },
     {
         "id": "seedance-2-0-fast",
@@ -433,17 +451,129 @@ VIDEO_MODELS: List[Dict[str, Any]] = [
         "input_modes": ["t2v", "i2v", "reference"],
         "frame_images_max": 2,
         "reference_images_min": 1,
-        "reference_images_max": 3,
+        "reference_images_max": 9,
+        "reference_videos_max": 3,
+        "reference_audio_max": 3,
         "native_audio_default": True,
-        "duration_min": 3,
-        "duration_max": 12,
+        "duration_min": 4,
+        "duration_max": 15,
         "duration_step": 1,
         "configs": [
-            {"id": "720p-5s",  "label": "720p / 5s",  "resolution": "720p", "duration": 5,  "aspect_ratios": ["16:9", "9:16"], "est_price_usd": 0.35},
-            {"id": "720p-10s", "label": "720p / 10s", "resolution": "720p", "duration": 10, "aspect_ratios": ["16:9", "9:16"], "est_price_usd": 0.70},
+            {"id": "720p-5s",  "label": "720p / 5s",  "resolution": "720p", "duration": 5,  "aspect_ratios": ["auto", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"], "est_price_usd": 1.21},
+            {"id": "720p-10s", "label": "720p / 10s", "resolution": "720p", "duration": 10, "aspect_ratios": ["auto", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"], "est_price_usd": 2.42},
+            {"id": "480p-5s",  "label": "480p / 5s",  "resolution": "480p", "duration": 5,  "aspect_ratios": ["auto", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"], "est_price_usd": 0.80},
         ],
         "default_config_id": "720p-5s",
-        "fallback_price": {"per_run": 0.35},
+        "fallback_price": {"per_second": 0.2419, "per_run": 1.21},
+    },
+    # ── Lip Sync (video-to-video) ─────────────────────────────────
+    {
+        "id": "kling-lipsync",
+        "name": "Kling LipSync",
+        "provider": "KlingAI",
+        "type": "video",
+        "category": "lipsync",
+        "tier": "pro",
+        "model_endpoint_id": "fal-ai/kling-video/lipsync/audio-to-video",
+        "endpoints": {"lipsync": "fal-ai/kling-video/lipsync/audio-to-video"},
+        "capabilities": ["lipsync", "v2v", "audio_input"],
+        "input_modes": ["lipsync"],
+        "native_audio_default": False,
+        "requires_input_duration": True,
+        "configs": [
+            {"id": "default", "label": "Lip sync", "est_price_usd": 0.60},
+        ],
+        "default_config_id": "default",
+        "fallback_price": {"per_run": 0.60},
+    },
+    {
+        "id": "kling-ai-avatar-v2-pro",
+        "name": "Kling AI Avatar v2 Pro",
+        "provider": "KlingAI",
+        "type": "video",
+        "category": "avatar",
+        "tier": "pro",
+        "model_endpoint_id": "fal-ai/kling-video/ai-avatar/v2/pro",
+        "endpoints": {"avatar": "fal-ai/kling-video/ai-avatar/v2/pro"},
+        "capabilities": ["avatar", "i2v", "audio_input"],
+        "input_modes": ["avatar"],
+        "native_audio_default": False,
+        "requires_input_duration": True,
+        "configs": [
+            {"id": "default", "label": "Image + audio avatar", "est_price_usd": 0.69,
+             "est_provider_price_usd_per_second": 0.115,
+             "pricing_note": "$0.115 / second"},
+        ],
+        "default_config_id": "default",
+        "fallback_price": {"per_second": 0.115, "per_run": 0.69},
+    },
+    {
+        "id": "kling-ai-avatar-v2-standard",
+        "name": "Kling AI Avatar v2 Standard",
+        "provider": "KlingAI",
+        "type": "video",
+        "category": "avatar",
+        "tier": "cost",
+        "model_endpoint_id": "fal-ai/kling-video/ai-avatar/v2/standard",
+        "endpoints": {"avatar": "fal-ai/kling-video/ai-avatar/v2/standard"},
+        "capabilities": ["avatar", "i2v", "audio_input"],
+        "input_modes": ["avatar"],
+        "native_audio_default": False,
+        "requires_input_duration": True,
+        "configs": [
+            {"id": "default", "label": "Image + audio avatar", "est_price_usd": 0.3372,
+             "est_provider_price_usd_per_second": 0.0562,
+             "pricing_note": "$0.0562 / second"},
+        ],
+        "default_config_id": "default",
+        "fallback_price": {"per_second": 0.0562, "per_run": 0.3372},
+    },
+    {
+        "id": "bytedance-omnihuman-v1-5",
+        "name": "ByteDance OmniHuman v1.5",
+        "provider": "ByteDance",
+        "type": "video",
+        "category": "avatar",
+        "tier": "pro",
+        "model_endpoint_id": "fal-ai/bytedance/omnihuman/v1.5",
+        "endpoints": {"avatar": "fal-ai/bytedance/omnihuman/v1.5"},
+        "capabilities": ["avatar", "i2v", "audio_input"],
+        "input_modes": ["avatar"],
+        "native_audio_default": False,
+        "requires_input_duration": True,
+        "duration_max": 60,
+        "configs": [
+            {"id": "720p", "label": "720p avatar", "resolution": "720p", "est_price_usd": 4.20,
+             "est_provider_price_usd_per_second": 0.14,
+             "pricing_note": "$0.14 / second; audio up to 60s"},
+            {"id": "1080p", "label": "1080p avatar", "resolution": "1080p", "est_price_usd": 4.20,
+             "est_provider_price_usd_per_second": 0.14,
+             "pricing_note": "$0.14 / second; audio up to 30s"},
+        ],
+        "default_config_id": "1080p",
+        "fallback_price": {"per_second": 0.14, "per_run": 4.20},
+    },
+    {
+        "id": "bytedance-omnihuman",
+        "name": "ByteDance OmniHuman",
+        "provider": "ByteDance",
+        "type": "video",
+        "category": "avatar",
+        "tier": "cost",
+        "model_endpoint_id": "fal-ai/bytedance/omnihuman",
+        "endpoints": {"avatar": "fal-ai/bytedance/omnihuman"},
+        "capabilities": ["avatar", "i2v", "audio_input"],
+        "input_modes": ["avatar"],
+        "native_audio_default": False,
+        "requires_input_duration": True,
+        "duration_max": 30,
+        "configs": [
+            {"id": "default", "label": "Image + audio avatar", "est_price_usd": 4.20,
+             "est_provider_price_usd_per_second": 0.14,
+             "pricing_note": "$0.14 / second; audio up to 30s"},
+        ],
+        "default_config_id": "default",
+        "fallback_price": {"per_second": 0.14, "per_run": 4.20},
     },
 ]
 
@@ -452,40 +582,40 @@ VIDEO_MODELS: List[Dict[str, Any]] = [
 # Audio models (5)
 # ---------------------------------------------------------------------------
 AUDIO_MODELS: List[Dict[str, Any]] = [
-    # ── Text-to-Speech ─────────────────────────────────────────
+    # ── Voice Creation ─────────────────────────────────────────
     {
-        "id": "eleven-v3",
-        "name": "Eleven v3",
-        "provider": "ElevenLabs",
-        "type": "audio",
-        "category": "tts",
-        "tier": "pro",
-        "model_endpoint_id": "fal-ai/elevenlabs/tts/eleven-v3",
-        "endpoints": {"tts": "fal-ai/elevenlabs/tts/eleven-v3"},
-        "capabilities": ["tts"],
-        "configs": [
-            {"id": "default", "label": "HD Quality", "pricing_note": "$0.10/1K chars",
-             "est_price_usd_per_1k_chars": 0.10},
-        ],
-        "default_config_id": "default",
-        "fallback_price": {"per_1k_chars": 0.10},
-    },
-    {
-        "id": "minimax-speech-2-8-turbo",
-        "name": "MiniMax Speech 2.8 Turbo",
+        "id": "minimax-voice-design",
+        "name": "MiniMax Voice Design",
         "provider": "MiniMax",
         "type": "audio",
-        "category": "tts",
-        "tier": "cost",
-        "model_endpoint_id": "fal-ai/minimax/speech-2.8-turbo",
-        "endpoints": {"tts": "fal-ai/minimax/speech-2.8-turbo"},
-        "capabilities": ["tts"],
+        "category": "voice_design",
+        "tier": "pro",
+        "model_endpoint_id": "fal-ai/minimax/voice-design",
+        "endpoints": {"voice_design": "fal-ai/minimax/voice-design"},
+        "capabilities": ["voice_design"],
         "configs": [
-            {"id": "default", "label": "Per 1K chars", "pricing_note": "$0.04/1K chars",
-             "est_price_usd_per_1k_chars": 0.04},
+            {"id": "default", "label": "Voice design + preview",
+             "pricing_note": "$3 / voice + $30 / 1M preview chars", "est_price_usd": 3.00},
         ],
         "default_config_id": "default",
-        "fallback_price": {"per_1k_chars": 0.04},
+        "fallback_price": {"per_run": 3.00},
+    },
+    {
+        "id": "minimax-voice-clone",
+        "name": "MiniMax Instant Voice Cloning",
+        "provider": "MiniMax",
+        "type": "audio",
+        "category": "voice_clone",
+        "tier": "pro",
+        "model_endpoint_id": "fal-ai/minimax/voice-clone",
+        "endpoints": {"voice_clone": "fal-ai/minimax/voice-clone"},
+        "capabilities": ["voice_clone"],
+        "configs": [
+            {"id": "default", "label": "Clone + preview", "pricing_note": "$1.50 / clone",
+             "est_price_usd": 1.50},
+        ],
+        "default_config_id": "default",
+        "fallback_price": {"per_run": 1.50},
     },
     # ── Music ──────────────────────────────────────────────────
     {
@@ -499,11 +629,12 @@ AUDIO_MODELS: List[Dict[str, Any]] = [
         "endpoints": {"music": "fal-ai/elevenlabs/music"},
         "capabilities": ["t2m"],
         "configs": [
-            {"id": "default", "label": "Per minute", "pricing_note": "$0.40/min",
-             "est_price_usd_per_min": 0.40},
+            {"id": "default", "label": "Per minute",
+             "pricing_note": "$0.80/min, rounded up to the closest minute",
+             "est_price_usd": 0.80, "est_price_usd_per_min": 0.80},
         ],
         "default_config_id": "default",
-        "fallback_price": {"per_min": 0.40},
+        "fallback_price": {"per_min": 0.80, "per_run": 0.80},
     },
     # ── Sound Effects ──────────────────────────────────────────
     {
@@ -521,55 +652,6 @@ AUDIO_MODELS: List[Dict[str, Any]] = [
         ],
         "default_config_id": "default",
         "fallback_price": {"per_run": 0.08},
-    },
-    # ── Lipsync ────────────────────────────────────────────────
-    {
-        "id": "kling-lipsync",
-        "name": "Kling LipSync",
-        "provider": "KlingAI",
-        "type": "audio",
-        "category": "lipsync",
-        "tier": "pro",
-        "model_endpoint_id": "fal-ai/kling-video/lipsync/audio-to-video",
-        "endpoints": {"lipsync": "fal-ai/kling-video/lipsync/audio-to-video"},
-        "capabilities": ["lipsync"],
-        "configs": [
-            {"id": "default", "label": "Per generation", "est_price_usd": 0.60},
-        ],
-        "default_config_id": "default",
-        "fallback_price": {"per_run": 0.60},
-    },
-    {
-        "id": "sync-lipsync-v2",
-        "name": "Sync LipSync v2",
-        "provider": "Sync",
-        "type": "audio",
-        "category": "lipsync",
-        "tier": "mid",
-        "model_endpoint_id": "fal-ai/sync-lipsync/v2",
-        "endpoints": {"lipsync": "fal-ai/sync-lipsync/v2"},
-        "capabilities": ["lipsync"],
-        "configs": [
-            {"id": "default", "label": "Per generation", "est_price_usd": 0.30},
-        ],
-        "default_config_id": "default",
-        "fallback_price": {"per_run": 0.30},
-    },
-    {
-        "id": "latentsync",
-        "name": "LatentSync",
-        "provider": "ByteDance",
-        "type": "audio",
-        "category": "lipsync",
-        "tier": "cost",
-        "model_endpoint_id": "fal-ai/latentsync",
-        "endpoints": {"lipsync": "fal-ai/latentsync"},
-        "capabilities": ["lipsync"],
-        "configs": [
-            {"id": "default", "label": "Per generation", "est_price_usd": 0.15},
-        ],
-        "default_config_id": "default",
-        "fallback_price": {"per_run": 0.15},
     },
 ]
 

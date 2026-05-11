@@ -5,6 +5,7 @@ import { NodeWrapper } from "@/components/workflow/node-wrapper";
 import { HighlightedTextarea } from "@/components/workflow/nodes/highlighted-textarea";
 import { useWorkflowStore } from "@/lib/workflow-store";
 import { RemotionVideoPlayer } from "@/components/video/RemotionVideoPlayer";
+import { getNodeReferenceLabel, getNodeReferenceLabelById } from "@/lib/node-references";
 
 interface VideoClip {
     url: string;
@@ -12,6 +13,20 @@ interface VideoClip {
     duration: number;
     transition?: "fade" | "slide" | "cut";
 }
+
+const normalizeMediaUrl = (url: string): string => {
+    if (!url) return url;
+    try {
+        const parsed = new URL(url);
+        if (parsed.searchParams.has("X-Amz-Algorithm")) {
+            parsed.search = "";
+            return parsed.toString();
+        }
+    } catch {
+        // Keep non-URL values untouched.
+    }
+    return url;
+};
 
 export const EditorAgentNodeClient = memo(({ id, selected, data }: NodeProps) => {
     const { deleteElements, updateNodeData } = useReactFlow();
@@ -36,17 +51,17 @@ export const EditorAgentNodeClient = memo(({ id, selected, data }: NodeProps) =>
 
                 if (targetHandle.includes("ref_videos") && sourceOutput) {
                     if (Array.isArray(sourceOutput)) {
-                        inputs.videos.push(...sourceOutput);
+                        inputs.videos.push(...sourceOutput.map((value) => normalizeMediaUrl(String(value))));
                     } else if (typeof sourceOutput === "string") {
-                        inputs.videos.push(sourceOutput);
+                        inputs.videos.push(normalizeMediaUrl(sourceOutput));
                     }
                 } else if (targetHandle.includes("audio") && sourceOutput) {
-                    inputs.audio = sourceOutput as string;
+                    inputs.audio = normalizeMediaUrl(sourceOutput as string);
                 } else if (targetHandle.includes("ref_images") && sourceOutput) {
                     if (Array.isArray(sourceOutput)) {
-                        inputs.images.push(...sourceOutput);
+                        inputs.images.push(...sourceOutput.map((value) => normalizeMediaUrl(String(value))));
                     } else if (typeof sourceOutput === "string") {
-                        inputs.images.push(sourceOutput);
+                        inputs.images.push(normalizeMediaUrl(sourceOutput));
                     }
                 }
             }
@@ -55,8 +70,23 @@ export const EditorAgentNodeClient = memo(({ id, selected, data }: NodeProps) =>
         return inputs;
     }, [edges, id, outputs]);
 
-    // Update video clips when inputs change
+    const connectedInputSignature = useMemo(
+        () => JSON.stringify({
+            videos: connectedInputs.videos,
+            audio: connectedInputs.audio || "",
+            images: connectedInputs.images,
+        }),
+        [connectedInputs]
+    );
+    const previousInputSignatureRef = useRef<string | null>(null);
+
+    // Update video clips only when effective connected inputs changed
     useEffect(() => {
+        if (previousInputSignatureRef.current === connectedInputSignature) {
+            return;
+        }
+        previousInputSignatureRef.current = connectedInputSignature;
+
         if (connectedInputs.videos.length > 0) {
             const clips: VideoClip[] = connectedInputs.videos.map((url, index) => ({
                 url,
@@ -71,7 +101,7 @@ export const EditorAgentNodeClient = memo(({ id, selected, data }: NodeProps) =>
             setVideoClips([]);
             setShowPreview(false);
         }
-    }, [connectedInputs]);
+    }, [connectedInputSignature, connectedInputs]);
 
     const [showSuggestions, setShowSuggestions] = useState(false);
     const [filterText, setFilterText] = useState("");
@@ -80,7 +110,7 @@ export const EditorAgentNodeClient = memo(({ id, selected, data }: NodeProps) =>
     const textNodes = useMemo(() =>
         nodes
             .filter(n => n.type === 'text')
-            .map((n, i) => ({ id: n.id, label: `Text #${i + 1}`, content: (n.data.text as string) || "" })),
+            .map((n) => ({ id: n.id, label: getNodeReferenceLabel(n), content: (n.data.text as string) || "" })),
         [nodes]
     );
 
@@ -135,11 +165,7 @@ export const EditorAgentNodeClient = memo(({ id, selected, data }: NodeProps) =>
     return (
         <NodeWrapper
             nodeId={id}
-            title={`Editor Agent #${useWorkflowStore((state) =>
-                state.nodes
-                    .filter(n => n.type === 'editorAgent')
-                    .findIndex(n => n.id === id) + 1
-            )} (Client)`}
+            title={`${useWorkflowStore((state) => getNodeReferenceLabelById(state.nodes, id) || "Editor Agent #?")} (Client)`}
             icon={<Clapperboard className="w-4 h-4" />}
             selected={selected}
             inputs={[
@@ -159,6 +185,7 @@ export const EditorAgentNodeClient = memo(({ id, selected, data }: NodeProps) =>
             }}
             isRunning={isRunning}
             executionStatus={data.executionStatus as "queued" | "running" | "completed" | "failed" | null}
+            executionError={(data.executionError as string | null | undefined) ?? null}
         >
             <div className="relative bg-muted/30 group/editor transition-all duration-300 ease-in-out overflow-hidden w-[400px]">
 

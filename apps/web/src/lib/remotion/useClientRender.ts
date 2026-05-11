@@ -13,7 +13,37 @@ import { useCallback, useRef, useState } from "react";
 import { renderMediaOnWeb } from "@remotion/web-renderer";
 import type { RenderMediaOnWebProgressCallback } from "@remotion/web-renderer";
 import { compileComposition } from "./compile-composition";
-import { getPresignedUrls, invalidateUrl } from "../presigned-url-cache";
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const S3_URL_PATTERN = /https:\/\/[^"\s'>\)\\]*kureita[^"\s'>\)\\]*amazonaws\.com[^"\s'>\)\\]+/g;
+
+function stripPresignedParams(url: string): string {
+    try {
+        const u = new URL(url);
+        if (u.searchParams.has("X-Amz-Algorithm")) {
+            u.search = "";
+        }
+        return u.toString();
+    } catch {
+        return url;
+    }
+}
+
+/**
+ * Build a unique-per-render proxy URL for a Kureita S3 asset.
+ *
+ * The browser caches `<video>` responses opaquely (without CORS metadata) and
+ * later reuses them when Remotion tries a `crossOrigin="anonymous"` fetch on
+ * the same URL — that's how this CORS error survives even when the bucket is
+ * properly configured. By routing the render through our own redirect proxy
+ * with a fresh `cb` token each render, the URL Remotion sees is brand new, so
+ * the browser must do a real CORS handshake against the API and the redirect
+ * target presigned S3 URL.
+ */
+function toRenderMediaUrl(rawS3Url: string, cacheBust: string): string {
+    const cleanUrl = stripPresignedParams(rawS3Url);
+    return `${API_BASE_URL}/api/public/media-proxy?url=${encodeURIComponent(cleanUrl)}&cb=${cacheBust}`;
+}
 
 export interface ClientRenderState {
     isRendering: boolean;
@@ -68,30 +98,20 @@ export function useClientRender(): UseClientRender {
                 phase: "compiling",
             });
 
-            // ──── 0. Presign any S3 URLs in the TSX code ────
-            // Raw S3 URLs are stored in MongoDB to avoid expiry. Freshen them now.
+            // ──── 0. Route Kureita S3 URLs through the render media proxy ────
+            // Each render gets a unique `cb` token, so the URL Remotion sees is
+            // brand new and the browser is forced to perform a real CORS check
+            // against the API → S3 redirect chain. This sidesteps Chromium's
+            // habit of reusing opaque <video>-element responses for later
+            // crossOrigin="anonymous" fetches.
             let resolvedCode = tsxCode;
-            try {
-                const s3UrlPattern = /https:\/\/[^"\s'>\)\\]*kureita[^"\s'>\)\\]*amazonaws\.com[^"\s'>\)\\]+/g;
-                const rawUrls = [...new Set(tsxCode.match(s3UrlPattern) || [])];
-                if (rawUrls.length > 0) {
-                    // Force cache invalidation to get a fresh presigned URL for each render.
-                    // This creates a new URL string (new X-Amz-Date), bypassing browser cache
-                    // which often caches the opaque (no-CORS) response from <video> tags, 
-                    // causing Remotion's crossOrigin="anonymous" render to fail.
-                    for (const url of rawUrls) {
-                        invalidateUrl(url);
-                    }
-                    const presigned = await getPresignedUrls(rawUrls);
-                    for (const raw of rawUrls) {
-                        const signed = presigned[raw];
-                        if (signed && signed !== raw) {
-                            resolvedCode = resolvedCode.split(raw).join(signed);
-                        }
-                    }
+            const cacheBust = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+            const rawUrls = [...new Set(tsxCode.match(S3_URL_PATTERN) || [])];
+            for (const raw of rawUrls) {
+                const proxied = toRenderMediaUrl(raw, cacheBust);
+                if (proxied !== raw) {
+                    resolvedCode = resolvedCode.split(raw).join(proxied);
                 }
-            } catch (err) {
-                console.warn("[useClientRender] URL presigning failed, using original URLs:", err);
             }
 
             // Inject crossOrigin="anonymous" to <Video> and <Audio> tags if missing

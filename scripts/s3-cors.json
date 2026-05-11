@@ -1,0 +1,17 @@
+{
+  "CORSRules": [
+    {
+      "AllowedOrigins": ["https://app.kureita.com", "http://localhost:3000"],
+      "AllowedMethods": ["GET", "HEAD", "PUT", "POST"],
+      "AllowedHeaders": ["*"],
+      "ExposeHeaders": [
+        "Content-Length",
+        "Content-Type",
+        "Content-Range",
+        "Accept-Ranges",
+        "ETag"
+      ],
+      "MaxAgeSeconds": 86400
+    }
+  ]
+}

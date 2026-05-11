@@ -41,6 +41,7 @@ import {
     getWorkflowConnectionColor,
     getWorkflowEdgeConnectionType,
 } from "@/lib/workflow-connection-colors";
+import { assignStableNodeReferences } from "@/lib/node-references";
 
 const nodeTypes = {
     text: TextNode,
@@ -65,6 +66,37 @@ interface FlowEditorProps {
 interface DuplicateNodeEventDetail {
     nodeId?: string;
 }
+
+const cloneNodeDataForDuplicate = (data: Node["data"]): Record<string, unknown> => {
+    const sanitize = (value: unknown): unknown => {
+        if (typeof value === "function" || typeof value === "symbol") return undefined;
+        if (value === null || typeof value !== "object") return value;
+        if (Array.isArray(value)) {
+            return value
+                .map((item) => sanitize(item))
+                .filter((item) => item !== undefined);
+        }
+
+        const clean: Record<string, unknown> = {};
+        Object.entries(value as Record<string, unknown>).forEach(([key, item]) => {
+            if (
+                key === "onRun" ||
+                key === "isRunning" ||
+                key === "executionStatus" ||
+                key === "executionError" ||
+                key === "isPublicView" ||
+                key === "referenceNumber"
+            ) {
+                return;
+            }
+            const sanitized = sanitize(item);
+            if (sanitized !== undefined) clean[key] = sanitized;
+        });
+        return clean;
+    };
+
+    return sanitize(data || {}) as Record<string, unknown>;
+};
 
 // ============================================
 // Inner FlowEditor (needs ReactFlowProvider as parent)
@@ -141,6 +173,7 @@ function FlowEditorInner({ workflowId }: FlowEditorProps) {
             output: outputs[node.id] || node.data.output,
             isRunning: runningNodeId === node.id,
             executionStatus: nodeExecutionStates[node.id]?.status || null,
+            executionError: nodeExecutionStates[node.id]?.error || null,
             onRun: isReadOnly
                 ? () => requireLogin("Sign in to run nodes and generate media.")
                 : () => runNode(node.id),
@@ -333,7 +366,7 @@ function FlowEditorInner({ workflowId }: FlowEditorProps) {
                 data: { text: "", color: "#fbbf24" },
                 style: { width: 200, height: 100 },
             };
-            setNodes([...nodes, newNode]);
+            setNodes(assignStableNodeReferences([...nodes, newNode]));
             // Switch back to hand after placing
             setActiveTool("hand");
         }
@@ -373,7 +406,7 @@ function FlowEditorInner({ workflowId }: FlowEditorProps) {
             data: { label: `${type} node` }
         };
 
-        setNodes([...nodes, newNode]);
+        setNodes(assignStableNodeReferences([...nodes, newNode]));
     }, [nodes, edges, setNodes, takeSnapshot, reactFlowInstance]);
 
     // ============================================
@@ -454,7 +487,7 @@ function FlowEditorInner({ workflowId }: FlowEditorProps) {
             data: nodeData,
         };
 
-        setNodes([...nodes, newNode]);
+        setNodes(assignStableNodeReferences([...nodes, newNode]));
 
         // Pre-fill the output so the node immediately shows the asset preview
         setNodeOutput(id, payload.url);
@@ -491,9 +524,7 @@ function FlowEditorInner({ workflowId }: FlowEditorProps) {
         const sourceNode = nodes.find((node) => node.id === nodeId);
         if (!sourceNode) return;
 
-        const duplicatedData = typeof structuredClone === "function"
-            ? structuredClone(sourceNode.data ?? {})
-            : { ...(sourceNode.data ?? {}) };
+        const duplicatedData = cloneNodeDataForDuplicate(sourceNode.data);
 
         const duplicatedNode: Node = {
             ...sourceNode,
@@ -507,10 +538,10 @@ function FlowEditorInner({ workflowId }: FlowEditorProps) {
         };
 
         takeSnapshot(nodes, edges);
-        setNodes([
+        setNodes(assignStableNodeReferences([
             ...nodes.map((node) => ({ ...node, selected: false })),
             duplicatedNode,
-        ]);
+        ]));
     }, [isReadOnly, nodes, edges, setNodes, takeSnapshot]);
 
     // Keyboard shortcuts for undo/redo

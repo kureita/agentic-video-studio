@@ -3,12 +3,14 @@ import { Node as FlowNode, NodeProps, useReactFlow } from "@xyflow/react";
 import { Eye } from "lucide-react";
 import { NodeWrapper } from "@/components/workflow/node-wrapper";
 import { useWorkflowStore } from "@/lib/workflow-store";
+import { getNodeReferenceLabel, getNodeReferenceLabelById } from "@/lib/node-references";
 
 type AssistantNodeData = {
     output?: string;
     instruction?: string;
     model?: string;
     executionStatus?: "queued" | "running" | "completed" | "failed" | null;
+    executionError?: string | null;
 };
 
 type AssistantNodeType = FlowNode<AssistantNodeData>;
@@ -29,7 +31,7 @@ export const AssistantNode = memo(({ id, selected, data }: NodeProps<AssistantNo
     const textNodes = useMemo(() =>
         nodes
             .filter((node) => node.type === "text")
-            .map((node, index) => ({ id: node.id, label: `Text #${index + 1}`, content: (node.data.text as string) || "" })),
+            .map((node) => ({ id: node.id, label: getNodeReferenceLabel(node), content: (node.data.text as string) || "" })),
         [nodes]
     );
 
@@ -95,11 +97,7 @@ export const AssistantNode = memo(({ id, selected, data }: NodeProps<AssistantNo
     return (
         <NodeWrapper
             nodeId={id}
-            title={`Media Assistant #${useWorkflowStore((state) =>
-                state.nodes
-                    .filter((node) => node.type === "assistant" || node.type === "vision")
-                    .findIndex((node) => node.id === id) + 1
-            )}`}
+            title={useWorkflowStore((state) => getNodeReferenceLabelById(state.nodes, id) || "Media Assistant #?")}
             icon={<Eye className="w-4 h-4" />}
             selected={selected}
             inputs={[
@@ -115,6 +113,7 @@ export const AssistantNode = memo(({ id, selected, data }: NodeProps<AssistantNo
             onClear={output ? () => clearNodeOutput(id) : undefined}
             isRunning={isRunning}
             executionStatus={data.executionStatus || null}
+            executionError={data.executionError ?? null}
         >
             <div className="flex w-[340px] flex-col">
                 {/* Output / Results Area */}

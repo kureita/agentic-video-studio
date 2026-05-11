@@ -596,6 +596,7 @@ class EditorAgent:
         audio_tracks: Optional[List[Dict[str, Any]]] = None,
         text_input: Optional[str] = None,
         ref_images: Optional[List[str]] = None,
+        input_labels: Optional[Dict[str, Dict[str, str]]] = None,
         mode: Optional[str] = None,  # 'scene', 'compositor', or None (default)
         aspect_ratio: str = "9:16",
         upstream_scenes: Optional[List[Dict[str, Any]]] = None,  # For compositor mode
@@ -628,6 +629,7 @@ class EditorAgent:
                 audio_tracks=effective_tracks,
                 text_input=text_input,
                 ref_images=ref_images,
+                input_labels=input_labels,
                 mode=mode,
                 aspect_ratio=aspect_ratio,
                 upstream_scenes=upstream_scenes,
@@ -686,6 +688,7 @@ class EditorAgent:
         audio_tracks: Optional[List[Dict[str, Any]]] = None,
         text_input: Optional[str] = None,
         ref_images: Optional[List[str]] = None,
+        input_labels: Optional[Dict[str, Dict[str, str]]] = None,
         mode: Optional[str] = None,
         aspect_ratio: str = "9:16",
         upstream_scenes: Optional[List[Dict[str, Any]]] = None,
@@ -695,13 +698,20 @@ class EditorAgent:
         # Build input descriptions
         ref_videos = ref_videos or []
         ref_images = ref_images or []
+        input_labels = input_labels or {}
+        video_labels = input_labels.get("videos", {}) or {}
+        image_labels = input_labels.get("images", {}) or {}
         video_list = ""
         for i, url in enumerate(ref_videos):
-            video_list += f"  Video {i + 1}: \"{url}\" (assume ~5 seconds, 30fps)\n"
+            label = video_labels.get(url)
+            label_text = f" ({label})" if label else ""
+            video_list += f"  Video {i + 1}{label_text}: \"{url}\" (assume ~5 seconds, 30fps)\n"
 
         image_list = ""
         for i, url in enumerate(ref_images):
-            image_list += f"  Image {i + 1}: \"{url}\"\n"
+            label = image_labels.get(url)
+            label_text = f" ({label})" if label else ""
+            image_list += f"  Image {i + 1}{label_text}: \"{url}\"\n"
 
         audio_tracks = audio_tracks or []
         audio_list = ""
@@ -709,7 +719,9 @@ class EditorAgent:
             t = track.get("type", "unknown")
             dur = track.get("duration_seconds", "?")
             desc = track.get("description", "")
-            audio_list += f'  Track {i + 1}: "{track["url"]}" (type: {t}, duration: {dur}s, description: "{desc}")\n'
+            label = track.get("label")
+            label_text = f" ({label})" if label else ""
+            audio_list += f'  Track {i + 1}{label_text}: "{track["url"]}" (type: {t}, duration: {dur}s, description: "{desc}")\n'
 
         # Select the appropriate rules based on mode (used as system prompt)
         if mode == "scene":
@@ -743,6 +755,8 @@ Images ({len(ref_images)} total):
 {image_list if image_list else "  (none)"}
 Audio Tracks ({len(audio_tracks)} total):
 {audio_list if audio_list else "  (none)"}
+
+You may refer to connected media by their canvas labels, e.g. @Video Gen #2, @Image Gen #1, @Audio Gen #3, or @Media Upload #1. Use the matching URL listed above.
 
 ### CRITICAL REMINDERS
 <<<<<<< Updated upstream

@@ -229,10 +229,26 @@ export function downloadVideo(url: string, filename?: string): void {
  * @param timeRatio The relative position in the video (0 for start, 1 for end, etc.)
  * @returns A promise resolving to a base64 encoded JPEG image
  */
+export const canExtractFramesClientSide = (videoUrl: string): boolean => {
+  if (!videoUrl) return false;
+  if (videoUrl.startsWith("blob:") || videoUrl.startsWith("data:")) return true;
+
+  try {
+    const parsed = new URL(videoUrl, window.location.origin);
+    return parsed.origin === window.location.origin;
+  } catch {
+    return false;
+  }
+};
+
 export const extractFrameFromVideo = (videoUrl: string, timeRatio: number): Promise<string> => {
   return new Promise((resolve, reject) => {
     const video = document.createElement('video');
-    video.crossOrigin = "anonymous";
+    // Cross-origin extraction only works when the source serves permissive CORS.
+    // We avoid forcing CORS for local/blob sources.
+    if (!canExtractFramesClientSide(videoUrl)) {
+      video.crossOrigin = "anonymous";
+    }
     video.src = videoUrl;
 
     // Timeout safeguard
@@ -254,6 +270,10 @@ export const extractFrameFromVideo = (videoUrl: string, timeRatio: number): Prom
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         resolve(canvas.toDataURL('image/jpeg', 0.9));
       } catch (err) {
+        if (err instanceof DOMException && err.name === "SecurityError") {
+          reject(new Error("Frame extraction blocked for cross-origin video"));
+          return;
+        }
         reject(err);
       }
     };

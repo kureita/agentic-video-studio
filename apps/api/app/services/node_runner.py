@@ -1,6 +1,7 @@
 """Node Runner Service - Executes workflow nodes based on their type."""
 
 from typing import Dict, Any, List, Optional
+from urllib.parse import quote
 
 from app.services.image_generator import ImageGenerator
 from app.services.video_generator import VideoGenerator
@@ -19,6 +20,18 @@ from app.core.model_registry import (
 class NodeRunner:
     """Runs individual workflow nodes by type."""
 
+    NODE_REFERENCE_LABELS = {
+        "text": "Text",
+        "upload": "Upload",
+        "imageGen": "Image Gen",
+        "audioGen": "Audio Gen",
+        "videoGen": "Video Gen",
+        "assistant": "Media Assistant",
+        "vision": "Media Assistant",
+        "editorAgent": "Editor Agent",
+        "mediaUpload": "Media Upload",
+    }
+
     def __init__(self):
         self.image_generator = ImageGenerator()
         self.video_generator = VideoGenerator()
@@ -26,6 +39,65 @@ class NodeRunner:
         self.editor_agent = EditorAgent()
         self._default_video_model_id = "kling-video-v3-standard"
         self._default_video_endpoint = "fal-ai/kling-video/v3/standard/text-to-video"
+
+    def _node_reference_number(self, node: Dict[str, Any], nodes: List[Dict[str, Any]]) -> Optional[int]:
+        data = node.get("data", {}) or {}
+        stored = data.get("referenceNumber")
+        if isinstance(stored, int) and stored > 0:
+            return stored
+        if isinstance(stored, float) and stored.is_integer() and stored > 0:
+            return int(stored)
+
+        node_type = node.get("type")
+        typed_nodes = [candidate for candidate in nodes if candidate.get("type") == node_type]
+        try:
+            return typed_nodes.index(node) + 1
+        except ValueError:
+            node_id = node.get("id")
+            for index, candidate in enumerate(typed_nodes):
+                if candidate.get("id") == node_id:
+                    return index + 1
+        return None
+
+    def _node_reference_label(self, node: Dict[str, Any], nodes: List[Dict[str, Any]]) -> str:
+        node_type = str(node.get("type", "") or "")
+        type_label = self.NODE_REFERENCE_LABELS.get(node_type, node_type or "Node")
+        reference_number = self._node_reference_number(node, nodes)
+        return f"{type_label} #{reference_number or '?'}"
+
+    def _find_node_by_reference(self, nodes: List[Dict[str, Any]], node_type: str, reference_number: int) -> Optional[Dict[str, Any]]:
+        candidates = [node for node in nodes if node.get("type") == node_type]
+
+        for node in candidates:
+            if self._node_reference_number(node, nodes) == reference_number:
+                return node
+
+        # Backward-compatible fallback for older unsaved workflows.
+        fallback_index = reference_number - 1
+        if 0 <= fallback_index < len(candidates):
+            return candidates[fallback_index]
+        return None
+
+    def _provider_fetchable_url(self, url: str) -> str:
+        """Return a short public URL providers can fetch, avoiding huge S3 signatures."""
+        if not url:
+            return url
+        try:
+            from app.core.config import settings
+            from app.services.storage_service import S3StorageService
+
+            if not S3StorageService.is_s3_url(url):
+                return url
+
+            raw_url = S3StorageService.strip_presigned_params(url)
+            api_base = (settings.api_base_url or "").rstrip("/")
+            if not api_base or "localhost" in api_base or "127.0.0.1" in api_base:
+                return url
+
+            api_prefix = "" if api_base.endswith("/api") else "/api"
+            return f"{api_base}{api_prefix}/public/media-proxy?url={quote(raw_url, safe='')}"
+        except Exception:
+            return url
 
     async def run_node(
         self,
@@ -227,6 +299,7 @@ class NodeRunner:
                         "image",
                         "reference_image",
                         "reference_images",
+                        "reference_video",
                         "elements",
                         "elements_image",
                         "elements_video",
@@ -360,17 +433,14 @@ class NodeRunner:
         
         resolved_prompt = prompt
         
-        # Get all text nodes, preserving order from the list (creation/list order)
-        text_nodes = [n for n in nodes if n.get("type") == "text"]
-        
         for match in matches:
             full_match = match.group(0)
             index_str = match.group(1)
             
             try:
-                index = int(index_str) - 1 # 1-based to 0-based
-                if 0 <= index < len(text_nodes):
-                    target_node = text_nodes[index]
+                reference_number = int(index_str)
+                target_node = self._find_node_by_reference(nodes, "text", reference_number)
+                if target_node:
                     # Get text content
                     text_content = target_node.get("data", {}).get("text", "")
                     resolved_prompt = resolved_prompt.replace(full_match, text_content)
@@ -474,13 +544,17 @@ class NodeRunner:
     ) -> Dict[str, Any]:
         """Generate audio using the AudioGenerator service.
         
-        Supports three audio types:
-        - 'speech' (default): Text-to-speech with voice selection
+        Supports four audio types:
+        - 'voice_design': Voice design from prompt + preview text
+        - 'voice_clone': Instant voice cloning from audio + preview text
         - 'music': AI-generated music from a descriptive prompt
         - 'sfx': AI-generated sound effects from a descriptive prompt
         """
-        # Get audio type from node data (defaults to "speech" for backward compat)
-        audio_type = data.get("audioType", "speech")
+        # Get audio type from node data. Legacy voiceover nodes fall back to
+        # voice_design because direct script-to-voice generation is no longer exposed.
+        audio_type = str(data.get("audioType", "voice_design") or "voice_design")
+        if audio_type not in {"voice_design", "voice_clone", "music", "sfx"}:
+            audio_type = "voice_design"
         
         # Get text/prompt from node data (typed) or inputs (connected)
         raw_text = data.get("prompt", "")
@@ -490,21 +564,55 @@ class NodeRunner:
         # Resolve references (e.g. @Text #1)
         text = self._resolve_prompt_references(raw_text, nodes)
         
-        if not text or not text.strip():
-            return {
-                "success": False,
-                "error": f"No text/prompt provided for {audio_type} generation",
-            }
-        
         print(f"[NodeRunner] Generating audio: type='{audio_type}', text='{text[:50]}...'")
+
+        def _parse_optional_duration(value: Any, *, minimum: float, maximum: float) -> Optional[float]:
+            if value is None:
+                return None
+            if isinstance(value, str):
+                cleaned = value.replace("s", "").strip()
+                if not cleaned:
+                    return None
+                try:
+                    parsed = float(cleaned)
+                except ValueError:
+                    return None
+            else:
+                try:
+                    parsed = float(value)
+                except (TypeError, ValueError):
+                    return None
+            return max(minimum, min(maximum, parsed))
         
         try:
             selected_model = data.get("model")
-            if audio_type == "music":
-                # Get duration from node data (default 15s for music)
-                duration = data.get("duration", 15)
-                if isinstance(duration, str):
-                    duration = int(duration.replace("s", "").strip()) if duration.replace("s", "").strip().isdigit() else 15
+            if audio_type == "voice_design":
+                preview_text_raw = data.get("previewText") or data.get("preview_text") or inputs.get("preview_text") or ""
+                preview_text = self._resolve_prompt_references(str(preview_text_raw), nodes)
+                result = await self.audio_generator.generate_voice_design(
+                    prompt=text,
+                    preview_text=preview_text,
+                    model_id=selected_model if isinstance(selected_model, str) else None,
+                )
+            elif audio_type == "voice_clone":
+                audio_input = inputs.get("audio")
+                if isinstance(audio_input, list):
+                    audio_input = audio_input[0] if audio_input else None
+                if isinstance(audio_input, str):
+                    audio_input = self._provider_fetchable_url(audio_input)
+                result = await self.audio_generator.generate_voice_clone(
+                    audio_url=audio_input if isinstance(audio_input, str) else "",
+                    text=text or None,
+                    preview_model=str(data.get("previewModel") or "speech-02-hd"),
+                    model_id=selected_model if isinstance(selected_model, str) else None,
+                )
+            elif audio_type == "music":
+                if not text or not text.strip():
+                    return {
+                        "success": False,
+                        "error": "No prompt provided for music generation",
+                    }
+                duration = _parse_optional_duration(data.get("duration"), minimum=3.0, maximum=600.0)
                 
                 result = await self.audio_generator.generate_music(
                     prompt=text,
@@ -512,25 +620,18 @@ class NodeRunner:
                     model_id=selected_model if isinstance(selected_model, str) else None,
                 )
             elif audio_type == "sfx":
-                # Get duration from node data (default 5s for SFX)
-                duration = data.get("duration", 5)
-                if isinstance(duration, str):
-                    duration = int(duration.replace("s", "").strip()) if duration.replace("s", "").strip().isdigit() else 5
+                if not text or not text.strip():
+                    return {
+                        "success": False,
+                        "error": "No prompt provided for sound effects",
+                    }
+                duration = _parse_optional_duration(data.get("duration"), minimum=0.5, maximum=22.0)
                 
                 result = await self.audio_generator.generate_sfx(
                     prompt=text,
                     duration=duration,
                     model_id=selected_model if isinstance(selected_model, str) else None,
                 )
-            else:
-                # Default: speech (TTS)
-                voice = data.get("voice", "Rachel")
-                result = await self.audio_generator.generate_speech(
-                    text=text,
-                    voice=voice,
-                    model_id=selected_model if selected_model else "minimax-speech-2-8",
-                )
-            
             if result.get("success"):
                 if result.get("status") == "pending_fal":
                     return {
@@ -544,6 +645,7 @@ class NodeRunner:
                 return {
                     "success": True,
                     "output": result.get("audio_url"),
+                    "custom_voice_id": result.get("custom_voice_id"),
                     "cost": result.get("cost", 0.0),
                     "model": result.get("model", data.get("model", audio_type)),
                     "provider": result.get("provider", "fal.ai"),
@@ -576,10 +678,16 @@ class NodeRunner:
         input_mode = str(data.get("inputMode", "auto") or "auto").strip().lower()
         if input_mode == "t2v":
             input_mode = "auto"
-        if input_mode not in ("auto", "i2v", "reference", "elements", "v2v"):
+        if input_mode not in ("auto", "i2v", "reference", "elements", "v2v", "motion", "lipsync", "avatar"):
             input_mode = "auto"
 
-        # Get various image/video inputs
+        # Get various image/video inputs.
+        # Critically: each handle is read in isolation and we never let an
+        # input from one handle leak into a different mode's payload. Stale
+        # edges from a previous mode (e.g. an old `start_image` connection
+        # that survived a switch to `elements`) MUST not silently appear in
+        # the elements-mode args. The frontend's mode-switch remap handles
+        # the connection topology; here we hard-isolate by mode.
         start_image = inputs.get("start_image")
         end_image = inputs.get("end_image")
         raw_reference_images = inputs.get("reference_images") or inputs.get("reference_image")
@@ -587,9 +695,18 @@ class NodeRunner:
         raw_element_images = inputs.get("elements_image")
         raw_element_videos = inputs.get("elements_video")
         raw_element_voices = inputs.get("elements_audio")
-        reference_video = inputs.get("reference_video")
-        if isinstance(reference_video, list):
-            reference_video = reference_video[0] if reference_video else None
+        raw_reference_video = inputs.get("reference_video")
+
+        # Motion-control mode (Kling v3): expects an `image_url` + `video_url`
+        # pair and `character_orientation`. Uses dedicated handle ids so it
+        # doesn't collide with the i2v / v2v handles.
+        motion_image_raw = inputs.get("motion_image")
+        if isinstance(motion_image_raw, list):
+            motion_image_raw = motion_image_raw[0] if motion_image_raw else None
+        motion_video_raw = inputs.get("motion_video")
+        if isinstance(motion_video_raw, list):
+            motion_video_raw = motion_video_raw[0] if motion_video_raw else None
+        character_orientation = data.get("character_orientation") or "image"
 
         def _normalize_media_list(value: Any) -> List[str]:
             if isinstance(value, str):
@@ -600,6 +717,8 @@ class NodeRunner:
 
         reference_images: List[str] = []
         reference_images = _normalize_media_list(raw_reference_images)
+        reference_videos = _normalize_media_list(raw_reference_video)
+        reference_video = reference_videos[0] if reference_videos else None
 
         element_images = _normalize_media_list(raw_element_images)
         element_videos = _normalize_media_list(raw_element_videos)
@@ -611,8 +730,57 @@ class NodeRunner:
                 element_images = legacy_elements
 
         audio_input = inputs.get("audio")
+        audio_inputs = _normalize_media_list(audio_input)
         if isinstance(audio_input, list):
             audio_input = audio_input[0] if audio_input else None
+        lipsync_model_name = None
+
+        # Hard-isolate inputs by selected/inferred mode so that an obsolete
+        # connection from a different mode cannot leak into the args. We do
+        # this BEFORE building the per-mode payload so the debug output shows
+        # exactly what fal will receive.
+        _intended_mode = str(data.get("inputMode") or "").strip().lower()
+        if _intended_mode == "auto":
+            _intended_mode = ""
+        if _intended_mode and _intended_mode != "elements":
+            element_images = []
+            element_videos = []
+            element_voices = []
+        if _intended_mode == "elements":
+            start_image = None
+            end_image = None
+            reference_images = []
+            reference_video = None
+            motion_image_raw = None
+            motion_video_raw = None
+        if _intended_mode == "avatar":
+            end_image = None
+            reference_images = []
+            reference_video = None
+            element_images = []
+            element_videos = []
+            element_voices = []
+            motion_image_raw = None
+            motion_video_raw = None
+
+        # Determine model early because some models imply a single mode
+        # regardless of stale saved `inputMode` values.
+        model_str = data.get("model", self._default_video_model_id)
+        use_fast_model = "fast" in model_str.lower()
+        requested_entry = self._resolve_video_model_entry(model_str)
+        if requested_entry:
+            requested_caps = {str(c).lower() for c in requested_entry.get("capabilities", [])}
+            if "lipsync" in requested_caps:
+                input_mode = "lipsync"
+            if "avatar" in requested_caps:
+                input_mode = "avatar"
+            if "native_audio_default" in requested_entry:
+                requested_audio_default = bool(requested_entry.get("native_audio_default", False))
+            else:
+                requested_audio_default = "audio" in requested_caps
+        else:
+            requested_caps = set()
+            requested_audio_default = False
         
         # Build prompt
         has_any_element_media = bool(element_images or element_videos or element_voices)
@@ -624,10 +792,16 @@ class NodeRunner:
             }
 
         inferred_mode = "auto"
-        if start_image:
+        if motion_image_raw and motion_video_raw:
+            inferred_mode = "motion"
+        elif start_image and audio_input and "avatar" in requested_caps:
+            inferred_mode = "avatar"
+        elif start_image:
             inferred_mode = "i2v"
         elif has_any_element_media:
             inferred_mode = "elements"
+        elif reference_video and audio_input:
+            inferred_mode = "lipsync"
         elif reference_images:
             inferred_mode = "reference"
         elif reference_video:
@@ -647,6 +821,10 @@ class NodeRunner:
                 prompt = "Generate video using these reference images"
             elif input_mode == "v2v" and reference_video:
                 prompt = "Generate video based on this reference video"
+            elif input_mode == "lipsync" and reference_video and audio_input:
+                prompt = "Synchronize this video to the connected audio"
+            elif input_mode == "avatar" and start_image and audio_input:
+                prompt = "."
         
         # Get generation parameters (duration: "5s"|"8s"|"10s" from UI, or int)
         duration_val = data.get("duration", "5s")
@@ -658,18 +836,6 @@ class NodeRunner:
             duration = 5
         ratio = data.get("ratio", "16:9")
         resolution = data.get("resolution", "720p")
-        # Determine model
-        model_str = data.get("model", self._default_video_model_id)
-        use_fast_model = "fast" in model_str.lower()
-        requested_entry = self._resolve_video_model_entry(model_str)
-        if requested_entry:
-            requested_caps = {str(c).lower() for c in requested_entry.get("capabilities", [])}
-            if "native_audio_default" in requested_entry:
-                requested_audio_default = bool(requested_entry.get("native_audio_default", False))
-            else:
-                requested_audio_default = "audio" in requested_caps
-        else:
-            requested_audio_default = False
         generate_audio_explicit = "generateAudio" in data and data.get("generateAudio") is not None
         generate_audio_val = data.get("generateAudio")
         if isinstance(generate_audio_val, str):
@@ -678,17 +844,25 @@ class NodeRunner:
             generate_audio = generate_audio_val
         else:
             generate_audio = requested_audio_default
+        if requested_entry and ("lipsync" in requested_caps or "avatar" in requested_caps):
+            # Dedicated lip-sync models consume an audio input; they do not
+            # support provider-native audio generation. Avoid capability
+            # auto-swap caused by stale `generateAudio: true` from another
+            # video model.
+            generate_audio = False
 
         needs_i2v = input_mode == "i2v"
         needs_elements = input_mode == "elements"
         needs_reference = input_mode == "reference"
         needs_v2v = input_mode == "v2v"
+        needs_lipsync = input_mode == "lipsync"
+        needs_avatar = input_mode == "avatar"
         selected_model_str, generate_audio, model_warning, was_swapped = self._select_video_model_for_inputs(
             requested_model=model_str,
-            has_start_image=needs_i2v,
+            has_start_image=needs_i2v or needs_avatar,
             wants_elements=needs_elements,
             wants_reference=needs_reference,
-            wants_v2v=needs_v2v,
+            wants_v2v=needs_v2v or needs_lipsync,
             wants_native_audio=generate_audio,
         )
         if was_swapped:
@@ -703,7 +877,9 @@ class NodeRunner:
                     "Please switch to a model that supports this setup "
                     "(e.g. pick an I2V model for Start Image mode, an elements-capable model for Elements mode, "
                     "a reference-capable model for Reference mode, "
-                    "a V2V model for Extend mode, and an audio-capable model when Native Audio is enabled)."
+                    "a V2V model for Extend mode, a Lip Sync model for Lip Sync mode, "
+                    "an Avatar model for Avatar mode, "
+                    "and an audio-capable model when Native Audio is enabled)."
                 ),
             }
         model_str = selected_model_str
@@ -773,6 +949,8 @@ class NodeRunner:
                         aspect_ratio=ratio,
                         model_name=model_str,
                         generate_audio=generate_audio,
+                        audio_url=audio_input,
+                        lipsync_model_name=lipsync_model_name,
                     )
                 else:
                     if end_image and frame_images_max < 2:
@@ -789,6 +967,7 @@ class NodeRunner:
                         aspect_ratio=ratio,
                         model_name=model_str,
                         audio_url=audio_input,
+                        lipsync_model_name=lipsync_model_name,
                         generate_audio=generate_audio,
                     )
 
@@ -804,6 +983,12 @@ class NodeRunner:
                     return {
                         "success": False,
                         "error": "Elements mode cannot combine element video with element image/audio connections.",
+                    }
+
+                if len(element_videos) > 1:
+                    return {
+                        "success": False,
+                        "error": "Elements video mode accepts exactly one element video.",
                     }
 
                 if element_voices and not element_images:
@@ -846,17 +1031,30 @@ class NodeRunner:
                     aspect_ratio=ratio,
                     model_name=model_str,
                     generate_audio=generate_audio,
+                    audio_url=audio_input,
+                    lipsync_model_name=lipsync_model_name,
                 )
 
             # Case 3: Reference images mode
             elif input_mode == "reference":
-                if not reference_images:
+                selected_endpoint = str((selected_entry or {}).get("model_endpoint_id") or "")
+                selected_ref_endpoint = str(((selected_entry or {}).get("endpoints") or {}).get("reference") or "")
+                is_seedance_reference = "bytedance/seedance-2.0" in (selected_ref_endpoint or selected_endpoint)
+                reference_audios = audio_inputs[:3] if audio_inputs else []
+
+                if is_seedance_reference and reference_audios and not reference_images and not reference_videos:
                     return {
                         "success": False,
-                        "error": "Reference Images mode requires at least one connected reference image.",
+                        "error": "Seedance reference audio requires at least one reference image or video.",
                     }
 
-                if len(reference_images) < reference_min:
+                if not is_seedance_reference and not reference_images:
+                    return {
+                        "success": False,
+                        "error": "Reference mode requires at least one connected reference image.",
+                    }
+
+                if not is_seedance_reference and reference_images and len(reference_images) < reference_min:
                     return {
                         "success": False,
                         "error": (
@@ -872,10 +1070,25 @@ class NodeRunner:
                     )
                     reference_images = reference_images[:reference_max]
 
-                print(f"[NodeRunner] Using reference images (count={len(reference_images)})")
+                if is_seedance_reference:
+                    if len(reference_videos) > 3:
+                        reference_videos = reference_videos[:3]
+                    if len(reference_audios) > 3:
+                        reference_audios = reference_audios[:3]
+                elif reference_videos or reference_audios:
+                    warning_notes.append("Selected reference model only accepts images; video/audio references were ignored.")
+                    reference_videos = []
+                    reference_audios = []
+
+                print(
+                    f"[NodeRunner] Using reference media "
+                    f"(images={len(reference_images)}, videos={len(reference_videos)}, audios={len(reference_audios)})"
+                )
                 result = await self.video_generator.generate_with_reference_images(
                     prompt=prompt,
                     reference_images=reference_images,
+                    reference_videos=reference_videos,
+                    reference_audios=reference_audios,
                     duration=duration,
                     resolution=resolution,
                     aspect_ratio=ratio,
@@ -900,7 +1113,77 @@ class NodeRunner:
                     aspect_ratio=ratio,
                     model_name=model_str,
                     audio_url=audio_input,
+                    lipsync_model_name=lipsync_model_name,
                     generate_audio=generate_audio,
+                )
+
+            # Case 4a: Dedicated lip-sync model mode (video + audio in, video out)
+            elif input_mode == "lipsync":
+                if not reference_video or not audio_input:
+                    return {
+                        "success": False,
+                        "error": "Lip Sync mode requires both a connected video and a connected audio input.",
+                    }
+                if selected_entry and "lipsync" not in {str(c).lower() for c in selected_entry.get("capabilities", [])}:
+                    return {
+                        "success": False,
+                        "error": "Lip Sync mode requires selecting a lip-sync model from the Video model list.",
+                    }
+
+                print("[NodeRunner] Using dedicated lip-sync model")
+                result = await self.video_generator.generate_lipsync(
+                    video_url=reference_video,
+                    audio_url=audio_input,
+                    model_name=model_str,
+                )
+
+            # Case 4b: Avatar mode (image + audio in, talking avatar video out)
+            elif input_mode == "avatar":
+                if not start_image or not audio_input:
+                    return {
+                        "success": False,
+                        "error": "Avatar mode requires both a connected image and a connected audio input.",
+                    }
+                if selected_entry and "avatar" not in {str(c).lower() for c in selected_entry.get("capabilities", [])}:
+                    return {
+                        "success": False,
+                        "error": "Avatar mode requires selecting an Avatar model from the Video model list.",
+                    }
+
+                print("[NodeRunner] Using avatar model")
+                result = await self.video_generator.generate_avatar(
+                    image_url=start_image,
+                    audio_url=audio_input,
+                    prompt=prompt,
+                    model_name=model_str,
+                    resolution=resolution,
+                )
+
+            # Case 4c: Motion-control mode (Kling v3 only). Hybrid i2v+v2v
+            # endpoint that drives motion of a reference image from a
+            # reference video.
+            elif input_mode == "motion":
+                if not motion_image_raw or not motion_video_raw:
+                    return {
+                        "success": False,
+                        "error": "Motion Control mode requires both a reference image and a reference video.",
+                    }
+                print(
+                    f"[NodeRunner] Using motion-control mode "
+                    f"(orientation={character_orientation})"
+                )
+                result = await self.video_generator.generate_clip(
+                    prompt=prompt,
+                    duration=duration,
+                    resolution=resolution,
+                    aspect_ratio=ratio,
+                    model_name=model_str,
+                    generate_audio=generate_audio,
+                    audio_url=audio_input,
+                    lipsync_model_name=lipsync_model_name,
+                    motion_image=motion_image_raw,
+                    motion_video=motion_video_raw,
+                    character_orientation=character_orientation,
                 )
 
             # Case 5: Auto/text generation (no connected media)
@@ -917,6 +1200,7 @@ class NodeRunner:
                         aspect_ratio=ratio,
                         model_name=model_str,
                         audio_url=audio_input,
+                        lipsync_model_name=lipsync_model_name,
                         generate_audio=generate_audio,
                     )
                 else:
@@ -928,6 +1212,7 @@ class NodeRunner:
                         aspect_ratio=ratio,
                         model_name=model_str,
                         audio_url=audio_input,
+                        lipsync_model_name=lipsync_model_name,
                         generate_audio=generate_audio,
                     )
             
@@ -940,6 +1225,24 @@ class NodeRunner:
                         "status": "pending_fal",
                         "request_id": result.get("request_id"),
                         "endpoint_id": result.get("endpoint_id"),
+                        "model": result.get("model", model_str),
+                        "provider": result.get("provider", "fal.ai"),
+                    }
+                    warnings: List[str] = []
+                    if model_warning:
+                        warnings.append(model_warning)
+                    warnings.extend(warning_notes)
+                    if warnings:
+                        response["warning"] = " ".join(warnings)
+                    return response
+                if result.get("status") == "debug_payload":
+                    # Debug dry-run mode intentionally skips provider submission
+                    # and returns the exact payload marker to the frontend.
+                    response: Dict[str, Any] = {
+                        "success": True,
+                        "status": "debug_payload",
+                        "output": result.get("output"),
+                        "cost": result.get("cost", 0.0),
                         "model": result.get("model", model_str),
                         "provider": result.get("provider", "fal.ai"),
                     }
@@ -1348,6 +1651,38 @@ class NodeRunner:
         elif not isinstance(raw_audio, list):
             raw_audio = []
 
+        input_labels = {"videos": {}, "images": {}, "audio": {}}
+        for edge in edges:
+            if edge.get("target") != node_id:
+                continue
+            source_id = edge.get("source")
+            source_node = next((n for n in nodes if n.get("id") == source_id), None)
+            if not source_node:
+                continue
+
+            source_output = outputs.get(source_id)
+            if source_output is None:
+                source_data = source_node.get("data", {}) or {}
+                source_output = source_data.get("output")
+            if source_output is None:
+                continue
+
+            target_handle = edge.get("targetHandle", "")
+            handle_name = target_handle.split("|")[-1] if "|" in target_handle else target_handle
+            if handle_name == "ref_videos":
+                label_bucket = input_labels["videos"]
+            elif handle_name == "ref_images":
+                label_bucket = input_labels["images"]
+            elif handle_name == "audio":
+                label_bucket = input_labels["audio"]
+            else:
+                continue
+
+            values = source_output if isinstance(source_output, list) else [source_output]
+            for value in values:
+                if isinstance(value, str) and value:
+                    label_bucket[value] = self._node_reference_label(source_node, nodes)
+
         # Build rich audio track metadata by tracing back to source nodes
         audio_tracks = []
         audio_source_map = {}  # url -> source_node_id
@@ -1371,7 +1706,7 @@ class NodeRunner:
 
             if source_node:
                 source_data = source_node.get("data", {})
-                audio_type = source_data.get("audioType", "speech")
+                audio_type = source_data.get("audioType", "voice_design")
                 duration_val = source_data.get("duration", None)
                 if duration_val is not None:
                     if isinstance(duration_val, str):
@@ -1379,7 +1714,7 @@ class NodeRunner:
                     else:
                         duration_seconds = int(duration_val)
                 else:
-                    # For speech, estimate from text length (~2.5 words/sec)
+                    # Estimate spoken preview length from text (~2.5 words/sec).
                     prompt_text = source_data.get("prompt", "")
                     word_count = len(prompt_text.split()) if prompt_text else 0
                     duration_seconds = max(3, round(word_count / 2.5)) if word_count > 0 else 10
@@ -1387,6 +1722,7 @@ class NodeRunner:
 
             audio_tracks.append({
                 "url": url,
+                "label": input_labels["audio"].get(url) or (self._node_reference_label(source_node, nodes) if source_node else None),
                 "type": audio_type,
                 "duration_seconds": duration_seconds,
                 "description": description or f"{audio_type} track",
@@ -1402,6 +1738,7 @@ class NodeRunner:
                 audio_tracks=audio_tracks,
                 text_input=text_input,
                 ref_images=ref_images,
+                input_labels=input_labels,
                 mode=mode,
                 aspect_ratio=data.get("ratio", "9:16"),
                 upstream_scenes=upstream_scenes if mode == "compositor" else None,

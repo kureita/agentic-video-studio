@@ -18,7 +18,7 @@ interface HighlightedTextareaProps {
 }
 
 // Regex to match @Text #N, @Image Gen #N, @Video Gen #N etc.
-const REF_PATTERN = /@(?:Text|Image Gen|Video Gen|Vision|Editor Agent|Media Upload|Audio Gen)\s*#\d+/g;
+const REF_PATTERN = /@(?:Text|Image Gen|Video Gen|Vision|Media Assistant|Editor Agent|Media Upload|Upload|Audio Gen)\s*#\d+/g;
 
 function renderHighlightedContent(text: string): React.ReactNode[] {
     const parts: React.ReactNode[] = [];

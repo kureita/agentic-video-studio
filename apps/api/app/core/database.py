@@ -29,6 +29,9 @@ async def connect_to_mongo():
             # user_assets: compound index for fast user-scoped queries + dedup
             await db.user_assets.create_index([("user_id", 1), ("url", 1)])
             await db.user_assets.create_index([("user_id", 1), ("created_at", -1)])
+            await db.user_assets.create_index([("user_id", 1), ("asset_size_bytes", 1)])
+            await db.pending_uploads.create_index([("user_id", 1), ("key", 1)], unique=True)
+            await db.pending_uploads.create_index("expires_at", expireAfterSeconds=0)
             # fal_jobs: webhook correlation + TTL cleanup (24h after submit)
             await db.fal_jobs.create_index("request_id", unique=True)
             await db.fal_jobs.create_index([("status", 1), ("submitted_at", 1)])

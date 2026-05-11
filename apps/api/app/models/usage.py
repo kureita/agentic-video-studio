@@ -51,4 +51,13 @@ class UsageLog(BaseModel):
             return str(v)
         return v
 
+    @field_validator('created_at', mode='before')
+    def ensure_tz_aware(cls, v):
+        # Mongo's BSON Date strips tzinfo on round-trip; this re-attaches UTC
+        # so JSON serialization includes the offset and the browser doesn't
+        # treat the timestamp as local time.
+        if isinstance(v, datetime) and v.tzinfo is None:
+            return v.replace(tzinfo=timezone.utc)
+        return v
+
     model_config = ConfigDict(populate_by_name=True)

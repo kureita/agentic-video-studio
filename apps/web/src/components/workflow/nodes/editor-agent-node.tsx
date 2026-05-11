@@ -6,19 +6,50 @@ import { HighlightedTextarea } from "@/components/workflow/nodes/highlighted-tex
 import { useWorkflowStore } from "@/lib/workflow-store";
 import { useClientRender } from "@/lib/remotion/useClientRender";
 import { workflowApi } from "@/lib/workflow-api";
-import { extractFrameFromVideo } from "@/lib/video-utils";
+import { canExtractFramesClientSide, extractFrameFromVideo } from "@/lib/video-utils";
+import { usePresignedUrl } from "@/lib/use-presigned-url";
+import { getNodeReferenceLabel, getNodeReferenceLabelById } from "@/lib/node-references";
 
-/** Check if a string is a video/media URL rather than TSX code */
+/** Check if a string is a *video* URL (NOT audio/image) rather than TSX code.
+ * Inspects the path extension before the query string so .mp3/.wav/.m4a/etc.
+ * don't get treated as video — otherwise audio outputs would be loaded into
+ * a <video crossOrigin="anonymous"> element and trip CORS on signed S3 URLs.
+ */
 function isVideoUrl(s: string): boolean {
     if (!s) return false;
-    // Trim and check if it starts with http and looks like a media URL
     const trimmed = s.trim();
-    return (
-        trimmed.startsWith('http') &&
-        !trimmed.includes('\n') &&
-        (trimmed.includes('.mp4') || trimmed.includes('.webm') || trimmed.includes('.mov') ||
-            trimmed.includes('video') || (trimmed.includes('kureita') && trimmed.includes('s3')))
-    );
+    if (!trimmed.startsWith('http') || trimmed.includes('\n')) return false;
+
+    let pathname: string;
+    try {
+        pathname = new URL(trimmed).pathname.toLowerCase();
+    } catch {
+        return false;
+    }
+
+    const VIDEO_EXTS = ['.mp4', '.webm', '.mov', '.m4v', '.mkv'];
+    const AUDIO_EXTS = ['.mp3', '.wav', '.m4a', '.ogg', '.opus', '.flac', '.aac'];
+    const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.avif'];
+
+    if (VIDEO_EXTS.some((ext) => pathname.endsWith(ext))) return true;
+    if (AUDIO_EXTS.some((ext) => pathname.endsWith(ext))) return false;
+    if (IMAGE_EXTS.some((ext) => pathname.endsWith(ext))) return false;
+
+    // No recognized extension — only treat as video if the path strongly hints
+    // at one (e.g. "/video/" or "generated_video_..."). This is the path that
+    // covers legacy outputs without a file extension.
+    return pathname.includes('video');
+}
+
+/** Cheap, stable fingerprint of TSX so we can compare composition identity across
+ * remounts without storing the full code string twice. djb2 hash is enough — we
+ * only need equality, not cryptographic strength. */
+function fingerprintCode(code: string): string {
+    let hash = 5381;
+    for (let i = 0; i < code.length; i++) {
+        hash = ((hash << 5) + hash + code.charCodeAt(i)) | 0;
+    }
+    return `${code.length}:${hash >>> 0}`;
 }
 
 export const EditorAgentNode = memo(({ id, selected, data }: NodeProps) => {
@@ -32,7 +63,9 @@ export const EditorAgentNode = memo(({ id, selected, data }: NodeProps) => {
 
     // The output from the backend — could be raw TSX, JSON-wrapped scene/compositor, or a video URL
     const storeOutput = (outputs[id] as string | undefined) || (data.output as string | undefined) || null;
-    const storedVideoUrl = (storeOutput && isVideoUrl(storeOutput)) ? storeOutput : null;
+    const rawStoredVideoUrl = (storeOutput && isVideoUrl(storeOutput)) ? storeOutput : null;
+    const { url: presignedStoredVideoUrl } = usePresignedUrl(rawStoredVideoUrl);
+    const storedVideoUrl = rawStoredVideoUrl ? (presignedStoredVideoUrl || rawStoredVideoUrl) : null;
 
     // If the output got overwritten with a video URL (from upload-render), ignore it
     // and use the preserved TSX code instead.
@@ -63,45 +96,124 @@ export const EditorAgentNode = memo(({ id, selected, data }: NodeProps) => {
     // Client-side render hook
     const { state: renderState, renderFromCode, cancel, download, clear: clearRender } = useClientRender();
 
-    // Auto-render when new code arrives — but NOT for scene-only nodes
+    // Auto-render & auto-upload guards.
+    //
+    // Three distinct refs because the lifecycle has multiple boundaries:
+    //  - lastRenderedCodeRef: the code we *attempted* to render (set as soon
+    //    as renderFromCode is called). Prevents the render effect from
+    //    re-firing while the same code is still in-flight or just finished.
+    //  - lastUploadedFingerprintRef: fingerprint of the code that's been
+    //    successfully uploaded to S3. Persisted via `${id}__rendered_fp` so
+    //    it survives remounts. Prevents re-uploading an identical render
+    //    and (together with `${id}__rendered_url`) short-circuits the
+    //    auto-render effect when the backend echoes back a TSX we've
+    //    already turned into an MP4.
+    //  - lastUploadedUrlRef: S3 URL of the uploaded MP4 for the above
+    //    fingerprint. Used to restore `outputs[id]` when the backend
+    //    re-runs and overwrites the URL with the same TSX.
     const lastRenderedCodeRef = useRef<string | null>(null);
     const hasUploadedRef = useRef<boolean>(false);
+    const persistedRenderedFp = (outputs[`${id}__rendered_fp`] as string | undefined) || null;
+    const persistedRenderedUrl = (outputs[`${id}__rendered_url`] as string | undefined) || null;
+    const lastUploadedFingerprintRef = useRef<string | null>(persistedRenderedFp);
+    const lastUploadedUrlRef = useRef<string | null>(persistedRenderedUrl);
+    // Re-sync the in-memory refs if the persisted values change from
+    // elsewhere (e.g. clearNodeOutput resetting the slots).
+    useEffect(() => {
+        lastUploadedFingerprintRef.current = persistedRenderedFp;
+    }, [persistedRenderedFp]);
+    useEffect(() => {
+        lastUploadedUrlRef.current = persistedRenderedUrl;
+    }, [persistedRenderedUrl]);
+
+    const compositionFingerprint = useMemo(
+        () => (compositionCode ? fingerprintCode(compositionCode) : null),
+        [compositionCode],
+    );
+
+    // True when the current composition has already been rendered AND
+    // uploaded — possibly in a prior run/session. Detected via fingerprint
+    // identity. When this is true the render is "already done" — no
+    // auto-render, no auto-upload, and we restore outputs[id] back to the
+    // saved URL so the user keeps seeing the existing MP4 instead of an
+    // empty player while the backend was overwriting outputs[id] with TSX.
+    const alreadyRenderedAndUploaded =
+        !!compositionFingerprint &&
+        lastUploadedFingerprintRef.current === compositionFingerprint &&
+        !!lastUploadedUrlRef.current;
 
     useEffect(() => {
-        if (compositionCode && !isScene && compositionCode !== lastRenderedCodeRef.current && !renderState.isRendering) {
+        if (!compositionCode || isScene) return;
+        if (renderState.isRendering) return;
+        if (compositionCode === lastRenderedCodeRef.current) return;
+
+        // Backend echoed back a TSX we already rendered & uploaded. Skip
+        // the render entirely and restore the previously uploaded URL so
+        // the user keeps seeing the same MP4 they already produced.
+        if (alreadyRenderedAndUploaded) {
             lastRenderedCodeRef.current = compositionCode;
-            preservedCodeRef.current = compositionCode; // Preserve TSX so upload-render can't overwrite it
-            hasUploadedRef.current = false; // Reset upload flag for new render
-            renderFromCode(compositionCode);
+            preservedCodeRef.current = compositionCode;
+            hasUploadedRef.current = true;
+            const savedUrl = lastUploadedUrlRef.current;
+            if (savedUrl && storeOutput !== savedUrl) {
+                setRawOutput(id, savedUrl);
+            }
+            return;
         }
-    }, [compositionCode, isScene, renderState.isRendering, renderFromCode]);
 
-    // Automatically upload rendered MP4 to S3 when done
+        lastRenderedCodeRef.current = compositionCode;
+        preservedCodeRef.current = compositionCode;
+        hasUploadedRef.current = false;
+        renderFromCode(compositionCode);
+    }, [compositionCode, isScene, renderState.isRendering, renderFromCode, alreadyRenderedAndUploaded, id, setRawOutput, storeOutput]);
+
+    // Automatically upload rendered MP4 to S3 when done — but only once per
+    // distinct composition. The persisted fingerprint+URL pair survives
+    // remounts so a reload won't re-upload the same render.
     useEffect(() => {
-        // If we have a successful render blob, it's not a scene, we haven't uploaded yet, and there's no error
-        if (renderState.blobUrl && !renderState.isRendering && !isScene && !hasUploadedRef.current) {
-            const upload = async () => {
-                hasUploadedRef.current = true; // Prevent multiple uploads
-                try {
-                    // Fetch the blob out of browser memory
-                    const res = await fetch(renderState.blobUrl!);
-                    const blob = await res.blob();
+        if (!renderState.blobUrl || renderState.isRendering) return;
+        if (isScene) return;
+        if (hasUploadedRef.current) return;
 
-                    // Convert to File
-                    const file = new File([blob], `render_${id}.mp4`, { type: 'video/mp4' });
+        const codeAtUploadTime = preservedCodeRef.current;
+        if (!codeAtUploadTime) return;
 
-                    // Upload to S3 and save to MongoDB outputs
-                    const uploadedUrl = await uploadRenderedVideo(id, file);
-                    if (uploadedUrl) {
-                        setRawOutput(id, uploadedUrl);
-                    }
-                } catch (err) {
-                    console.error("Failed to auto-upload rendered video:", err);
-                    hasUploadedRef.current = false; // allow retry if needed
-                }
-            };
-            upload();
+        const fp = fingerprintCode(codeAtUploadTime);
+        if (lastUploadedFingerprintRef.current === fp && lastUploadedUrlRef.current) {
+            // We've already uploaded this exact composition; flip the
+            // flag and skip. Avoids hammering S3 when the same code is
+            // re-rendered (e.g. after a manual cache miss or remount).
+            hasUploadedRef.current = true;
+            return;
         }
+
+        const upload = async () => {
+            hasUploadedRef.current = true;
+            try {
+                const res = await fetch(renderState.blobUrl!);
+                const blob = await res.blob();
+
+                const file = new File([blob], `render_${id}.mp4`, { type: 'video/mp4' });
+
+                // Pass fp through so the backend persists (fp, url) and a
+                // future reload sees the existing render is "ours".
+                const uploadedUrl = await uploadRenderedVideo(id, file, fp);
+                if (uploadedUrl) {
+                    lastUploadedFingerprintRef.current = fp;
+                    lastUploadedUrlRef.current = uploadedUrl;
+                    setRawOutput(id, uploadedUrl);
+                    // Mirror in client outputs map so the in-session dedup
+                    // (auto-render and auto-upload guards) sees the new fp+url
+                    // even before the next workflow load.
+                    setRawOutput(`${id}__rendered_fp`, fp);
+                    setRawOutput(`${id}__rendered_url`, uploadedUrl);
+                }
+            } catch (err) {
+                console.error("Failed to auto-upload rendered video:", err);
+                hasUploadedRef.current = false;
+            }
+        };
+        upload();
     }, [renderState.blobUrl, renderState.isRendering, isScene, id, uploadRenderedVideo, setRawOutput]);
 
     const handleExtractFrames = useCallback(async (handleId: string) => {
@@ -112,6 +224,16 @@ export const EditorAgentNode = memo(({ id, selected, data }: NodeProps) => {
         setExtractionError(null);
 
         try {
+            if (!canExtractFramesClientSide(sourceVideo)) {
+                if (!workflowId) return;
+                const response = await workflowApi.extractFrames(workflowId, id, undefined, undefined, sourceVideo);
+                const frame = handleId === "start_frame" ? response.data.start_frame : response.data.end_frame;
+                if (frame) {
+                    setRawOutput(`${id}__${handleId}`, frame);
+                }
+                return;
+            }
+
             const timeRatio = handleId === "end_frame" ? 1 : 0;
             const frame = await extractFrameFromVideo(sourceVideo, timeRatio);
             const startFramePayload = handleId === "start_frame" ? frame : undefined;
@@ -142,6 +264,20 @@ export const EditorAgentNode = memo(({ id, selected, data }: NodeProps) => {
 
         if (autoExtractionAttemptedRef.current === sourceVideo) return;
 
+        if (!canExtractFramesClientSide(sourceVideo)) {
+            autoExtractionAttemptedRef.current = sourceVideo;
+            void workflowApi.extractFrames(workflowId, id, undefined, undefined, sourceVideo)
+                .then((res) => {
+                    if (res.data.start_frame) setRawOutput(`${id}__start_frame`, res.data.start_frame);
+                    if (res.data.end_frame) setRawOutput(`${id}__end_frame`, res.data.end_frame);
+                })
+                .catch((err) => {
+                    const msg = err instanceof Error ? err.message : "server extraction failed";
+                    console.warn("[EditorNode] Auto frame extraction skipped:", msg);
+                });
+            return;
+        }
+
         const timer = setTimeout(async () => {
             autoExtractionAttemptedRef.current = sourceVideo;
             try {
@@ -162,16 +298,25 @@ export const EditorAgentNode = memo(({ id, selected, data }: NodeProps) => {
                     await workflowApi.extractFrames(workflowId, id, startFramePayload, endFramePayload);
                 }
             } catch (err) {
-                console.error("[EditorNode] Auto frame extraction failed:", err);
+                // Surface as warn (not error) — usually CORS on signed S3 URLs.
+                // The per-handle UI shows the user a Retry button.
+                const msg = err instanceof Error ? err.message : "frame extraction failed";
+                console.warn("[EditorNode] Auto frame extraction skipped:", msg);
             }
         }, 1000);
 
         return () => clearTimeout(timer);
     }, [workflowId, id, outputs, renderState.blobUrl, setRawOutput, storedVideoUrl]);
 
-    // Manual re-render
+    // Manual re-render — explicit user action, so reset the dedup guards and
+    // force both a render and a fresh S3 upload of the result.
     const handleReRender = useCallback(async () => {
         if (!compositionCode) return;
+        lastRenderedCodeRef.current = compositionCode;
+        preservedCodeRef.current = compositionCode;
+        lastUploadedFingerprintRef.current = null;
+        lastUploadedUrlRef.current = null;
+        hasUploadedRef.current = false;
         await renderFromCode(compositionCode);
     }, [compositionCode, renderFromCode]);
 
@@ -189,7 +334,7 @@ export const EditorAgentNode = memo(({ id, selected, data }: NodeProps) => {
         edges.filter(e => e.target === id).map(e => e.source)
     ), [edges, id]);
     const allTextNodes = useMemo(() =>
-        nodes.filter(n => n.type === 'text').map((n, i) => ({ id: n.id, label: `Text #${i + 1}`, content: (n.data.text as string) || "" })),
+        nodes.filter(n => n.type === 'text').map((n) => ({ id: n.id, label: getNodeReferenceLabel(n), content: (n.data.text as string) || "" })),
         [nodes]
     );
     const textNodes = useMemo(() =>
@@ -268,11 +413,7 @@ export const EditorAgentNode = memo(({ id, selected, data }: NodeProps) => {
     return (
         <NodeWrapper
             nodeId={id}
-            title={`Editor Agent #${useWorkflowStore((state) =>
-                state.nodes
-                    .filter(n => n.type === 'editorAgent')
-                    .findIndex(n => n.id === id) + 1
-            )}${isScene ? ' (Scene)' : isCompositor ? ' (Final)' : ''}`}
+            title={`${useWorkflowStore((state) => getNodeReferenceLabelById(state.nodes, id) || "Editor Agent #?")}${isScene ? ' (Scene)' : isCompositor ? ' (Final)' : ''}`}
             icon={<Clapperboard className="w-4 h-4" />}
             selected={selected}
             inputs={[
@@ -283,6 +424,7 @@ export const EditorAgentNode = memo(({ id, selected, data }: NodeProps) => {
             ]}
             outputs={[
                 { id: "output", label: "Video", type: "video" },
+                { id: "audio", label: "Embedded Audio", type: "audio" },
                 {
                     id: "start_frame", label: "Start Frame", type: "image",
                     framePreview: startFramePreview,
@@ -308,9 +450,14 @@ export const EditorAgentNode = memo(({ id, selected, data }: NodeProps) => {
                 clearNodeOutput(id);
                 clearRender();
                 lastRenderedCodeRef.current = null;
+                preservedCodeRef.current = null;
+                lastUploadedFingerprintRef.current = null;
+                lastUploadedUrlRef.current = null;
+                hasUploadedRef.current = false;
             } : undefined}
             isRunning={isRunning}
             executionStatus={data.executionStatus as "queued" | "running" | "completed" | "failed" | null}
+            executionError={(data.executionError as string | null | undefined) ?? null}
         >
             <div
                 className="relative bg-muted/30 group/editor transition-all duration-300 ease-in-out overflow-hidden"

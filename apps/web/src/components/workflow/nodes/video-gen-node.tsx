@@ -9,11 +9,13 @@ import { useWorkflowStore } from "@/lib/workflow-store";
 import { useModels } from "@/lib/use-models";
 import type { Model } from "@/lib/api";
 import { toast } from "sonner";
-import { extractFrameFromVideo } from "@/lib/video-utils";
+import { canExtractFramesClientSide, extractFrameFromVideo } from "@/lib/video-utils";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
+import { useEstimatedCost } from "@/lib/use-estimated-cost";
+import { getNodeReferenceLabel, getNodeReferenceLabelById } from "@/lib/node-references";
 
-type InputMode = "t2v" | "i2v" | "reference" | "elements" | "v2v";
+type InputMode = "t2v" | "i2v" | "reference" | "elements" | "v2v" | "motion" | "lipsync" | "avatar";
 type PersistedVideoNodeSettings = {
     model?: string;
     duration?: string;
@@ -27,9 +29,24 @@ type PersistedVideoNodeSettings = {
 const DEFAULT_DURATIONS = ["4s", "5s", "6s", "8s", "10s"];
 const DEFAULT_RESOLUTIONS = ["720p", "1080p", "4k"];
 const DEFAULT_INPUT_MODES: InputMode[] = ["t2v"];
-const INPUT_MODE_PRIORITY: InputMode[] = ["i2v", "reference", "elements", "v2v", "t2v"];
-const ALL_INPUT_MODES: InputMode[] = ["t2v", "i2v", "reference", "elements", "v2v"];
+const INPUT_MODE_PRIORITY: InputMode[] = ["i2v", "reference", "elements", "v2v", "motion", "lipsync", "avatar", "t2v"];
+const ALL_INPUT_MODES: InputMode[] = ["t2v", "i2v", "reference", "elements", "v2v", "motion", "lipsync", "avatar"];
 const LOCAL_PERSIST_KEYS = ["model", "duration", "resolution", "inputMode", "ratio", "generateAudio"] as const;
+const DEBUG_PAYLOAD_PREFIX = "__FAL_VIDEO_DEBUG_PAYLOAD_B64__";
+
+const decodeDebugPayload = (rawOutput?: string) => {
+    if (!rawOutput || !rawOutput.startsWith(DEBUG_PAYLOAD_PREFIX)) return null;
+    try {
+        const encoded = rawOutput.slice(DEBUG_PAYLOAD_PREFIX.length);
+        const normalized = encoded.replace(/-/g, "+").replace(/_/g, "/");
+        const padding = normalized.length % 4 === 0 ? "" : "=".repeat(4 - (normalized.length % 4));
+        const padded = normalized + padding;
+        const decoded = atob(padded);
+        return JSON.parse(decoded) as Record<string, unknown>;
+    } catch {
+        return null;
+    }
+};
 
 const sortDurationOptions = (durations: string[]) => {
     return [...durations].sort((a, b) => {
@@ -107,6 +124,9 @@ const getModelInputModes = (model?: Model): InputMode[] => {
     if (caps.has("reference")) inferred.push("reference");
     if (caps.has("elements")) inferred.push("elements");
     if (caps.has("v2v")) inferred.push("v2v");
+    if (caps.has("motion")) inferred.push("motion");
+    if (caps.has("lipsync")) inferred.push("lipsync");
+    if (caps.has("avatar")) inferred.push("avatar");
     if (caps.has("t2v") || inferred.length === 0) inferred.push("t2v");
     return Array.from(new Set(inferred));
 };
@@ -126,6 +146,12 @@ const getInputModeLabel = (mode: InputMode) => {
             return "Elements";
         case "v2v":
             return "Video Extend";
+        case "motion":
+            return "Motion Control";
+        case "lipsync":
+            return "Lip Sync";
+        case "avatar":
+            return "Avatar";
         case "t2v":
         default:
             return "Text to Video";
@@ -140,6 +166,9 @@ const IMAGE_REMAP_PRIORITY: Record<InputMode, string[]> = {
     reference: ["reference_image", "reference_images"],
     elements: ["elements_image"],
     v2v: [],
+    motion: ["motion_image"],
+    lipsync: [],
+    avatar: ["start_image"],
 };
 
 const VIDEO_REMAP_PRIORITY: Record<InputMode, string[]> = {
@@ -148,6 +177,9 @@ const VIDEO_REMAP_PRIORITY: Record<InputMode, string[]> = {
     reference: [],
     elements: ["elements_video"],
     v2v: ["reference_video"],
+    motion: ["motion_video"],
+    lipsync: ["reference_video"],
+    avatar: [],
 };
 
 const AUDIO_REMAP_PRIORITY: Record<InputMode, string[]> = {
@@ -156,6 +188,9 @@ const AUDIO_REMAP_PRIORITY: Record<InputMode, string[]> = {
     reference: ["audio"],
     elements: ["elements_audio"],
     v2v: ["audio"],
+    motion: [],
+    lipsync: ["audio"],
+    avatar: ["audio"],
 };
 
 const getNativeAudioDefault = (model?: Model) => {
@@ -170,7 +205,12 @@ const getCapabilitiesLabel = (capabilities: string[] = []) => {
     const hasReference = !!capabilities.find(c => c.toLowerCase() === "reference");
     const hasElements = !!capabilities.find(c => c.toLowerCase() === "elements");
     const hasV2V = !!capabilities.find(c => c.toLowerCase() === "v2v");
+    const hasLipSync = !!capabilities.find(c => c.toLowerCase() === "lipsync");
+    const hasAvatar = !!capabilities.find(c => c.toLowerCase() === "avatar");
     const hasAudio = !!capabilities.find(c => c.toLowerCase() === "audio");
+
+    if (hasAvatar) return "Avatar (Image + Audio)";
+    if (hasLipSync) return "Lip Sync (Video + Audio)";
 
     let label = "";
     if (hasI2V) label = "Image-to-Video";
@@ -237,11 +277,23 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
     }, [menuOpen, showModelMenu, showDurationMenu, showInputModeMenu]);
 
     const isRunning = runningNodeId === id;
-    const rawOutput = (outputs[id] as string | undefined) || (data.output as string | undefined);
+    const rawOutputValue = (outputs[id] as string | undefined) || (data.output as string | undefined);
+    const debugPayload = useMemo(() => decodeDebugPayload(rawOutputValue), [rawOutputValue]);
+    const rawOutput = debugPayload ? undefined : rawOutputValue;
 
     // Get presigned URL for S3 video assets
     const { url: presignedOutput } = usePresignedUrl(rawOutput);
     const output = presignedOutput || rawOutput;
+    const loggedDebugOutputRef = useRef<string | null>(null);
+
+    useEffect(() => {
+        if (!debugPayload || !rawOutputValue) return;
+        if (loggedDebugOutputRef.current === rawOutputValue) return;
+        loggedDebugOutputRef.current = rawOutputValue;
+        console.groupCollapsed(`[VideoNode ${id}] fal payload debug dry-run`);
+        console.log(debugPayload);
+        console.groupEnd();
+    }, [debugPayload, rawOutputValue, id]);
 
     const isCurrentSourceOutput = useCallback((expectedOutput?: string) => {
         if (!expectedOutput) return false;
@@ -259,6 +311,16 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
         setExtractingHandle(handleId);
         setExtractionError(null);
         try {
+            if (!canExtractFramesClientSide(output)) {
+                const res = await workflowApi.extractFrames(workflowId, id, undefined, undefined, output);
+                if (!isCurrentSourceOutput(sourceOutput)) return;
+                const frame = handleId === "start_frame" ? res.data.start_frame : res.data.end_frame;
+                if (frame) {
+                    setRawOutput(`${id}__${handleId}`, frame);
+                }
+                return;
+            }
+
             const timeRatio = handleId === 'end_frame' ? 1 : 0;
             const base64Image = await extractFrameFromVideo(output, timeRatio);
             if (!isCurrentSourceOutput(sourceOutput)) return;
@@ -281,45 +343,90 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
         }
     }, [workflowId, id, extractingHandle, output, rawOutput, setRawOutput, isCurrentSourceOutput]);
 
-    // Automatically extract frames whenever a new video is generated
+    // Automatically extract frames whenever a new video is generated.
+    // We key attempts on `rawOutput` (the underlying S3 URL, not the time-limited
+    // presigned variant) so a refreshed presign doesn't re-trigger extraction,
+    // and a single failure (CORS, timeout, etc.) doesn't loop forever — the user
+    // can still hit "Retry Capture" via the per-handle button.
+    const attemptedExtractionRef = useRef<string | null>(null);
     useEffect(() => {
         const sourceOutput = rawOutput;
         if (!workflowId || !output || !sourceOutput || !output.startsWith('http')) return;
+        if (attemptedExtractionRef.current === sourceOutput) return;
 
-        // Check if we already have frames for this video to avoid endless extraction loops
+        // Skip auto-extract on URLs that look like audio. Some legacy outputs
+        // were uploaded to S3 with a `.mp3` extension because of a webhook bug
+        // (capability=reference fell through to the audio branch). The file
+        // contents are actually mp4, but the browser refuses to give us pixel
+        // data via crossOrigin when the URL extension says "audio" + the S3
+        // bucket has no CORS header. Better to silently skip and rely on the
+        // backend-extracted frames already in `outputs`.
+        try {
+            const path = new URL(sourceOutput).pathname.toLowerCase();
+            if (/\.(mp3|wav|m4a|ogg|opus|flac|aac)$/.test(path)) {
+                attemptedExtractionRef.current = sourceOutput;
+                return;
+            }
+        } catch {
+            // Not a parseable URL — let the original logic handle it.
+        }
+
         const hasStartFrame = outputs[`${id}__start_frame`];
         const hasEndFrame = outputs[`${id}__end_frame`];
+        if (hasStartFrame && hasEndFrame) return;
 
-        if (!hasStartFrame || !hasEndFrame) {
-            console.log(`[VideoNode ${id}] New output detected, auto-extracting frames...`);
-            // We give the video a tiny delay to ensure the browser has loaded the blob URL metadata
-            const timer = setTimeout(async () => {
-                try {
-                    let startFramePayload = undefined;
-                    let endFramePayload = undefined;
+        attemptedExtractionRef.current = sourceOutput;
 
-                    if (!hasStartFrame) {
-                        startFramePayload = await extractFrameFromVideo(output, 0);
-                        if (!isCurrentSourceOutput(sourceOutput)) return;
-                        setRawOutput(`${id}__start_frame`, startFramePayload);
-                    }
-
-                    if (!hasEndFrame) {
-                        endFramePayload = await extractFrameFromVideo(output, 1);
-                        if (!isCurrentSourceOutput(sourceOutput)) return;
-                        setRawOutput(`${id}__end_frame`, endFramePayload);
-                    }
-
-                    if ((startFramePayload || endFramePayload) && isCurrentSourceOutput(sourceOutput)) {
-                        await workflowApi.extractFrames(workflowId, id, startFramePayload, endFramePayload);
-                        console.log(`[VideoNode ${id}] Auto-extraction complete and saved to backend.`);
-                    }
-                } catch (err) {
-                    console.error(`[VideoNode ${id}] Auto-extraction failed:`, err);
-                }
-            }, 1000);
-            return () => clearTimeout(timer);
+        if (!canExtractFramesClientSide(output)) {
+            attemptedExtractionRef.current = sourceOutput;
+            void workflowApi
+                .extractFrames(workflowId, id, undefined, undefined, output)
+                .then((res) => {
+                    if (!isCurrentSourceOutput(sourceOutput)) return;
+                    if (res.data.start_frame) setRawOutput(`${id}__start_frame`, res.data.start_frame);
+                    if (res.data.end_frame) setRawOutput(`${id}__end_frame`, res.data.end_frame);
+                })
+                .catch((err) => {
+                    if (!isCurrentSourceOutput(sourceOutput)) return;
+                    const msg = err instanceof Error ? err.message : "Server-side frame extraction failed";
+                    console.warn(`[VideoNode ${id}] Auto-extraction skipped:`, msg);
+                    setExtractionError(msg);
+                });
+            return;
         }
+
+        // Tiny delay so the browser has the metadata loaded.
+        const timer = setTimeout(async () => {
+            try {
+                let startFramePayload = undefined;
+                let endFramePayload = undefined;
+
+                if (!hasStartFrame) {
+                    startFramePayload = await extractFrameFromVideo(output, 0);
+                    if (!isCurrentSourceOutput(sourceOutput)) return;
+                    setRawOutput(`${id}__start_frame`, startFramePayload);
+                }
+
+                if (!hasEndFrame) {
+                    endFramePayload = await extractFrameFromVideo(output, 1);
+                    if (!isCurrentSourceOutput(sourceOutput)) return;
+                    setRawOutput(`${id}__end_frame`, endFramePayload);
+                }
+
+                if ((startFramePayload || endFramePayload) && isCurrentSourceOutput(sourceOutput)) {
+                    await workflowApi.extractFrames(workflowId, id, startFramePayload, endFramePayload);
+                }
+            } catch (err) {
+                // Surface the failure in the per-handle UI; a single console.warn
+                // (not error) keeps the devtools quiet while still leaving a
+                // breadcrumb when CORS/timeout happens.
+                if (!isCurrentSourceOutput(sourceOutput)) return;
+                const msg = err instanceof Error ? err.message : 'Could not extract frame from video element (CORS or timeout)';
+                console.warn(`[VideoNode ${id}] Auto-extraction skipped:`, msg);
+                setExtractionError(msg);
+            }
+        }, 1000);
+        return () => clearTimeout(timer);
     }, [workflowId, id, output, rawOutput, outputs, setRawOutput, isCurrentSourceOutput]);
 
 
@@ -442,6 +549,12 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
             ? requestedInputMode
             : defaultInputMode)
         : (requestedInputMode || "t2v");
+    const isLipsyncMode = inputMode === "lipsync";
+    const isAvatarMode = inputMode === "avatar";
+    const isMinimalAudioDrivenMode = isLipsyncMode || isAvatarMode;
+    const isSeedanceReferenceMode = inputMode === "reference"
+        && typeof selectedModelData?.id === "string"
+        && selectedModelData.id.startsWith("seedance-2-0");
 
     useEffect(() => {
         if (!selectedModelData) return;
@@ -477,7 +590,9 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
         }
 
         let desiredMode: InputMode | null = null;
-        if (handleIds.has("elements_image") || handleIds.has("elements_video") || handleIds.has("elements_audio")) {
+        if (handleIds.has("motion_image") || handleIds.has("motion_video")) {
+            desiredMode = "motion";
+        } else if (handleIds.has("elements_image") || handleIds.has("elements_video") || handleIds.has("elements_audio")) {
             desiredMode = "elements";
         } else if (handleIds.has("reference_video")) {
             desiredMode = "v2v";
@@ -497,7 +612,11 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
 
     const configInputs = useMemo(() => {
         const inputs: { id: string, label: string, type: "text" | "image" | "video" | "audio" }[] = [
-            { id: "text", label: "Text/Prompt", type: "text" }
+            {
+                id: "text",
+                label: inputMode === "avatar" || inputMode === "lipsync" ? "Prompt (Optional)" : "Text/Prompt",
+                type: "text",
+            },
         ];
 
         if (inputMode === "i2v") {
@@ -509,12 +628,27 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
             const referenceHandleId = referenceBounds.max <= 1 ? "reference_image" : "reference_images";
             const referenceLabel = referenceBounds.max <= 1 ? "Reference Image" : "Reference Images";
             inputs.push({ id: referenceHandleId, label: referenceLabel, type: "image" });
+            if (isSeedanceReferenceMode) {
+                inputs.push({ id: "reference_video", label: "Reference Videos", type: "video" });
+                inputs.push({ id: "audio", label: "Reference Audio", type: "audio" });
+            }
         } else if (inputMode === "elements") {
             inputs.push({ id: "elements_image", label: "Element Image", type: "image" });
             inputs.push({ id: "elements_video", label: "Element Video", type: "video" });
             inputs.push({ id: "elements_audio", label: "Element Audio", type: "audio" });
         } else if (inputMode === "v2v") {
             inputs.push({ id: "reference_video", label: "Reference Video", type: "video" });
+        } else if (inputMode === "motion") {
+            // Kling Motion Control: drives a reference image's character with
+            // motion from a reference video. Both inputs are required by fal.
+            inputs.push({ id: "motion_image", label: "Reference Image", type: "image" });
+            inputs.push({ id: "motion_video", label: "Reference Video", type: "video" });
+        } else if (inputMode === "lipsync") {
+            inputs.push({ id: "reference_video", label: "Video", type: "video" });
+            inputs.push({ id: "audio", label: "Audio", type: "audio" });
+        } else if (inputMode === "avatar") {
+            inputs.push({ id: "start_image", label: "Avatar Image", type: "image" });
+            inputs.push({ id: "audio", label: "Audio", type: "audio" });
         }
 
         // Show external audio input connection ONLY for models that explicitly support it.
@@ -523,13 +657,14 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
             (c: string) => c.toLowerCase() === "audio_input"
         );
         const isKlingVideo3 = typeof currentModelEntry?.id === "string" && currentModelEntry.id.startsWith("kling-video-3-");
-        if (supportsExternalAudioInput && !isKlingVideo3 && inputMode !== "elements") {
+        if (supportsExternalAudioInput && !isKlingVideo3 && inputMode !== "elements" && inputMode !== "lipsync" && inputMode !== "avatar") {
             inputs.push({ id: "audio", label: "Audio", type: "audio" });
         }
 
         return inputs;
     }, [
         inputMode,
+        isSeedanceReferenceMode,
         currentModelEntry,
         frameImagesMax,
         referenceBounds.max,
@@ -546,6 +681,13 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
     useEffect(() => {
         updateNodeInternals(id);
     }, [handleSignature, id, updateNodeInternals]);
+
+    const durationRaw = (data.duration as string) || validDurations[0] || "5s";
+    const durationNum = parseInt(durationRaw.replace("s", ""), 10);
+    const estimatedCost = useEstimatedCost(currentModelId, "video", {
+        resolution: effectiveResolution,
+        duration: isNaN(durationNum) ? 5 : durationNum,
+    });
 
     // When the set of available input handles actually changes (the user flipped
     // mode or picked a new model), reconcile existing edges:
@@ -705,20 +847,20 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
         : validDurations[0];
 
     useEffect(() => {
-        if (!selectedModelData) return;
+        if (!selectedModelData || isMinimalAudioDrivenMode) return;
 
         if (typeof data.resolution !== "string" || data.resolution !== effectiveResolution) {
             updateData({ resolution: effectiveResolution });
         }
-    }, [selectedModelData, data.resolution, effectiveResolution, updateData]);
+    }, [selectedModelData, isMinimalAudioDrivenMode, data.resolution, effectiveResolution, updateData]);
 
     useEffect(() => {
-        if (!selectedModelData) return;
+        if (!selectedModelData || isMinimalAudioDrivenMode) return;
 
         if (typeof data.duration !== "string" || data.duration !== effectiveDuration) {
             updateData({ duration: effectiveDuration });
         }
-    }, [selectedModelData, data.duration, effectiveDuration, updateData]);
+    }, [selectedModelData, isMinimalAudioDrivenMode, data.duration, effectiveDuration, updateData]);
 
     useEffect(() => {
         hydratedSettingsKeyRef.current = null;
@@ -798,7 +940,17 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
         } catch (err) {
             console.warn("[VideoNode] Failed to persist local settings", err);
         }
-    }, [hasCompletedInitialHydration, isModelsLoading, settingsStorageKey, currentModelId, effectiveDuration, effectiveResolution, inputMode, generateAudio, ratio]);
+    }, [
+        hasCompletedInitialHydration,
+        isModelsLoading,
+        settingsStorageKey,
+        currentModelId,
+        effectiveDuration,
+        effectiveResolution,
+        inputMode,
+        generateAudio,
+        ratio,
+    ]);
 
     const handleModelChange = (newModelId: string) => {
         const newModelData = videoModels.find((m) => m.id === newModelId);
@@ -819,14 +971,18 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
         const newInputMode = (isInputMode(currentInputMode) && newInputModes.includes(currentInputMode))
             ? currentInputMode
             : (newInputModes.includes("t2v") ? "t2v" : (newInputModes[0] || "t2v"));
+        const newIsMinimalAudioDrivenMode = newInputMode === "lipsync" || newInputMode === "avatar";
 
-        updateData({
+        const patch: Record<string, unknown> = {
             model: newModelId,
-            duration: newDuration,
-            resolution: newResolution,
             inputMode: newInputMode,
             generateAudio: newModelHasAudio ? newModelAudioDefault : false,
-        });
+        };
+        if (!newIsMinimalAudioDrivenMode) {
+            patch.duration = newDuration;
+            patch.resolution = newResolution;
+        }
+        updateData(patch);
     };
 
     const handleDownload = () => {
@@ -864,7 +1020,7 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
         edges.filter(e => e.target === id).map(e => e.source)
     ), [edges, id]);
     const allTextNodes = useMemo(() =>
-        nodes.filter(n => n.type === 'text').map((n, i) => ({ id: n.id, label: `Text #${i + 1}`, content: (n.data.text as string) || "" })),
+        nodes.filter(n => n.type === 'text').map((n) => ({ id: n.id, label: getNodeReferenceLabel(n), content: (n.data.text as string) || "" })),
         [nodes]
     );
     const textNodes = useMemo(() =>
@@ -924,16 +1080,13 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
     return (
         <NodeWrapper
             nodeId={id}
-            title={`Video Generator #${useWorkflowStore((state) =>
-                state.nodes
-                    .filter(n => n.type === 'videoGen')
-                    .findIndex(n => n.id === id) + 1
-            )}`}
+            title={useWorkflowStore((state) => getNodeReferenceLabelById(state.nodes, id) || "Video Gen #?")}
             icon={<Video className="w-4 h-4" />}
             selected={selected}
             inputs={configInputs}
             outputs={[
                 { id: "video", label: "Video", type: "video" },
+                { id: "audio", label: "Embedded Audio", type: "audio" },
                 {
                     id: "start_frame", label: "Start Frame", type: "image",
                     framePreview: startFramePreview,
@@ -957,6 +1110,8 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
             onClear={output ? () => clearNodeOutput(id) : undefined}
             isRunning={isRunning}
             executionStatus={data.executionStatus as "queued" | "running" | "completed" | "failed" | null}
+            executionError={(data.executionError as string | null | undefined) ?? null}
+            estimatedCost={estimatedCost}
         >
             <div
                 className="relative bg-muted/30 group/video transition-all duration-300 ease-in-out overflow-hidden"
@@ -1079,6 +1234,7 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
                         : "bottom-3 right-3 opacity-0 group-hover/video:opacity-100 translate-y-2 group-hover/video:translate-y-0"
                 )}>
                     {/* Duration Pill */}
+                    {!isMinimalAudioDrivenMode && (
                     <div className="relative flex-shrink-0" ref={durationMenuRef}>
                         <button
                             onClick={() => {
@@ -1133,6 +1289,7 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
                             )}
                         </AnimatePresence>
                     </div>
+                    )}
 
                     {/* Model Pill */}
                     <div className="relative flex-grow min-w-0" ref={modelMenuRef}>
@@ -1200,7 +1357,7 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
                     </div>
 
                     {/* Input Mode Pill */}
-                    {selectableInputModes.length > 0 && (
+                    {selectableInputModes.length > 1 && !isMinimalAudioDrivenMode && (
                     <div className="relative flex-shrink-0 min-w-0 max-w-[110px]" ref={inputModeMenuRef}>
                         <button
                             onClick={(e) => {
@@ -1264,6 +1421,7 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
                     )}
 
                     {/* Kebab Menu for Settings */}
+                    {!isMinimalAudioDrivenMode && (
                     <div
                         className="relative flex-shrink-0"
                         ref={menuRef}
@@ -1393,6 +1551,7 @@ export const VideoGenNode = memo(({ id, selected, data }: NodeProps) => {
                             )}
                         </AnimatePresence>
                     </div>
+                    )}
                 </div>
             </div>
         </NodeWrapper>

@@ -348,6 +348,16 @@ export interface ModelConfig {
   audio?: boolean;
   pricing_note?: string;
   est_price_usd?: number;
+  est_provider_price_usd?: number;
+  est_price_usd_per_min?: number;
+  est_provider_price_usd_per_min?: number;
+  est_price_usd_per_second?: number;
+  est_provider_price_usd_per_second?: number;
+  est_price_source?: string;
+  fal_endpoint_id?: string;
+  fal_unit?: string;
+  fal_unit_price_usd?: number;
+  fal_price_source?: string;
 }
 
 export interface Model {
@@ -356,7 +366,7 @@ export interface Model {
   provider: string;
   type: "image" | "video" | "audio" | "llm";
   tier: string;
-  category?: string;        // Sub-type for audio: "tts" | "music" | "sfx"
+  category?: string;        // Sub-type for audio: "voice_design" | "voice_clone" | "music" | "sfx"
   coming_soon?: boolean;    // True if model is announced but not yet available
   capabilities: string[];
   input_modes?: string[];
@@ -370,12 +380,14 @@ export interface Model {
   frame_images_min?: number;
   frame_images_max?: number;
   native_audio_default?: boolean;
+  requires_input_duration?: boolean;
   configs: ModelConfig[];
   default_config_id: string;
 }
 
 export const billingApi = {
   getModels: () => api.get<{ models: Model[] }>("/api/billing/models"),
+  getBalance: () => api.get<{ balance: number }>("/api/billing/balance"),
 };
 
 // ============================================
@@ -385,15 +397,45 @@ export const billingApi = {
 export interface PresignedUploadResponse {
   success: boolean;
   upload_url?: string;
+  upload_method?: "PUT" | "POST";
+  upload_fields?: Record<string, string>;
   file_url?: string;
   key?: string;
   is_local?: boolean;
+  max_file_size?: number;
+  tenant_used_bytes?: number;
+  tenant_quota_bytes?: number;
 }
 
 export const assetsApi = {
-  getPresignedUrl: (filename: string, contentType: string) =>
+  getPresignedUrl: (filename: string, contentType: string, fileSize: number) =>
     api.get<PresignedUploadResponse>("/api/assets/upload/presigned", {
-      params: { filename, content_type: contentType },
+      params: { filename, content_type: contentType, file_size: fileSize },
+    }),
+
+  confirmPresignedUpload: (data: {
+    fileUrl: string;
+    workflowId?: string;
+    workflowName?: string;
+    nodeId?: string;
+    nodeType?: string;
+    nodeData?: Record<string, unknown>;
+  }) =>
+    api.post<{
+      success: boolean;
+      url: string;
+      type: string;
+      media_kind: string;
+      asset_size_bytes: number;
+      tenant_used_bytes: number;
+      tenant_quota_bytes: number;
+    }>("/api/assets/upload/presigned/confirm", {
+      file_url: data.fileUrl,
+      workflow_id: data.workflowId,
+      workflow_name: data.workflowName,
+      node_id: data.nodeId,
+      node_type: data.nodeType,
+      node_data: data.nodeData,
     }),
 
   upload: (

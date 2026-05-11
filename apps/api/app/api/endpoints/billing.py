@@ -12,6 +12,7 @@ from app.core.model_registry import get_models_for_api
 from app.models.usage import UsageLog
 from app.services.billing import BillingService
 from app.services.dodo_service import create_topup_checkout_session
+from app.services.fal_pricing import FalPricingService
 
 
 router = APIRouter(prefix="/billing", tags=["billing"])
@@ -203,13 +204,16 @@ async def dodo_create_checkout_session(
 
 
 @router.get("/models")
-async def get_models() -> Any:
+async def get_models(
+    db: AsyncIOMotorDatabase = Depends(get_database),
+) -> Any:
     """
     Returns the full model registry for the frontend.
     Includes all featured image, video, audio, and LLM models with
-    configs, pricing, AIR IDs, and capabilities.
+    configs, live fal-based user-facing price estimates, AIR IDs, and capabilities.
     """
-    return {"models": get_models_for_api()}
+    pricing = FalPricingService(db)
+    return {"models": await pricing.enrich_models_for_user_estimates(get_models_for_api())}
 
 
 @router.post("/process-referral", response_model=ProcessReferralResponse)
